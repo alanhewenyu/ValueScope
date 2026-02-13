@@ -42,6 +42,10 @@ def write_to_excel(filename, base_year_data, financial_data, valuation_params, c
     ws1.cell(row=13, column=2).value = valuation_params['ronic']
     ws1.cell(row=14, column=2).value = valuation_params['tax_rate'] / 100
 
+    # Update sensitivity table base values (E8 = revenue_growth_2, K2 = ebit_margin)
+    ws1.cell(row=8, column=5).value = valuation_params['revenue_growth_2'] / 100   # E8
+    ws1.cell(row=2, column=11).value = valuation_params['ebit_margin'] / 100        # K2
+
     ws1.cell(row=17, column=2).value = valuation_params['risk_free_rate']
     ws1.cell(row=18, column=2).value = base_year_data.get('Cost of Debt', 0) / 100
     ws1.cell(row=19, column=2).value = total_equity_risk_premium

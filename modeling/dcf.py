@@ -224,7 +224,7 @@ def sensitivity_analysis(base_year_data, valuation_params, financial_data, compa
     sensitivity_table.columns.name = 'EBIT Margin (%)'
     sensitivity_table.index = sensitivity_table.index.map(lambda x: f"{int(x)}%")
     sensitivity_table.columns = sensitivity_table.columns.map(lambda x: f"{int(x)}%")
-    sensitivity_table = sensitivity_table.applymap(lambda x: f"{x:,.2f}")
+    sensitivity_table = sensitivity_table.map(lambda x: f"{x:,.2f}")
 
     return sensitivity_table
 
