@@ -13,7 +13,7 @@ def get_risk_free_rate(country):
     else:
         return RISK_FREE_RATE_INTERNATIONAL
 
-def calculate_wacc(base_year_data, company_profile, apikey):
+def calculate_wacc(base_year_data, company_profile, apikey, verbose=True):
     forex_data = fetch_forex_data(apikey)
     country_mapping = {'CN': 'China', 'US': 'United States'}
     country = company_profile.get('country', 'United States')
@@ -36,13 +36,15 @@ def calculate_wacc(base_year_data, company_profile, apikey):
     cost_of_debt = float(base_year_data.get('Cost of Debt', 0)) / 100
 
     if pd.isna(total_debt) or total_debt == 0:
-        print("Warning: Total Debt is NaN or 0. Setting Debt Weighting to 0.")
+        if verbose:
+            print("Warning: Total Debt is NaN or 0. Setting Debt Weighting to 0.")
         debt_weighting = 0
     else:
         debt_weighting = total_debt / (total_debt + market_cap) if (total_debt + market_cap) != 0 else 0
 
     if pd.isna(market_cap) or market_cap == 0:
-        print("Warning: Market Cap is NaN or 0. Setting Equity Weighting to 0.")
+        if verbose:
+            print("Warning: Market Cap is NaN or 0. Setting Equity Weighting to 0.")
         equity_weighting = 0
     else:
         equity_weighting = market_cap / (total_debt + market_cap) if (total_debt + market_cap) != 0 else 0
@@ -51,8 +53,7 @@ def calculate_wacc(base_year_data, company_profile, apikey):
     cost_of_equity = risk_free_rate + total_equity_risk_premium * beta
     wacc = cost_of_debt * (1 - MARGINAL_TAX_RATE) * debt_weighting + cost_of_equity * equity_weighting
 
-    print("\nWACC Calculation Parameters:")
-    wacc_params = [
+    wacc_details = [
         ("Risk-free rate", f"{risk_free_rate:.1%}"),
         ("Total equity risk premium", f"{total_equity_risk_premium:.1%}"),
         ("Beta", f"{beta:.1f}"),
@@ -63,13 +64,18 @@ def calculate_wacc(base_year_data, company_profile, apikey):
         ("Calculated WACC", f"{wacc:.1%}")
     ]
 
-    max_label_length = max(len(label) for label, _ in wacc_params)
-    max_value_length = max(len(value) for _, value in wacc_params)
+    if verbose:
+        print_wacc_details(wacc_details)
 
-    for label, value in wacc_params:
+    return wacc, total_equity_risk_premium, wacc_details
+
+
+def print_wacc_details(wacc_details):
+    print("\nWACC Calculation Parameters:")
+    max_label_length = max(len(label) for label, _ in wacc_details)
+    max_value_length = max(len(value) for _, value in wacc_details)
+    for label, value in wacc_details:
         print(f"{label.ljust(max_label_length)} : {value.rjust(max_value_length)}")
-
-    return wacc, total_equity_risk_premium
 
 def calculate_dcf(base_year_data, valuation_params, financial_data, company_info, company_profile):
     base_year = valuation_params['base_year']

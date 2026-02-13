@@ -8,7 +8,7 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 import shutil
 from datetime import date
 from modeling.data import get_historical_financials, get_company_share_float, fetch_company_profile, fetch_market_risk_premium, format_summary_df
-from modeling.dcf import calculate_dcf, print_dcf_results, sensitivity_analysis, calculate_wacc, get_risk_free_rate
+from modeling.dcf import calculate_dcf, print_dcf_results, sensitivity_analysis, calculate_wacc, print_wacc_details, get_risk_free_rate
 from modeling.constants import HISTORICAL_DATA_PERIODS_ANNUAL, HISTORICAL_DATA_PERIODS_QUARTER, TERMINAL_RISK_PREMIUM, TERMINAL_RONIC_PREMIUM
 from modeling.ai_analyst import analyze_company, interactive_review
 
@@ -152,10 +152,9 @@ def main(args):
 
         print(f"\nThe base year used for cashflow forecast is {base_year}.")
 
-        # Calculate WACC and tax rate first (needed by both modes)
-        print("\nCalculating WACC...")
-        wacc, total_equity_risk_premium = calculate_wacc(base_year_data, company_profile, args.apikey)
+        # Calculate WACC silently (details shown later during parameter review)
         average_tax_rate = base_year_data['Average Tax Rate']
+        wacc, total_equity_risk_premium, wacc_details = calculate_wacc(base_year_data, company_profile, args.apikey, verbose=False)
 
         # Determine mode: AI or manual
         use_ai = not args.manual
@@ -171,7 +170,7 @@ def main(args):
                     calculated_wacc=wacc,
                     calculated_tax_rate=average_tax_rate,
                 )
-                ai_params = interactive_review(ai_result, wacc, average_tax_rate, company_profile)
+                ai_params = interactive_review(ai_result, wacc, average_tax_rate, company_profile, wacc_details)
             except Exception as e:
                 print(f"\nAI 分析出错: {e}")
                 print("自动回退到手工输入模式...\n")
@@ -216,6 +215,7 @@ def main(args):
             else:
                 tax_rate = float(tax_rate_input)
 
+            print_wacc_details(wacc_details)
             wacc_input = input(f"\nCalculated WACC: {wacc:.1%}. Press Enter to accept as discount rate or enter a new value (e.g., 8 for 8%): ")
             if wacc_input.strip() == "":
                 wacc = wacc * 100
