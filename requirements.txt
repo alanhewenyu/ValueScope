@@ -1,0 +1,5 @@
+pandas
+openpyxl
+requests
+numpy
+urllib3
