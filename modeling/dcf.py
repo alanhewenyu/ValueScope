@@ -110,16 +110,16 @@ def calculate_dcf(base_year_data, valuation_params, financial_data, company_info
         'EBIT(1-t)', 'Reinvestments', 'FCFF', 'WACC', 'Discount Factor', 'PV (FCFF)'
     ])
 
+    base_ebit_margin = ebit / revenue  # Store base year margin for linear convergence
+
     dcf_table.loc[0] = [
-        base_year, revenue_growth_rate_base_year, revenue, ebit / revenue, ebit, tax_rate, 
-        ebit * (1 - tax_rate), reinvestments_base_year, ebit * (1 - tax_rate) - reinvestments_base_year, 
+        base_year, revenue_growth_rate_base_year, revenue, base_ebit_margin, ebit, tax_rate,
+        ebit * (1 - tax_rate), reinvestments_base_year, ebit * (1 - tax_rate) - reinvestments_base_year,
         wacc, 1, (ebit * (1 - tax_rate) - reinvestments_base_year)
     ]
 
     for year in range(1, 12):
         prev_revenue = dcf_table.loc[year - 1, 'Revenue']
-        prev_ebit = dcf_table.loc[year - 1, 'EBIT']
-        prev_ebit_margin = dcf_table.loc[year - 1, 'EBIT Margin']
 
         if year == 1:
             revenue_growth = revenue_growth_1
@@ -128,10 +128,10 @@ def calculate_dcf(base_year_data, valuation_params, financial_data, company_info
         elif year <= 10:
             revenue_growth = revenue_growth_2 + (risk_free_rate - revenue_growth_2) * (year - 5) / 5
         else:
-            revenue_growth = risk_free_rate           
+            revenue_growth = risk_free_rate
 
         if year <= convergence:
-            ebit_margin_current = prev_ebit_margin + (ebit_margin - prev_ebit_margin) * year / convergence
+            ebit_margin_current = base_ebit_margin + (ebit_margin - base_ebit_margin) * year / convergence
         else:
             ebit_margin_current = ebit_margin
 
