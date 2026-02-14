@@ -81,7 +81,9 @@ export FMP_API_KEY='your_api_key_here'
 
 ### 4. Set Up AI Copilot (Optional)
 
-The AI features require [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated. If Claude CLI is not available, ValuX automatically falls back to manual mode.
+The AI features require [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated. ValuX calls Claude via CLI to perform web search and generate analysis. The model used depends on your Claude Code configuration (defaults to Claude Sonnet). You can switch models via `claude config set model` if you have access to other models (e.g., Claude Opus).
+
+If Claude CLI is not available, ValuX automatically falls back to manual mode.
 
 ```bash
 claude --version
