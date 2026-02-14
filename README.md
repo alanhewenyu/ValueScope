@@ -14,7 +14,7 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 
 ## Key Features
 
-- **AI Copilot Mode** — Claude analyzes the company, searches the web for analyst forecasts and earnings guidance, and suggests DCF parameters with detailed reasoning. You review and adjust each parameter interactively.
+- **AI Copilot Mode** — Powered by [Claude Code](https://docs.anthropic.com/en/docs/claude-code), an AI coding tool developed by Anthropic. The AI analyzes the company, searches the web for analyst forecasts and earnings guidance, and suggests DCF parameters with detailed reasoning. You review and adjust each parameter interactively. See [Set Up AI Copilot](#4-set-up-ai-copilot-optional) for details.
 - **Manual Mode** — Prefer full control? Use `--manual` to input all parameters yourself.
 - **Gap Analysis** — After valuation, AI compares your DCF result against the current stock price, searches for analyst price targets, and explains potential reasons for the discrepancy.
 - **Sensitivity Analysis** — Generates sensitivity tables for Revenue Growth vs EBIT Margin and WACC, showing the range of possible per-share valuations.
