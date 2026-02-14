@@ -76,7 +76,7 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
         for i in range(len(income_statement)):
             exchange = company_profile.get('exchange', 'NASDAQ')
             ebit = (income_statement[i].get('operatingIncome', 0) or 0)
-            if exchange in ['Shenzhen', 'Shanghai']:
+            if exchange in ['Shenzhen Stock Exchange', 'Shanghai Stock Exchange']:
                 ebit += (income_statement[i].get('interestExpense', 0) or 0) - (income_statement[i].get('interestIncome', 0) or 0)
 
             income_before_tax = income_statement[i].get('incomeBeforeTax', 0) or 0
