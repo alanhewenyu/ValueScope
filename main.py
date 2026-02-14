@@ -163,6 +163,14 @@ def main(args):
         print(formatted_summary_df.to_string())
         print()
 
+        # Display EBIT source comparison for Chinese A-shares
+        ebit_comparison = financial_data.get('ebit_comparison')
+        if ebit_comparison:
+            print(f"\n{S.subheader('EBIT 数据源比较（akshare vs FMP）')}")
+            for item in ebit_comparison:
+                print(f"  {item['year']}:  akshare EBIT = {item['akshare_ebit']:,.0f}  |  FMP EBIT = {item['fmp_ebit']:,.0f}  |  差异: {item['diff_pct']:+.1f}%")
+            print(S.muted("  注：中国 A 股 EBIT 已使用 akshare 数据源（剔除投资收益、公允价值变动等非经营项）"))
+
         if period == 'quarter':
             print(f"\n{S.warning('Warning: Valuation requires annual financial data. Please switch to annual period to proceed.')}")
             exit_program = input(f'\n{S.prompt("Exit program? (y/n): ")}').strip().lower()
@@ -303,7 +311,8 @@ def main(args):
 
         # AI gap analysis: compare DCF valuation vs current stock price
         gap_analysis_result = None
-        if not args.manual:
+        run_gap = input(f"\n{S.prompt('是否运行 DCF 估值 vs 当前股价差异分析? (y/N): ')}").strip().lower()
+        if run_gap in ('y', 'yes'):
             try:
                 gap_analysis_result = analyze_valuation_gap(ticker, company_profile, results, valuation_params, summary_df, base_year)
             except Exception as e:
