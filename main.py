@@ -11,6 +11,7 @@ from modeling.data import get_historical_financials, get_company_share_float, fe
 from modeling.dcf import calculate_dcf, print_dcf_results, sensitivity_analysis, wacc_sensitivity_analysis, calculate_wacc, print_wacc_details, get_risk_free_rate
 from modeling.constants import HISTORICAL_DATA_PERIODS_ANNUAL, HISTORICAL_DATA_PERIODS_QUARTER, TERMINAL_RISK_PREMIUM, TERMINAL_RONIC_PREMIUM
 from modeling.ai_analyst import analyze_company, interactive_review, analyze_valuation_gap
+from modeling import style as S
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 EXCEL_TEMPLATE_PATH = os.path.join(current_dir, 'modeling', 'DCF valuation template.xlsx')
@@ -131,11 +132,11 @@ def write_to_excel(filename, base_year_data, financial_data, valuation_params, c
 
 def main(args):
     while True:
-        print("\nPlease enter the stock symbol and the financial data period to continue...\n")
-        ticker = input('Enter the stock symbol (e.g., AAPL): ')
+        print(f"\n{S.title('Please enter the stock symbol and the financial data period to continue...')}\n")
+        ticker = input(f'{S.prompt("Enter the stock symbol (e.g., AAPL): ")}')
         args.t = ticker
 
-        period = input('Select the financial data period (annual/quarter): ')
+        period = input(f'{S.prompt("Select the financial data period (annual/quarter): ")}')
         args.period = period
 
         if period == 'annual':
@@ -143,11 +144,11 @@ def main(args):
         elif period == 'quarter':
             HISTORICAL_DATA_PERIODS = HISTORICAL_DATA_PERIODS_QUARTER
         else:
-            raise ValueError("Invalid period. Please enter 'annual' or 'quarter'.")
+            raise ValueError(S.error("Invalid period. Please enter 'annual' or 'quarter'."))
 
         financial_data = get_historical_financials(args.t, args.period, args.apikey, HISTORICAL_DATA_PERIODS)
         if financial_data is None:
-            print("Error: Failed to fetch financial data. Please check your API key and ticker symbol.")
+            print(S.error("Error: Failed to fetch financial data. Please check your API key and ticker symbol."))
             continue
         summary_df = financial_data['summary']
         company_info = get_company_share_float(args.t, args.apikey)
@@ -157,22 +158,23 @@ def main(args):
         base_year_col = summary_df.columns[0]
         base_year_data = summary_df[base_year_col].copy()
 
-        print(f"\n{company_name} Historical Financial Data (Summary, in millions):")
+        print(f"\n{S.header(f'{company_name} Historical Financial Data (Summary, in millions)')}")
         formatted_summary_df = format_summary_df(summary_df)
         print(formatted_summary_df.to_string())
+        print()
 
         if period == 'quarter':
-            print("\nWarning: Valuation requires annual financial data. Please switch to 'annual' period to proceed.")
-            exit_program = input('\nExit program? (y/n): ').strip().lower()
+            print(f"\n{S.warning('Warning: Valuation requires annual financial data. Please switch to annual period to proceed.')}")
+            exit_program = input(f'\n{S.prompt("Exit program? (y/n): ")}').strip().lower()
             if exit_program.lower() == 'y':
                 print("Exiting...")
                 break
             else:
                 continue
 
-        cont = input('\nProceed with valuation? (y/n): ').strip().lower()
+        cont = input(f'\n{S.prompt("Proceed with valuation? (y/n): ")}').strip().lower()
         if cont.lower() != 'y':
-            exit_program = input('Exit program? (y/n): ').strip().lower()
+            exit_program = input(f'{S.prompt("Exit program? (y/n): ")}').strip().lower()
             if exit_program.lower() == 'y':
                 print("Exiting...")
                 break
@@ -191,7 +193,7 @@ def main(args):
         base_year_data['Revenue Growth'] = financial_data['summary'].loc['Revenue Growth', base_year_col]
         base_year_data['Total Reinvestments'] = financial_data['summary'].loc['Total Reinvestments', base_year_col]
 
-        print(f"\nThe base year used for cashflow forecast is {base_year}.")
+        print(f"\n{S.info(f'The base year used for cashflow forecast is {base_year}.')}")
 
         # Calculate WACC silently (details shown later during parameter review)
         average_tax_rate = base_year_data['Average Tax Rate']
@@ -214,8 +216,8 @@ def main(args):
                 )
                 ai_params = interactive_review(ai_result, wacc, average_tax_rate, company_profile, wacc_details)
             except Exception as e:
-                print(f"\nAI 分析出错: {e}")
-                print("自动回退到手工输入模式...\n")
+                print(f"\n{S.error(f'AI 分析出错: {e}')}")
+                print(S.warning("自动回退到手工输入模式...\n"))
 
         if ai_params is not None:
             # AI mode succeeded — build valuation_params from reviewed results
@@ -242,29 +244,29 @@ def main(args):
             }
         else:
             # Manual mode
-            print("\nEnter the following inputs...\n")
-            revenue_growth_1 = float(input('Enter the annual revenue growth rate for Year 1 (%): '))
-            revenue_growth_2 = float(input('Enter the Compound annual revenue growth rate for Years 2-5 (%): '))
-            ebit_margin = float(input('Enter the target EBIT margin (%): '))
-            convergence = float(input('Enter the number of years to reach the target EBIT margin: '))
-            revenue_invested_capital_ratio_1 = float(input('Enter the revenue to invested capital ratio for Year 1: '))
-            revenue_invested_capital_ratio_2 = float(input('Enter the revenue to invested capital ratio for Years 3-5: '))
-            revenue_invested_capital_ratio_3 = float(input('Enter the revenue to invested capital ratio for Years 5-10: '))
+            print(f"\n{S.title('Enter the following inputs...')}\n")
+            revenue_growth_1 = float(input(f'{S.prompt("Enter the annual revenue growth rate for Year 1 (%): ")}'))
+            revenue_growth_2 = float(input(f'{S.prompt("Enter the Compound annual revenue growth rate for Years 2-5 (%): ")}'))
+            ebit_margin = float(input(f'{S.prompt("Enter the target EBIT margin (%): ")}'))
+            convergence = float(input(f'{S.prompt("Enter the number of years to reach the target EBIT margin: ")}'))
+            revenue_invested_capital_ratio_1 = float(input(f'{S.prompt("Enter the revenue to invested capital ratio for Year 1: ")}'))
+            revenue_invested_capital_ratio_2 = float(input(f'{S.prompt("Enter the revenue to invested capital ratio for Years 3-5: ")}'))
+            revenue_invested_capital_ratio_3 = float(input(f'{S.prompt("Enter the revenue to invested capital ratio for Years 5-10: ")}'))
 
-            tax_rate_input = input(f"\nCalculated Average Tax Rate: {average_tax_rate:.1%}. Press Enter to accept as tax rate or enter a new value (e.g., 25 for 25%): ")
+            tax_rate_input = input(f"\n{S.prompt(f'Calculated Average Tax Rate: {average_tax_rate:.1%}. Press Enter to accept or enter a new value (e.g., 25 for 25%): ')}")
             if tax_rate_input.strip() == "":
                 tax_rate = average_tax_rate * 100
             else:
                 tax_rate = float(tax_rate_input)
 
             print_wacc_details(wacc_details)
-            wacc_input = input(f"\nCalculated WACC: {wacc:.1%}. Press Enter to accept as discount rate or enter a new value (e.g., 8 for 8%): ")
+            wacc_input = input(f"\n{S.prompt(f'Calculated WACC: {wacc:.1%}. Press Enter to accept or enter a new value (e.g., 8 for 8%): ')}")
             if wacc_input.strip() == "":
                 wacc = wacc * 100
             else:
                 wacc = float(wacc_input)
 
-            cont = input('Will ROIC match terminal WACC beyond year 10? (y/n): ').strip().lower()
+            cont = input(f'{S.prompt("Will ROIC match terminal WACC beyond year 10? (y/n): ")}').strip().lower()
             if cont.lower() == 'y':
                 ronic = get_risk_free_rate(company_profile.get('country', 'United States')) + TERMINAL_RISK_PREMIUM
             else:
@@ -289,14 +291,14 @@ def main(args):
         results = calculate_dcf(base_year_data, valuation_params, financial_data, company_info, company_profile)
         print_dcf_results(results, company_name)
 
-        print("\nRunning sensitivity analysis...")
+        print(f"\n{S.info('Running sensitivity analysis...')}")
         sensitivity_table = sensitivity_analysis(base_year_data, valuation_params, financial_data, company_info, company_profile)
-        print("\nSensitivity Analysis - Revenue Growth vs EBIT Margin (Price per Share):")
+        print(f"\n{S.subheader('Sensitivity Analysis - Revenue Growth vs EBIT Margin (Price per Share)')}")
         print(sensitivity_table)
 
-        print("\nRunning WACC sensitivity analysis...")
+        print(f"\n{S.info('Running WACC sensitivity analysis...')}")
         wacc_table = wacc_sensitivity_analysis(base_year_data, valuation_params, financial_data, company_info, company_profile)
-        print("\nSensitivity Analysis - WACC (Price per Share):")
+        print(f"\n{S.subheader('Sensitivity Analysis - WACC (Price per Share)')}")
         print(wacc_table.T.to_string())
 
         # AI gap analysis: compare DCF valuation vs current stock price
@@ -305,17 +307,17 @@ def main(args):
             try:
                 gap_analysis_result = analyze_valuation_gap(ticker, company_profile, results, valuation_params, summary_df, base_year)
             except Exception as e:
-                print(f"\n估值差异分析出错: {e}")
+                print(f"\n{S.error(f'估值差异分析出错: {e}')}")
 
-        export_to_excel = input("\nDo you want to export the valuation results to Excel? (y/n): ").strip().lower()
+        export_to_excel = input(f"\n{S.prompt('Do you want to export the valuation results to Excel? (y/n): ')}").strip().lower()
         if export_to_excel == 'y':
             filename = os.path.join(EXCEL_OUTPUT_DIR, f"{company_name}_valuation_{date.today().strftime('%Y%m%d')}.xlsx")
             write_to_excel(filename, base_year_data, financial_data, valuation_params, company_profile, total_equity_risk_premium, gap_analysis_result)
-            print(f"\nValuation results saved to {filename}")
+            print(f"\n{S.success(f'Valuation results saved to {filename}')}")
         else:
-            print("\nSkipping Excel export.")
+            print(f"\n{S.muted('Skipping Excel export.')}")
 
-        cont = input("\nValuation completed. Exit program? (y/n): ").strip().lower()
+        cont = input(f"\n{S.prompt('Valuation completed. Exit program? (y/n): ')}").strip().lower()
         if cont.lower() == 'y':
             print("Exiting...")
             break

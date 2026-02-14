@@ -1,6 +1,7 @@
 import pandas as pd
 from .data import fetch_market_risk_premium, fetch_company_profile, fetch_forex_data
 from .constants import MARGINAL_TAX_RATE, TERMINAL_RISK_PREMIUM, RISK_FREE_RATE_US, RISK_FREE_RATE_CHINA, RISK_FREE_RATE_INTERNATIONAL
+from . import style as S
 
 def get_risk_free_rate(country):
     """
@@ -71,11 +72,14 @@ def calculate_wacc(base_year_data, company_profile, apikey, verbose=True):
 
 
 def print_wacc_details(wacc_details):
-    print("\nWACC Calculation Parameters:")
-    max_label_length = max(len(label) for label, _ in wacc_details)
-    max_value_length = max(len(value) for _, value in wacc_details)
-    for label, value in wacc_details:
-        print(f"{label.ljust(max_label_length)} : {value.rjust(max_value_length)}")
+    print(f"\n{S.subheader('WACC Calculation Parameters')}")
+    max_label_length = max(len(lbl) for lbl, _ in wacc_details)
+    max_value_length = max(len(val) for _, val in wacc_details)
+    for lbl, val in wacc_details:
+        is_result = lbl.startswith('Calculated')
+        lbl_str = S.label(lbl.ljust(max_label_length)) if is_result else f"  {lbl.ljust(max_label_length)}"
+        val_str = S.value(val.rjust(max_value_length)) if is_result else val.rjust(max_value_length)
+        print(f"{lbl_str} : {val_str}")
 
 def calculate_dcf(base_year_data, valuation_params, financial_data, company_info, company_profile):
     base_year = valuation_params['base_year']
@@ -250,7 +254,7 @@ def wacc_sensitivity_analysis(base_year_data, valuation_params, financial_data, 
 
 def print_dcf_results(results, company_name):
     dcf_table = results['dcf_table']
-    print(f"\n{company_name} Free Cashflow Forecast Results - 10 years, in millions:")
+    print(f"\n{S.header(f'{company_name} Free Cashflow Forecast Results - 10 years, in millions')}")
 
     formatted_dcf_table = dcf_table.copy()
     for col in formatted_dcf_table.columns:
@@ -267,7 +271,7 @@ def print_dcf_results(results, company_name):
 
     print(formatted_dcf_table.T.to_string())
 
-    print("\nValuation Calculation - in millions:")
+    print(f"\n{S.subheader('Valuation Calculation - in millions')}")
     valuation_calculation = [
         ("PV (FCFF over next 10 years)", results['pv_cf_next_10_years']),
         ("PV (Terminal value)", results['pv_terminal_value']),
@@ -285,9 +289,13 @@ def print_dcf_results(results, company_name):
     max_label_length = max(len(label) for label, _ in valuation_calculation)
     max_value_length = max(len(f"{value:,.0f}") if isinstance(value, (int, float)) else len(str(value)) for _, value in valuation_calculation)
 
-    for label, value in valuation_calculation:
-        if label.startswith("Equity Price per Share"):
-            formatted_value = f"{value:,.2f}"
+    for lbl, val in valuation_calculation:
+        if lbl.startswith("Equity Price per Share"):
+            formatted_value = f"{val:,.2f}"
+            print(f"\n{S.label(lbl.ljust(max_label_length))} : {S.BOLD}{S.BRIGHT_GREEN}{formatted_value.rjust(max_value_length)}{S.RESET}")
+        elif lbl == 'Equity Value':
+            formatted_value = f"{val:,.0f}" if isinstance(val, (int, float)) else str(val)
+            print(f"  {S.label(lbl.ljust(max_label_length))} : {S.value(formatted_value.rjust(max_value_length))}")
         else:
-            formatted_value = f"{value:,.0f}" if isinstance(value, (int, float)) else str(value)
-        print(f"{label.ljust(max_label_length)} : {formatted_value.rjust(max_value_length)}")
+            formatted_value = f"{val:,.0f}" if isinstance(val, (int, float)) else str(val)
+            print(f"  {lbl.ljust(max_label_length)} : {formatted_value.rjust(max_value_length)}")

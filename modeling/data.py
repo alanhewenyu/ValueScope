@@ -2,6 +2,7 @@ from urllib.request import urlopen
 import json, traceback
 import pandas as pd
 import requests
+from . import style as S
 
 def get_api_url(requested_data, ticker, period, apikey):
     base_url = f'https://financialmodelingprep.com/api/v3/{requested_data}/{ticker}?apikey={apikey}'
@@ -59,7 +60,7 @@ def fetch_company_profile(ticker, apikey):
 
 def get_historical_financials(ticker, period='annual', apikey='', historical_periods=5):
     period_str = f"{historical_periods} years" if period == 'annual' else f"{historical_periods} quarters"
-    print(f"\nFetching financial data for {ticker} ({period_str})...")
+    print(f"\n{S.info(f'Fetching financial data for {ticker} ({period_str})...')}")
     
     try:
         income_statement = get_jsonparsed_data(get_api_url('income-statement', ticker, period, apikey))[:historical_periods]

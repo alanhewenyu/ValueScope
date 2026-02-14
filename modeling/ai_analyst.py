@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+from . import style as S
 
 
 ANALYSIS_PROMPT_TEMPLATE = """你是一位资深的股权研究分析师和DCF估值专家。请根据以下历史财务数据和公开市场信息，为 {company_name} ({ticker}) 生成DCF估值参数建议。
@@ -116,8 +117,8 @@ def analyze_company(ticker, summary_df, base_year_data, company_profile, calcula
         forecast_year_2=base_year + 2,
     )
 
-    print(f"\n正在使用 AI 分析 {company_name} ({ticker})...")
-    print("（AI 正在搜索最新市场数据和分析师预期，请稍候...）\n")
+    print(f"\n{S.ai_label(f'正在使用 AI 分析 {company_name} ({ticker})...')}")
+    print(S.info("（AI 正在搜索最新市场数据和分析师预期，请稍候...）\n"))
 
     env = os.environ.copy()
     env.pop('CLAUDECODE', None)
@@ -129,12 +130,12 @@ def analyze_company(ticker, summary_df, base_year_data, company_profile, calcula
 
     if result.returncode != 0:
         error_msg = result.stderr.strip() or "Unknown error"
-        raise RuntimeError(f"Claude CLI 调用失败: {error_msg}")
+        raise RuntimeError(S.error(f"Claude CLI 调用失败: {error_msg}"))
 
     all_text = result.stdout.strip()
 
     if not all_text:
-        raise RuntimeError("Claude CLI 返回空内容")
+        raise RuntimeError(S.error("Claude CLI 返回空内容"))
 
     parameters = _parse_structured_parameters(all_text)
 
@@ -185,16 +186,14 @@ def interactive_review(ai_result, calculated_wacc, calculated_tax_rate, company_
     params = ai_result["parameters"]
 
     if params is None:
-        print("\n无法解析 AI 返回的参数。以下是 AI 的完整分析：")
-        print("-" * 60)
+        print(f"\n{S.warning('无法解析 AI 返回的参数。以下是 AI 的完整分析：')}")
+        print(S.divider())
         print(ai_result.get("raw_text", "（无内容）"))
-        print("-" * 60)
+        print(S.divider())
         return None
 
-    print("\n" + "=" * 60)
-    print("AI 估值参数建议 — 逐项确认")
-    print("按 Enter 接受建议值，或输入新值覆盖")
-    print("=" * 60)
+    print(f"\n{S.header('AI 估值参数建议 — 逐项确认')}")
+    print(S.info("按 Enter 接受建议值，或输入新值覆盖"))
 
     # Define review sections — each parameter reviewed independently
     param_configs = [
@@ -222,14 +221,11 @@ def interactive_review(ai_result, calculated_wacc, calculated_tax_rate, company_
             ai_value = param_data
             reasoning = ""
 
-        print(f"\n{'─' * 60}")
-        print(f"  {label}")
-        print(f"{'─' * 60}")
+        print(f"\n{S.subheader(label)}")
 
         # Show AI reasoning for THIS parameter only
         if reasoning:
-            print(f"\n  AI 分析:")
-            # Word-wrap reasoning at ~70 chars, indented
+            print(f"\n  {S.ai_label('AI 分析:')}")
             _print_wrapped(reasoning, indent="    ", width=70)
 
         # For WACC: show the model calculation details
@@ -239,15 +235,15 @@ def interactive_review(ai_result, calculated_wacc, calculated_tax_rate, company_
 
         # For tax_rate: show calculated reference
         if key == "tax_rate":
-            print(f"\n  历史平均有效税率: {calculated_tax_rate * 100:.1f}%")
+            print(f"\n  {S.muted(f'历史平均有效税率: {calculated_tax_rate * 100:.1f}%')}")
 
         if ai_value is not None:
-            print(f"\n  AI 建议值: {ai_value}{unit}")
+            print(f"\n  {S.label('AI 建议值:')} {S.value(f'{ai_value}{unit}')}")
             _warn_if_out_of_range(key, ai_value)
-            user_input = input(f"  输入新值或按 Enter 接受 [{ai_value}]: ").strip()
+            user_input = input(f"  {S.prompt(f'输入新值或按 Enter 接受 [{ai_value}]: ')}").strip()
         else:
-            print(f"\n  AI 未提供建议值")
-            user_input = input(f"  请输入值: ").strip()
+            print(f"\n  {S.warning('AI 未提供建议值')}")
+            user_input = input(f"  {S.prompt('请输入值: ')}").strip()
 
         if user_input == "":
             final_params[key] = float(ai_value) if ai_value is not None else 0.0
@@ -255,7 +251,7 @@ def interactive_review(ai_result, calculated_wacc, calculated_tax_rate, company_
             try:
                 final_params[key] = float(user_input)
             except ValueError:
-                print(f"  输入无效，使用 AI 建议值: {ai_value}")
+                print(f"  {S.warning(f'输入无效，使用 AI 建议值: {ai_value}')}")
                 final_params[key] = float(ai_value) if ai_value is not None else 0.0
 
     # Handle RONIC separately
@@ -267,28 +263,25 @@ def interactive_review(ai_result, calculated_wacc, calculated_tax_rate, company_
         ronic_match = ronic_data if isinstance(ronic_data, bool) else True
         ronic_reasoning = ""
 
-    print(f"\n{'─' * 60}")
-    print(f"  RONIC (终值期再投资收益率)")
-    print(f"{'─' * 60}")
+    print(f"\n{S.subheader('RONIC (终值期再投资收益率)')}")
 
     if ronic_reasoning:
-        print(f"\n  AI 分析:")
+        print(f"\n  {S.ai_label('AI 分析:')}")
         _print_wrapped(ronic_reasoning, indent="    ", width=70)
 
     if ronic_match:
-        print("\n  AI 建议: ROIC 在终值期回归 WACC（保守假设）")
+        print(f"\n  {S.label('AI 建议:')} {S.value('ROIC 在终值期回归 WACC（保守假设）')}")
     else:
-        print("\n  AI 建议: ROIC 在终值期高于 WACC（公司有持续竞争优势）")
+        print(f"\n  {S.label('AI 建议:')} {S.value('ROIC 在终值期高于 WACC（公司有持续竞争优势）')}")
 
-    ronic_input = input(f"  ROIC 是否在终值期回归 WACC? (y/n) [{'y' if ronic_match else 'n'}]: ").strip().lower()
+    default_ronic = 'y' if ronic_match else 'n'
+    ronic_input = input(f"  {S.prompt(f'ROIC 是否在终值期回归 WACC? (y/n) [{default_ronic}]: ')}").strip().lower()
     if ronic_input == "":
         final_params["ronic_match_wacc"] = ronic_match
     else:
         final_params["ronic_match_wacc"] = (ronic_input == "y")
 
-    print("\n" + "=" * 60)
-    print("参数确认完成")
-    print("=" * 60)
+    print(f"\n{S.header('参数确认完成')}")
 
     return final_params
 
@@ -357,7 +350,7 @@ def analyze_valuation_gap(ticker, company_profile, results, valuation_params, su
     dcf_price = results['price_per_share']
 
     if current_price == 0:
-        print("\n无法获取当前股价，跳过估值差异分析。")
+        print(f"\n{S.warning('无法获取当前股价，跳过估值差异分析。')}")
         return None
 
     gap_pct = (dcf_price - current_price) / current_price * 100
@@ -387,13 +380,11 @@ def analyze_valuation_gap(ticker, company_profile, results, valuation_params, su
         forecast_year=base_year + 1,
     )
 
-    print(f"\n{'=' * 60}")
-    print(f"DCF 估值 vs 当前股价 差异分析")
-    print(f"{'=' * 60}")
-    print(f"  当前股价:     {current_price:.2f} {currency}")
-    print(f"  DCF 估值:     {dcf_price:.2f} {currency}")
-    print(f"  差异:         {gap_pct:+.1f}%")
-    print(f"\n正在使用 AI 分析估值差异原因...")
+    print(f"\n{S.header('DCF 估值 vs 当前股价 差异分析')}")
+    print(f"  {S.label('当前股价:')}     {current_price:.2f} {currency}")
+    print(f"  {S.label('DCF 估值:')}     {S.price_colored(dcf_price, current_price)} {currency}")
+    print(f"  {S.label('差异:')}         {S.pct_colored(gap_pct)}")
+    print(f"\n{S.ai_label('正在使用 AI 分析估值差异原因...')}")
 
     env = os.environ.copy()
     env.pop('CLAUDECODE', None)
@@ -406,12 +397,12 @@ def analyze_valuation_gap(ticker, company_profile, results, valuation_params, su
 
         if result.returncode != 0:
             error_msg = result.stderr.strip() or "Unknown error"
-            print(f"\nAI 分析调用失败: {error_msg}")
+            print(f"\n{S.error(f'AI 分析调用失败: {error_msg}')}")
             return None
 
         analysis_text = result.stdout.strip()
         if not analysis_text:
-            print("\nAI 返回空内容，跳过差异分析。")
+            print(f"\n{S.warning('AI 返回空内容，跳过差异分析。')}")
             return None
 
         # Parse adjusted price from the last line
@@ -425,13 +416,13 @@ def analyze_valuation_gap(ticker, company_profile, results, valuation_params, su
 
         # Display analysis (strip the ADJUSTED_PRICE line from display)
         display_text = re.sub(r'\n?\s*ADJUSTED_PRICE:.*$', '', analysis_text).strip()
-        print(f"\n{'─' * 60}")
+        print(f"\n{S.divider()}")
         print(display_text)
-        print(f"{'─' * 60}")
+        print(S.divider())
 
         if adjusted_price is not None:
             adj_gap_pct = (adjusted_price - current_price) / current_price * 100
-            print(f"\n  综合差异分析后修正估值: {adjusted_price:,.2f} {currency}（相对当前股价 {adj_gap_pct:+.1f}%）")
+            print(f"\n  {S.label('综合差异分析后修正估值:')} {S.price_colored(adjusted_price, current_price)} {currency}（相对当前股价 {S.pct_colored(adj_gap_pct)}）")
 
         return {
             'analysis_text': analysis_text,
@@ -443,10 +434,10 @@ def analyze_valuation_gap(ticker, company_profile, results, valuation_params, su
         }
 
     except subprocess.TimeoutExpired:
-        print("\nAI 分析超时，跳过差异分析。")
+        print(f"\n{S.warning('AI 分析超时，跳过差异分析。')}")
         return None
     except Exception as e:
-        print(f"\nAI 差异分析出错: {e}")
+        print(f"\n{S.error(f'AI 差异分析出错: {e}')}")
         return None
 
 
@@ -490,4 +481,4 @@ def _warn_if_out_of_range(key, value):
     if key in ranges:
         low, high = ranges[key]
         if v < low or v > high:
-            print(f"  ⚠ 警告: 该值 ({v}) 超出通常范围 ({low} ~ {high})，请仔细确认")
+            print(f"  {S.warning(f'⚠ 警告: 该值 ({v}) 超出通常范围 ({low} ~ {high})，请仔细确认')}")
