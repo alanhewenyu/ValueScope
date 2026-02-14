@@ -1,7 +1,6 @@
 from urllib.request import urlopen
 import json, traceback
 import pandas as pd
-import requests
 from . import style as S
 
 try:
@@ -205,8 +204,8 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                               (balance_sheet[i].get('cashAndCashEquivalents', 0) or 0) - \
                               (balance_sheet[i].get('totalInvestments', 0) or 0)
             revenue_to_invested_capital = (income_statement[i].get('revenue', 0) or 0) / invested_capital if invested_capital != 0 else 0
-            total_reinvestments = (-cashflow_statement[i].get('investmentsInPropertyPlantAndEquipment', 0) or 0) + \
-                                 (-cashflow_statement[i].get('changeInWorkingCapital', 0) or 0) - \
+            total_reinvestments = -(cashflow_statement[i].get('investmentsInPropertyPlantAndEquipment', 0) or 0) + \
+                                 -(cashflow_statement[i].get('changeInWorkingCapital', 0) or 0) - \
                                  (cashflow_statement[i].get('depreciationAndAmortization', 0) or 0)
 
             interest_expense = income_statement[i].get('interestExpense', 0) or 0

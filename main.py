@@ -2,8 +2,10 @@
 
 import argparse
 import os
+import re
 import pandas as pd
 from openpyxl import load_workbook
+from openpyxl.styles import Font
 from openpyxl.utils.dataframe import dataframe_to_rows
 import shutil
 from datetime import date
@@ -100,7 +102,6 @@ def write_to_excel(filename, base_year_data, financial_data, valuation_params, c
         ws_gap = wb.create_sheet('Gap Analysis')
         currency = gap_analysis_result.get('currency', '')
         ws_gap.cell(row=1, column=1).value = 'DCF 估值 vs 当前股价 差异分析'
-        from openpyxl.styles import Font
         ws_gap.cell(row=1, column=1).font = Font(bold=True, size=14)
         ws_gap.cell(row=3, column=1).value = f"当前股价: {gap_analysis_result['current_price']:.2f} {currency}"
         ws_gap.cell(row=4, column=1).value = f"DCF 估值: {gap_analysis_result['dcf_price']:.2f} {currency}"
@@ -109,8 +110,7 @@ def write_to_excel(filename, base_year_data, financial_data, valuation_params, c
             ws_gap.cell(row=6, column=1).value = f"修正后估值: {gap_analysis_result['adjusted_price']:,.2f} {currency}"
 
         # Write analysis text line by line starting from row 8
-        import re as _re
-        analysis_text = _re.sub(r'\n?\s*ADJUSTED_PRICE:.*$', '', gap_analysis_result['analysis_text']).strip()
+        analysis_text = re.sub(r'\n?\s*ADJUSTED_PRICE:.*$', '', gap_analysis_result['analysis_text']).strip()
         for i, line in enumerate(analysis_text.split('\n'), start=8):
             ws_gap.cell(row=i, column=1).value = line
         ws_gap.column_dimensions['A'].width = 100
@@ -123,7 +123,7 @@ def write_to_excel(filename, base_year_data, financial_data, valuation_params, c
                 try:
                     if len(str(cell.value)) > max_length:
                         max_length = len(str(cell.value))
-                except:
+                except (TypeError, AttributeError):
                     pass
             adjusted_width = (max_length + 2) * 1.2
             ws.column_dimensions[column].width = adjusted_width
@@ -174,26 +174,22 @@ def main(args):
         if period == 'quarter':
             print(f"\n{S.warning('Warning: Valuation requires annual financial data. Please switch to annual period to proceed.')}")
             exit_program = input(f'\n{S.prompt("Exit program? (y/n): ")}').strip().lower()
-            if exit_program.lower() == 'y':
+            if exit_program == 'y':
                 print("Exiting...")
                 break
             else:
                 continue
 
         cont = input(f'\n{S.prompt("Proceed with valuation? (y/n): ")}').strip().lower()
-        if cont.lower() != 'y':
+        if cont != 'y':
             exit_program = input(f'{S.prompt("Exit program? (y/n): ")}').strip().lower()
-            if exit_program.lower() == 'y':
+            if exit_program == 'y':
                 print("Exiting...")
                 break
             else:
                 continue
 
-        try:
-            calendar_year = summary_df.index[summary_df.index.get_loc('Calendar Year')]
-            base_year = int(calendar_year)
-        except KeyError:
-            base_year = int(summary_df.columns[0])
+        base_year = int(summary_df.columns[0])
 
         outstanding_shares = company_info.get('outstandingShares', 0)
         base_year_data['Outstanding Shares'] = outstanding_shares
@@ -327,7 +323,7 @@ def main(args):
             print(f"\n{S.muted('Skipping Excel export.')}")
 
         cont = input(f"\n{S.prompt('Valuation completed. Exit program? (y/n): ')}").strip().lower()
-        if cont.lower() == 'y':
+        if cont == 'y':
             print("Exiting...")
             break
 

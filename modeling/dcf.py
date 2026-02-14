@@ -162,7 +162,7 @@ def calculate_dcf(base_year_data, valuation_params, financial_data, company_info
 
         if year <= 5:
             wacc_current = wacc
-        elif year <=10:
+        elif year <= 10:
             wacc_current = wacc + (terminal_wacc - wacc) * (year - 5) / 5
         else:
             wacc_current = terminal_wacc

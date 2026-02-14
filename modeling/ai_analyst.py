@@ -471,9 +471,9 @@ def _warn_if_out_of_range(key, value):
         "revenue_growth_2": (-20, 50),
         "ebit_margin": (-20, 60),
         "convergence": (1, 10),
-        "revenue_invested_capital_ratio_1": (0.1, 10),
-        "revenue_invested_capital_ratio_2": (0.1, 10),
-        "revenue_invested_capital_ratio_3": (0.1, 10),
+        "revenue_invested_capital_ratio_1": (0, 10),
+        "revenue_invested_capital_ratio_2": (0, 10),
+        "revenue_invested_capital_ratio_3": (0, 10),
         "tax_rate": (0, 50),
         "wacc": (3, 25),
     }
