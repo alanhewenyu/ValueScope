@@ -53,7 +53,8 @@ def fetch_company_profile(ticker, apikey):
         'beta': data[0]['beta'],
         'country': data[0]['country'],
         'currency': data[0].get('currency', 'USD'),
-        'exchange': data[0].get('exchange', 'NASDAQ')
+        'exchange': data[0].get('exchange', 'NASDAQ'),
+        'price': data[0].get('price', 0),
     }
 
 def get_historical_financials(ticker, period='annual', apikey='', historical_periods=5):
@@ -167,25 +168,21 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
         return None
 
 def format_summary_df(summary_df):
-    numeric_columns = ['Revenue', 'EBIT', 'Depreciation & Amortization', 'Increase in Working Capital', 
-                      'Capital Expenditure', 'Total Reinvestments', 'Total Debt', 'Total Equity', 
-                      'Minority Interest', 'Cash & Cash Equivalents', 'Total Investments', 'Invested Capital',
-                      'Revenue Growth', 'EBIT Growth', 'EBIT Margin', 'Tax Rate', 'Revenue to Invested Capital',
-                      'Debt to Assets', 'Cost of Debt', 'ROIC', 'ROE', 'Dividend Yield', 'Payout Ratio']
+    """Format summary_df for terminal display. Returns a new formatted copy; original is NOT modified."""
+    df = summary_df.copy()
 
-    for col in summary_df.columns:
-        if col in numeric_columns:
-            summary_df[col] = pd.to_numeric(summary_df[col], errors='coerce')
+    AMOUNT_ROWS = ['Revenue', 'EBIT', 'Depreciation & Amortization', 'Increase in Working Capital',
+                   'Capital Expenditure', 'Total Reinvestments', 'Total Debt', 'Total Equity',
+                   'Minority Interest', 'Cash & Cash Equivalents', 'Total Investments', 'Invested Capital']
+    RATIO_ROWS = ['Revenue Growth', 'EBIT Growth', 'EBIT Margin', 'Tax Rate', 'Revenue to Invested Capital',
+                  'Debt to Assets', 'Cost of Debt', 'ROIC', 'ROE', 'Dividend Yield', 'Payout Ratio']
 
-    for index, row in summary_df.iterrows():
-        if index in numeric_columns:
-            if index in ['Revenue', 'EBIT', 'Depreciation & Amortization', 'Increase in Working Capital', 
-                        'Capital Expenditure', 'Total Reinvestments', 'Total Debt', 'Total Equity', 
-                        'Minority Interest', 'Cash & Cash Equivalents', 'Total Investments', 'Invested Capital']:
-                summary_df.loc[index] = row.apply(lambda x: f"{int(x):,}" if pd.notnull(x) else 'N/A')
-            else:
-                summary_df.loc[index] = row.apply(lambda x: f"{x:.2f}" if pd.notnull(x) else 'N/A')
-        else:
-            summary_df.loc[index] = row
+    for index in df.index:
+        if index in AMOUNT_ROWS:
+            df.loc[index] = pd.to_numeric(df.loc[index], errors='coerce').apply(
+                lambda x: f"{int(x):,}" if pd.notnull(x) else 'N/A')
+        elif index in RATIO_ROWS:
+            df.loc[index] = pd.to_numeric(df.loc[index], errors='coerce').apply(
+                lambda x: f"{x:.2f}" if pd.notnull(x) else 'N/A')
 
-    return summary_df
+    return df

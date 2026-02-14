@@ -8,15 +8,15 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 import shutil
 from datetime import date
 from modeling.data import get_historical_financials, get_company_share_float, fetch_company_profile, fetch_market_risk_premium, format_summary_df
-from modeling.dcf import calculate_dcf, print_dcf_results, sensitivity_analysis, calculate_wacc, print_wacc_details, get_risk_free_rate
+from modeling.dcf import calculate_dcf, print_dcf_results, sensitivity_analysis, wacc_sensitivity_analysis, calculate_wacc, print_wacc_details, get_risk_free_rate
 from modeling.constants import HISTORICAL_DATA_PERIODS_ANNUAL, HISTORICAL_DATA_PERIODS_QUARTER, TERMINAL_RISK_PREMIUM, TERMINAL_RONIC_PREMIUM
-from modeling.ai_analyst import analyze_company, interactive_review
+from modeling.ai_analyst import analyze_company, interactive_review, analyze_valuation_gap
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 EXCEL_TEMPLATE_PATH = os.path.join(current_dir, 'modeling', 'DCF valuation template.xlsx')
 EXCEL_OUTPUT_DIR = os.path.join(os.getcwd(), 'stock_valuation')
 
-def write_to_excel(filename, base_year_data, financial_data, valuation_params, company_profile, total_equity_risk_premium):
+def write_to_excel(filename, base_year_data, financial_data, valuation_params, company_profile, total_equity_risk_premium, gap_analysis_result=None):
     if not os.path.exists(EXCEL_OUTPUT_DIR):
         os.makedirs(EXCEL_OUTPUT_DIR)
     shutil.copy(EXCEL_TEMPLATE_PATH, filename)
@@ -66,16 +66,53 @@ def write_to_excel(filename, base_year_data, financial_data, valuation_params, c
     company_name = company_profile.get('companyName', 'N/A')
     ws6.cell(row=1, column=1).value = f"{company_name} - in {base_year_data.get('Reported Currency', '')}, millions"
 
-    ws6.cell(row=3, column=2).value = float(base_year_data['Revenue Growth'].replace(',', '')) / 100
+    ws6.cell(row=3, column=2).value = float(base_year_data['Revenue Growth']) / 100
     ws6.cell(row=4, column=2).value = float(base_year_data['Revenue'])
     ws6.cell(row=6, column=2).value = float(base_year_data['EBIT'])
-    ws6.cell(row=9, column=2).value = float(base_year_data['Total Reinvestments'].replace(',', ''))
+    ws6.cell(row=9, column=2).value = float(base_year_data['Total Reinvestments'])
     ws6.cell(row=22, column=2).value = float(base_year_data['Cash & Cash Equivalents'])
     ws6.cell(row=23, column=2).value = float(base_year_data['Total Investments'])
     ws6.cell(row=25, column=2).value = float(base_year_data['Total Debt'])
     ws6.cell(row=26, column=2).value = float(base_year_data['Minority Interest'])
     ws6.cell(row=28, column=2).value = base_year_data['Outstanding Shares']
     ws6.cell(row=33, column=2).value = float(base_year_data['Invested Capital'])
+
+    # Apply number format to historical summary data (ws2)
+    AMOUNT_ROWS = {'Revenue', 'EBIT', 'Depreciation & Amortization', 'Increase in Working Capital',
+                   'Capital Expenditure', 'Total Reinvestments', 'Total Debt', 'Total Equity',
+                   'Minority Interest', 'Cash & Cash Equivalents', 'Total Investments', 'Invested Capital'}
+    RATIO_ROWS = {'Revenue Growth', 'EBIT Growth', 'EBIT Margin', 'Tax Rate', 'Revenue to Invested Capital',
+                  'Debt to Assets', 'Cost of Debt', 'ROIC', 'ROE', 'Dividend Yield', 'Payout Ratio'}
+    for row in ws2.iter_rows(min_row=2):
+        row_label = row[0].value
+        if row_label in AMOUNT_ROWS:
+            for cell in row[1:]:
+                if isinstance(cell.value, (int, float)):
+                    cell.number_format = '#,##0'
+        elif row_label in RATIO_ROWS:
+            for cell in row[1:]:
+                if isinstance(cell.value, (int, float)):
+                    cell.number_format = '0.00'
+
+    # Write gap analysis to a new sheet if available
+    if gap_analysis_result and gap_analysis_result.get('analysis_text'):
+        ws_gap = wb.create_sheet('Gap Analysis')
+        currency = gap_analysis_result.get('currency', '')
+        ws_gap.cell(row=1, column=1).value = 'DCF 估值 vs 当前股价 差异分析'
+        from openpyxl.styles import Font
+        ws_gap.cell(row=1, column=1).font = Font(bold=True, size=14)
+        ws_gap.cell(row=3, column=1).value = f"当前股价: {gap_analysis_result['current_price']:.2f} {currency}"
+        ws_gap.cell(row=4, column=1).value = f"DCF 估值: {gap_analysis_result['dcf_price']:.2f} {currency}"
+        ws_gap.cell(row=5, column=1).value = f"差异: {gap_analysis_result['gap_pct']:+.1f}%"
+        if gap_analysis_result.get('adjusted_price') is not None:
+            ws_gap.cell(row=6, column=1).value = f"修正后估值: {gap_analysis_result['adjusted_price']:,.2f} {currency}"
+
+        # Write analysis text line by line starting from row 8
+        import re as _re
+        analysis_text = _re.sub(r'\n?\s*ADJUSTED_PRICE:.*$', '', gap_analysis_result['analysis_text']).strip()
+        for i, line in enumerate(analysis_text.split('\n'), start=8):
+            ws_gap.cell(row=i, column=1).value = line
+        ws_gap.column_dimensions['A'].width = 100
 
     for ws in [ws2, ws3, ws4, ws5]:
         for col in ws.columns:
@@ -121,7 +158,7 @@ def main(args):
         base_year_data = summary_df[base_year_col].copy()
 
         print(f"\n{company_name} Historical Financial Data (Summary, in millions):")
-        formatted_summary_df = format_summary_df(summary_df).copy()
+        formatted_summary_df = format_summary_df(summary_df)
         print(formatted_summary_df.to_string())
 
         if period == 'quarter':
@@ -173,6 +210,7 @@ def main(args):
                     company_profile=company_profile,
                     calculated_wacc=wacc,
                     calculated_tax_rate=average_tax_rate,
+                    base_year=base_year,
                 )
                 ai_params = interactive_review(ai_result, wacc, average_tax_rate, company_profile, wacc_details)
             except Exception as e:
@@ -253,13 +291,26 @@ def main(args):
 
         print("\nRunning sensitivity analysis...")
         sensitivity_table = sensitivity_analysis(base_year_data, valuation_params, financial_data, company_info, company_profile)
-        print("\nSensitivity Analysis (Price per Share):")
+        print("\nSensitivity Analysis - Revenue Growth vs EBIT Margin (Price per Share):")
         print(sensitivity_table)
+
+        print("\nRunning WACC sensitivity analysis...")
+        wacc_table = wacc_sensitivity_analysis(base_year_data, valuation_params, financial_data, company_info, company_profile)
+        print("\nSensitivity Analysis - WACC (Price per Share):")
+        print(wacc_table.T.to_string())
+
+        # AI gap analysis: compare DCF valuation vs current stock price
+        gap_analysis_result = None
+        if not args.manual:
+            try:
+                gap_analysis_result = analyze_valuation_gap(ticker, company_profile, results, valuation_params, summary_df, base_year)
+            except Exception as e:
+                print(f"\n估值差异分析出错: {e}")
 
         export_to_excel = input("\nDo you want to export the valuation results to Excel? (y/n): ").strip().lower()
         if export_to_excel == 'y':
             filename = os.path.join(EXCEL_OUTPUT_DIR, f"{company_name}_valuation_{date.today().strftime('%Y%m%d')}.xlsx")
-            write_to_excel(filename, base_year_data, financial_data, valuation_params, company_profile, total_equity_risk_premium)
+            write_to_excel(filename, base_year_data, financial_data, valuation_params, company_profile, total_equity_risk_premium, gap_analysis_result)
             print(f"\nValuation results saved to {filename}")
         else:
             print("\nSkipping Excel export.")

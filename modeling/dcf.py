@@ -89,8 +89,8 @@ def calculate_dcf(base_year_data, valuation_params, financial_data, company_info
     minority_interest = float(base_year_data['Minority Interest'])
     outstanding_shares = float(base_year_data['Outstanding Shares'])
     reported_currency = base_year_data.get('Reported Currency')
-    revenue_growth_rate_base_year = float(base_year_data['Revenue Growth'].replace(',', '')) / 100
-    reinvestments_base_year = float(base_year_data['Total Reinvestments'].replace(',', ''))
+    revenue_growth_rate_base_year = float(base_year_data['Revenue Growth']) / 100
+    reinvestments_base_year = float(base_year_data['Total Reinvestments'])
  
     revenue_growth_1 = valuation_params['revenue_growth_1'] / 100
     revenue_growth_2 = valuation_params['revenue_growth_2'] / 100
@@ -227,6 +227,26 @@ def sensitivity_analysis(base_year_data, valuation_params, financial_data, compa
     sensitivity_table = sensitivity_table.map(lambda x: f"{x:,.2f}")
 
     return sensitivity_table
+
+def wacc_sensitivity_analysis(base_year_data, valuation_params, financial_data, company_info, company_profile):
+    """Sensitivity analysis: price per share vs WACC."""
+    wacc_base = valuation_params['wacc']
+    wacc_range = [round(wacc_base + i * 0.5, 1) for i in range(-5, 6)]
+
+    results_list = []
+    for wacc_val in wacc_range:
+        updated_params = valuation_params.copy()
+        updated_params['wacc'] = wacc_val
+        result = calculate_dcf(base_year_data, updated_params, financial_data, company_info, company_profile)
+        results_list.append({
+            'WACC (%)': f"{wacc_val:.1f}%",
+            'Price per Share': f"{result['price_per_share']:,.2f}"
+        })
+
+    sensitivity_table = pd.DataFrame(results_list)
+    sensitivity_table = sensitivity_table.set_index('WACC (%)')
+    return sensitivity_table
+
 
 def print_dcf_results(results, company_name):
     dcf_table = results['dcf_table']

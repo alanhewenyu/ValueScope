@@ -8,10 +8,13 @@ import subprocess
 
 ANALYSIS_PROMPT_TEMPLATE = """你是一位资深的股权研究分析师和DCF估值专家。请根据以下历史财务数据和公开市场信息，为 {company_name} ({ticker}) 生成DCF估值参数建议。
 
+**注意：下方历史财务数据的最新年度（最左列）是 {base_year} 年。这是估值的 base year。请基于 {base_year} 年的最新数据进行分析，Year 1 对应 {forecast_year_1} 年。**
+
 **重要：请务必先使用 WebSearch 工具搜索以下信息再开始分析：**
-1. 搜索 "{ticker} revenue forecast 2025 2026 analyst consensus" — 获取分析师一致预期
-2. 搜索 "{ticker} EBIT margin operating margin industry average" — 获取行业 benchmark
-3. 搜索 "{ticker} WACC cost of capital" — 获取多源 WACC 数据
+1. 搜索 "{ticker} earnings guidance revenue outlook {forecast_year_1}" — 获取公司管理层业绩指引（最优先参考）
+2. 搜索 "{ticker} revenue forecast {forecast_year_1} {forecast_year_2} analyst consensus" — 获取分析师一致预期
+3. 搜索 "{ticker} EBIT margin operating margin industry average" — 获取行业 benchmark
+4. 搜索 "{ticker} WACC cost of capital" — 获取多源 WACC 数据
 
 ## 公司基本信息
 - 公司名称: {company_name}
@@ -19,12 +22,13 @@ ANALYSIS_PROMPT_TEMPLATE = """你是一位资深的股权研究分析师和DCF�
 - 所在国家: {country}
 - Beta: {beta}
 - 市值: {market_cap}
+- 估值 Base Year: {base_year}
 
 ## 已计算的参数（供参考）
 - 模型计算 WACC: {calculated_wacc}
 - 历史平均有效税率: {calculated_tax_rate}
 
-## 历史财务数据（单位：百万）
+## 历史财务数据（单位：百万，最左列为最新年度 {base_year}）
 {financial_table}
 
 ---
@@ -40,7 +44,7 @@ ANALYSIS_PROMPT_TEMPLATE = """你是一位资深的股权研究分析师和DCF�
 {{
   "revenue_growth_1": {{
     "value": <数值，如5表示5%>,
-    "reasoning": "<详细中文分析：基于什么数据源、什么逻辑得出此增长率。例如：根据分析师一致预期/管理层指引/行业趋势...>"
+    "reasoning": "<详细中文分析：**优先查找公司管理层最新业绩指引（earnings guidance）**，如果有明确的收入指引则以此为最重要参考依据；如果没有业绩指引，则重点参考分析师一致预期（analyst consensus）。请注明数据来源。>"
   }},
   "revenue_growth_2": {{
     "value": <数值>,
@@ -84,7 +88,7 @@ ANALYSIS_PROMPT_TEMPLATE = """你是一位资深的股权研究分析师和DCF�
 **注意：JSON 必须是有效格式，所有字符串用双引号，不要有注释。reasoning 中如有引用数据源请注明。**"""
 
 
-def analyze_company(ticker, summary_df, base_year_data, company_profile, calculated_wacc, calculated_tax_rate):
+def analyze_company(ticker, summary_df, base_year_data, company_profile, calculated_wacc, calculated_tax_rate, base_year):
     """
     Call Claude via CLI (using Max subscription) to analyze a company and generate DCF valuation parameters.
 
@@ -107,6 +111,9 @@ def analyze_company(ticker, summary_df, base_year_data, company_profile, calcula
         calculated_wacc=f"{calculated_wacc:.2%}",
         calculated_tax_rate=f"{calculated_tax_rate:.2%}",
         financial_table=financial_table,
+        base_year=base_year,
+        forecast_year_1=base_year + 1,
+        forecast_year_2=base_year + 2,
     )
 
     print(f"\n正在使用 AI 分析 {company_name} ({ticker})...")
@@ -284,6 +291,163 @@ def interactive_review(ai_result, calculated_wacc, calculated_tax_rate, company_
     print("=" * 60)
 
     return final_params
+
+
+GAP_ANALYSIS_PROMPT_TEMPLATE = """你是一位资深的股权研究分析师。请分析以下 DCF 估值结果与当前市场股价之间的差异，并给出可能的原因分析。
+
+## 公司信息
+- 公司名称: {company_name}
+- 股票代码: {ticker}
+- 所在国家: {country}
+- 当前股价: {current_price} {currency}
+- DCF 估值每股价格: {dcf_price:.2f} {currency}
+- 差异: {gap_pct:+.1f}% （{gap_direction}）
+
+## DCF 估值关键假设
+- Year 1 收入增长率: {revenue_growth_1}%
+- Years 2-5 复合增长率: {revenue_growth_2}%
+- 目标 EBIT Margin: {ebit_margin}%
+- WACC: {wacc}%
+- 税率: {tax_rate}%
+
+## 估值摘要（单位：百万）
+- 未来10年现金流现值: {pv_cf:,.0f}
+- 终值现值: {pv_terminal:,.0f}
+- 企业价值: {enterprise_value:,.0f}
+- 股权价值: {equity_value:,.0f}
+
+## 历史财务数据（单位：百万）
+{financial_table}
+
+---
+
+**请使用 WebSearch 搜索以下信息来辅助分析：**
+1. 搜索 "{ticker} stock price target analyst {forecast_year}" — 获取分析师目标价
+2. 搜索 "{ticker} risks challenges {forecast_year}" — 获取公司面临的风险
+3. 搜索 "{ticker} growth catalysts outlook" — 获取增长催化剂
+
+请用**中文**进行分析，包含以下内容：
+
+1. **估值差异总结**：简要说明 DCF 估值与市场价的差异幅度和方向
+2. **可能的高估/低估原因**（至少列出3-5个因素）：
+   - 市场情绪/宏观因素
+   - 行业趋势/竞争格局变化
+   - 公司特有风险或催化剂
+   - DCF 模型假设可能过于保守/激进的地方
+   - 市场对未来增长预期的共识与 DCF 假设的对比
+3. **分析师共识对比**：将 DCF 结果与搜索到的分析师目标价进行对比
+4. **建议**：基于以上分析，给出对估值结果的信心评价和需要关注的关键风险
+5. **修正后估值**：综合以上分析因素（市场预期差异、风险溢价调整、增长假设修正等），给出你认为更合理的每股内在价值。请在分析最后一行，严格按以下格式输出（仅数字，不含货币符号）：
+   ADJUSTED_PRICE: <数值>
+
+请直接输出分析内容，不需要 JSON 格式（仅最后一行的 ADJUSTED_PRICE 需要严格格式）。"""
+
+
+def analyze_valuation_gap(ticker, company_profile, results, valuation_params, summary_df, base_year):
+    """
+    Call Claude via CLI to analyze the gap between DCF valuation and current stock price.
+
+    Returns:
+        dict with 'analysis_text' (str) and 'adjusted_price' (float or None), or None on failure.
+    """
+    company_name = company_profile.get('companyName', ticker)
+    country = company_profile.get('country', 'United States')
+    currency = company_profile.get('currency', 'USD')
+    current_price = company_profile.get('price', 0)
+    dcf_price = results['price_per_share']
+
+    if current_price == 0:
+        print("\n无法获取当前股价，跳过估值差异分析。")
+        return None
+
+    gap_pct = (dcf_price - current_price) / current_price * 100
+    gap_direction = 'DCF 估值高于市场价，市场可能低估' if gap_pct > 0 else 'DCF 估值低于市场价，市场可能高估'
+
+    financial_table = summary_df.to_string()
+
+    prompt = GAP_ANALYSIS_PROMPT_TEMPLATE.format(
+        company_name=company_name,
+        ticker=ticker,
+        country=country,
+        current_price=current_price,
+        currency=currency,
+        dcf_price=dcf_price,
+        gap_pct=gap_pct,
+        gap_direction=gap_direction,
+        revenue_growth_1=valuation_params['revenue_growth_1'],
+        revenue_growth_2=valuation_params['revenue_growth_2'],
+        ebit_margin=valuation_params['ebit_margin'],
+        wacc=valuation_params['wacc'],
+        tax_rate=valuation_params['tax_rate'],
+        pv_cf=results['pv_cf_next_10_years'],
+        pv_terminal=results['pv_terminal_value'],
+        enterprise_value=results['enterprise_value'],
+        equity_value=results['equity_value'],
+        financial_table=financial_table,
+        forecast_year=base_year + 1,
+    )
+
+    print(f"\n{'=' * 60}")
+    print(f"DCF 估值 vs 当前股价 差异分析")
+    print(f"{'=' * 60}")
+    print(f"  当前股价:     {current_price:.2f} {currency}")
+    print(f"  DCF 估值:     {dcf_price:.2f} {currency}")
+    print(f"  差异:         {gap_pct:+.1f}%")
+    print(f"\n正在使用 AI 分析估值差异原因...")
+
+    env = os.environ.copy()
+    env.pop('CLAUDECODE', None)
+
+    try:
+        result = subprocess.run(
+            ['claude', '-p', prompt, '--allowedTools', 'WebSearch,WebFetch'],
+            capture_output=True, text=True, timeout=300, env=env,
+        )
+
+        if result.returncode != 0:
+            error_msg = result.stderr.strip() or "Unknown error"
+            print(f"\nAI 分析调用失败: {error_msg}")
+            return None
+
+        analysis_text = result.stdout.strip()
+        if not analysis_text:
+            print("\nAI 返回空内容，跳过差异分析。")
+            return None
+
+        # Parse adjusted price from the last line
+        adjusted_price = None
+        price_match = re.search(r'ADJUSTED_PRICE:\s*([\d.,]+)', analysis_text)
+        if price_match:
+            try:
+                adjusted_price = float(price_match.group(1).replace(',', ''))
+            except ValueError:
+                pass
+
+        # Display analysis (strip the ADJUSTED_PRICE line from display)
+        display_text = re.sub(r'\n?\s*ADJUSTED_PRICE:.*$', '', analysis_text).strip()
+        print(f"\n{'─' * 60}")
+        print(display_text)
+        print(f"{'─' * 60}")
+
+        if adjusted_price is not None:
+            adj_gap_pct = (adjusted_price - current_price) / current_price * 100
+            print(f"\n  综合差异分析后修正估值: {adjusted_price:,.2f} {currency}（相对当前股价 {adj_gap_pct:+.1f}%）")
+
+        return {
+            'analysis_text': analysis_text,
+            'adjusted_price': adjusted_price,
+            'current_price': current_price,
+            'dcf_price': dcf_price,
+            'gap_pct': gap_pct,
+            'currency': currency,
+        }
+
+    except subprocess.TimeoutExpired:
+        print("\nAI 分析超时，跳过差异分析。")
+        return None
+    except Exception as e:
+        print(f"\nAI 差异分析出错: {e}")
+        return None
 
 
 def _print_wrapped(text, indent="    ", width=70):
