@@ -17,10 +17,10 @@ ValuX 是一个基于现金流折现模型（DCF）的 AI 股票估值工具。�
 - **多引擎 AI Copilot** — 支持三种 AI 引擎：[Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Gemini CLI](https://github.com/google-gemini/gemini-cli)、[Qwen Code](https://github.com/QwenLM/qwen-code)。启动时自动检测已安装的引擎（优先级：Claude > Gemini > Qwen），也可通过 `--engine` 指定。AI 分析公司基本面，搜索分析师预期和业绩指引，为每个 DCF 参数给出建议值和详细分析。你逐项审核，按 Enter 接受或输入新值覆盖。
 - **手动模式** — 想完全自己掌控？使用 `--manual` 手动输入所有参数。无需 AI 引擎或 API Key。
 - **全自动模式** — 使用 `--auto` 实现全自动流程：AI 分析、自动采纳参数、自动导出 Excel，无需任何交互。
-- **估值差异分析** — 估值完成后，AI 对比 DCF 结果与当前股价，搜索分析师目标价，分析差异原因并给出修正估值。
+- **估值差异分析** — 估值完成后，AI 对比 DCF 结果与当前股价，搜索分析师目标价，分析差异原因并给出修正后估值。
 - **敏感性分析** — 生成收入增长率 × EBIT 利润率、WACC 两组敏感性分析表，展示每股价值的可能范围。
 - **Excel 导出** — 将估值结果、历史数据、财务报表和 AI 差异分析导出为格式化的 Excel 工作簿。
-- **全球覆盖** — 支持美股、A 股、港股等全球市场，根据不同国家的无风险利率和股权风险溢价自动计算 WACC。
+- **全球覆盖** — 支持 A 股、港股、美股、日股等全球市场，根据不同国家的无风险利率和股权风险溢价自动计算 WACC。
 - **A 股和港股免费使用** — A 股（akshare）和港股年度数据（yfinance）无需 API Key。配合手动模式，可实现完全免费的估值计算。
 
 ---
@@ -60,11 +60,11 @@ ValuX 根据不同市场使用不同数据源，兼顾数据质量和使用成�
 | **美股及其他** | [FMP](https://financialmodelingprep.com/) | FMP | 需要 FMP Key |
 
 **为什么使用多个数据源？**
-- **akshare** 提供中国 GAAP 原始利润表，用于准确计算 EBIT。
-- **yfinance** 免费提供可靠的港股年度财务数据。港股季度数据则通过 FMP 获取完整季度明细。
-- **FMP** 是美股和国际股票的主要数据源，提供财务报表、市场数据、公司信息和风险溢价等。
+- **akshare** — 免费，无需 API Key。A 股历史财务数据为原始报表数据，质量可靠，方便准确计算估值所需财务指标。
+- **yfinance** — 免费，无需 API Key。港股年度及 TTM 财务数据较全，质量可靠（但不提供季度和半年度数据）。
+- **FMP** — 付费，需要 API Key。美股和国际股票的主要数据源，提供财务报表、市场数据、公司信息和风险溢价等。此外，港股季度财务数据也由 FMP 提供。
 
-> **完全没有 API Key？** 你仍然可以免费查询 A 股和港股年度数据。使用 `--manual` 模式手动输入估值参数，即可获得完全免费的估值方案。
+> **没有 FMP API Key？** 你仍然可以免费查询 A 股和港股年度数据。使用 `--manual` 模式手动输入估值参数，即可获得完全免费的估值方案。
 
 ---
 
@@ -115,7 +115,7 @@ pip install -r requirements.txt
 
 ### 3. 设置 FMP API Key（可选）
 
-美股和港股季度数据需要。A 股和港股年度数据不需要。
+FMP API 主要用于美股 DCF 估值，A 股和港股估值不需要 FMP API。
 
 在 [Financial Modeling Prep](https://financialmodelingprep.com/) 注册账户并设置 API Key：
 
