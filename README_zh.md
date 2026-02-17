@@ -53,11 +53,11 @@ ValuX 是一个基于现金流折现模型（DCF）的 AI 股票估值工具。�
 
 ValuX 根据不同市场使用不同数据源，兼顾数据质量和使用成本：
 
-| 市场 | 年度数据 | 季度数据 | TTM | API Key |
-|------|---------|---------|-----|---------|
-| **A 股** | [akshare](https://github.com/akfamily/akshare) | akshare | akshare（YTD 累计） | **不需要**（免费） |
-| **港股** | [yfinance](https://github.com/ranaroussi/yfinance) | [FMP](https://financialmodelingprep.com/) | yfinance | 年度：**免费**；季度：需要 FMP Key |
-| **美股及其他** | [FMP](https://financialmodelingprep.com/) | FMP | FMP（累加 4 个季度） | 需要 FMP Key |
+| 市场 | 年度数据 | 季度数据 | API Key |
+|------|---------|---------|---------|
+| **A 股** | [akshare](https://github.com/akfamily/akshare) | akshare | **不需要**（免费） |
+| **港股** | [yfinance](https://github.com/ranaroussi/yfinance) | [FMP](https://financialmodelingprep.com/) | 年度：**免费**；季度：需要 FMP Key |
+| **美股及其他** | [FMP](https://financialmodelingprep.com/) | FMP | 需要 FMP Key |
 
 **为什么使用多个数据源？**
 - **akshare** 提供中国 GAAP 原始利润表，用于准确计算 EBIT。

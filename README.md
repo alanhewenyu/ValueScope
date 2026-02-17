@@ -53,11 +53,11 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 
 ValuX uses different data sources depending on the market, optimizing for data quality and cost:
 
-| Market | Annual Data | Quarterly Data | TTM | API Key |
-|--------|------------|----------------|-----|---------|
-| **China A-shares** | [akshare](https://github.com/akfamily/akshare) | akshare | akshare (YTD cumulative) | **Not required** (free) |
-| **Hong Kong** | [yfinance](https://github.com/ranaroussi/yfinance) | [FMP](https://financialmodelingprep.com/) | yfinance | Annual: **free**; Quarterly: FMP key required |
-| **US & Others** | [FMP](https://financialmodelingprep.com/) | FMP | FMP (sum of 4 quarters) | FMP key required |
+| Market | Annual Data | Quarterly Data | API Key |
+|--------|------------|----------------|---------|
+| **China A-shares** | [akshare](https://github.com/akfamily/akshare) | akshare | **Not required** (free) |
+| **Hong Kong** | [yfinance](https://github.com/ranaroussi/yfinance) | [FMP](https://financialmodelingprep.com/) | Annual: **free**; Quarterly: FMP key required |
+| **US & Others** | [FMP](https://financialmodelingprep.com/) | FMP | FMP key required |
 
 **Why multiple data sources?**
 - **akshare** provides original China GAAP profit statements for accurate EBIT calculation.
