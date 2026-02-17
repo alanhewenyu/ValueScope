@@ -14,5 +14,11 @@ While the riskfree rate (e.g., 3-4%) is a close approximation of the average, yo
 """
 
 RISK_FREE_RATE_US = 0.04  # 美国无风险利率 4%
-RISK_FREE_RATE_CHINA = 0.03  # 中国无风险利率 2.5%
+RISK_FREE_RATE_CHINA = 0.025  # 中国无风险利率 2.5%
 RISK_FREE_RATE_INTERNATIONAL = 0.03  # 其他国家无风险利率 3%
+
+CHINA_MARKET_RISK_PREMIUM = 0.065  # 中国市场风险溢价 6.5%
+CHINA_DEFAULT_BETA = 1.0           # A股默认Beta
+
+HK_MARKET_RISK_PREMIUM = 0.065    # 香港市场风险溢价 6.5%
+HK_DEFAULT_BETA = 1.0             # 港股默认Beta

@@ -4,3 +4,4 @@ requests
 numpy
 urllib3
 akshare
+yfinance

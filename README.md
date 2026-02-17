@@ -14,12 +14,14 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 
 ## Key Features
 
-- **AI Copilot Mode** — Powered by [Claude Code](https://docs.anthropic.com/en/docs/claude-code), an AI coding tool developed by Anthropic. The AI analyzes the company, searches the web for analyst forecasts and earnings guidance, and suggests DCF parameters with detailed reasoning. You review and adjust each parameter interactively. See [Set Up AI Copilot](#4-set-up-ai-copilot-optional) for details.
-- **Manual Mode** — Prefer full control? Use `--manual` to input all parameters yourself.
+- **Multi-Engine AI Copilot** — Supports three AI engines: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Gemini CLI](https://github.com/google-gemini/gemini-cli), and [Qwen Code](https://github.com/QwenLM/qwen-code). Auto-detects installed engines (priority: Claude > Gemini > Qwen), or specify one with `--engine`. AI analyzes the company, searches the web for analyst forecasts and earnings guidance, and suggests DCF parameters with detailed reasoning. You review and adjust each parameter interactively.
+- **Manual Mode** — Prefer full control? Use `--manual` to input all parameters yourself. No AI engine or API key required.
+- **Auto Mode** — Use `--auto` for a fully automated pipeline: AI analysis, parameter acceptance, and Excel export with no interaction.
 - **Gap Analysis** — After valuation, AI compares your DCF result against the current stock price, searches for analyst price targets, and explains potential reasons for the discrepancy.
 - **Sensitivity Analysis** — Generates sensitivity tables for Revenue Growth vs EBIT Margin and WACC, showing the range of possible per-share valuations.
 - **Excel Export** — Exports valuation results, historical data, financial statements, and AI gap analysis to a formatted Excel workbook.
 - **Global Coverage** — Supports US, China A-shares, Hong Kong, and other markets, with automatic WACC calculation based on country-specific risk-free rates and equity risk premiums.
+- **Free Tier for A-shares & HK Stocks** — A-shares (via akshare) and HK annual data (via yfinance) require no API key. Combined with manual mode, you get a fully free valuation workflow.
 
 ---
 
@@ -27,9 +29,11 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  Enter stock symbol  →  Fetch historical financials          │
+│  Enter stock symbol  →  Fetch annual historical financials   │
 │                          ↓                                   │
-│  Display historical data summary                             │
+│  Display historical data summary (with TTM if available)     │
+│                          ↓                                   │
+│  [Optional] View quarterly data as reference                 │
 │                          ↓                                   │
 │  AI Copilot: search web → suggest parameters → you review    │
 │                          ↓                                   │
@@ -47,10 +51,48 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 
 ## Data Sources
 
-| Source | Coverage | API Key | Description |
-|--------|----------|---------|-------------|
-| [**FMP**](https://financialmodelingprep.com/) | Global (US, China A-shares, HK, etc.) | Required | Financial statements, market data, valuation metrics, company profiles, risk premiums. Primary data source for all markets. |
-| [**akshare**](https://github.com/akfamily/akshare) | China A-shares | Not required | Used to fetch original China GAAP profit statements and calculate EBIT accurately. FMP's operating income for Chinese stocks includes non-operating items (investment income, fair value changes, etc.); akshare provides the raw data needed to compute a clean EBIT. |
+ValuX uses different data sources depending on the market, optimizing for data quality and cost:
+
+| Market | Annual Data | Quarterly Data | TTM | API Key |
+|--------|------------|----------------|-----|---------|
+| **China A-shares** | [akshare](https://github.com/akfamily/akshare) | akshare | akshare (YTD cumulative) | **Not required** (free) |
+| **Hong Kong** | [yfinance](https://github.com/ranaroussi/yfinance) | [FMP](https://financialmodelingprep.com/) | yfinance | Annual: **free**; Quarterly: FMP key required |
+| **US & Others** | [FMP](https://financialmodelingprep.com/) | FMP | FMP (sum of 4 quarters) | FMP key required |
+
+**Why multiple data sources?**
+- **akshare** provides original China GAAP profit statements for accurate EBIT calculation.
+- **yfinance** provides reliable HK annual financial data without an API key. HK quarterly data routes to FMP for full quarterly breakdown.
+- **FMP** is the primary data source for US and international stocks, providing financial statements, market data, company profiles, and risk premiums.
+
+> **No API key at all?** You can still query A-shares and HK annual data for free. Use `--manual` mode to input valuation parameters yourself — a fully free workflow.
+
+---
+
+## AI Engines
+
+ValuX supports three AI engines. On startup, it auto-detects installed CLI tools (priority: Claude > Gemini > Qwen). You can also force a specific engine with `--engine`.
+
+| Engine | CLI Tool | Install | Notes |
+|--------|----------|---------|-------|
+| **Claude** | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `npm install -g @anthropic-ai/claude-code` | Default if available. Requires Anthropic account. |
+| **Gemini** | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `npm install -g @google/gemini-cli` | Free with Google account login. |
+| **Qwen** | [Qwen Code](https://github.com/QwenLM/qwen-code) | `npm install -g @anthropic-ai/qwen-code` | Free with qwen.ai account login. |
+
+If no AI engine is detected, ValuX automatically falls back to manual mode.
+
+---
+
+## Running Modes
+
+| Mode | Command | AI Required | Description |
+|------|---------|-------------|-------------|
+| **Copilot** (default) | `python main.py` | Yes | AI suggests each parameter with reasoning; you review and adjust interactively. |
+| **Manual** | `python main.py --manual` | No | You input all valuation parameters yourself. Works without any AI engine or API key. |
+| **Auto** | `python main.py --auto` | Yes | Fully automated: AI analysis → auto-accept parameters → auto-export Excel. No user interaction. |
+
+Additional flags:
+- `--engine claude|gemini|qwen` — Force a specific AI engine instead of auto-detection.
+- `--apikey YOUR_KEY` — Pass FMP API key directly (alternative to `FMP_API_KEY` env variable).
 
 ---
 
@@ -71,7 +113,9 @@ Requires Python 3.8+.
 pip install -r requirements.txt
 ```
 
-### 3. Get an FMP API Key
+### 3. Set Up FMP API Key (Optional)
+
+Required for US stocks and HK quarterly data. Not required for A-shares or HK annual data.
 
 Register at [Financial Modeling Prep](https://financialmodelingprep.com/) and set your API key:
 
@@ -79,30 +123,39 @@ Register at [Financial Modeling Prep](https://financialmodelingprep.com/) and se
 export FMP_API_KEY='your_api_key_here'
 ```
 
-### 4. Set Up AI Copilot (Optional)
+### 4. Set Up AI Engine (Optional)
 
-The AI features require [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated. ValuX calls Claude via CLI to perform web search and generate analysis. The model used depends on your Claude Code configuration (defaults to Claude Sonnet). You can switch models via `claude config set model` if you have access to other models (e.g., Claude Opus).
-
-If Claude CLI is not available, ValuX automatically falls back to manual mode.
+Install any one of the supported AI CLI tools:
 
 ```bash
-claude --version
+# Option 1: Claude Code (recommended)
+npm install -g @anthropic-ai/claude-code
+
+# Option 2: Gemini CLI (free with Google account)
+npm install -g @google/gemini-cli
+
+# Option 3: Qwen Code (free with qwen.ai account)
+npm install -g @anthropic-ai/qwen-code
 ```
+
+If no AI engine is available, ValuX falls back to manual mode automatically.
 
 ### 5. Run
 
 ```bash
-python main.py              # AI copilot mode (default)
-python main.py --manual     # Manual input mode
+python main.py                      # AI copilot mode (default)
+python main.py --manual             # Manual input mode
+python main.py --auto               # Full auto mode
+python main.py --engine gemini      # Force Gemini engine
 ```
 
 ---
 
 ## Usage
 
-1. **Enter stock symbol** — e.g., `AAPL`, `600519.SS` (Moutai), `000333.SZ` (Midea)
-2. **Select period** — `annual` or `quarter`
-3. **Review historical data** — The program displays a financial summary table.
+1. **Enter stock symbol** — e.g., `AAPL`, `600519.SS` (Moutai), `0700.HK` (Tencent)
+2. **Review annual historical data** — The program fetches and displays the annual financial summary with TTM data (if available).
+3. **View quarterly data** (optional) — Choose to view quarterly financial data as a reference before valuation.
 4. **AI parameter generation** (or manual input) — AI suggests each parameter with reasoning; press Enter to accept or type a new value.
 5. **View DCF results** — Intrinsic value per share and the full calculation breakdown.
 6. **Sensitivity analysis** — Two tables: Revenue Growth vs EBIT Margin, and WACC sensitivity.
@@ -127,6 +180,8 @@ Percentage parameters (revenue growth, EBIT margin, tax rate, WACC) are entered 
 | **Tax Rate** | Auto-calculated from historical data; adjustable. |
 | **WACC** | Auto-calculated from risk-free rate, equity risk premium, and beta; adjustable. |
 | **RONIC** | Return on new invested capital in the terminal period. Defaults to WACC (competitive equilibrium) or WACC + 5% for companies with durable competitive advantages. |
+
+> **Note on EBIT**: For A-shares, EBIT is calculated from akshare raw data with non-operating items (investment income, fair value changes, etc.) excluded. For HK stocks, operating income is used directly; some companies may include material non-operating items that are not stripped out — review with caution.
 
 ---
 

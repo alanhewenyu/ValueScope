@@ -1,6 +1,6 @@
 import pandas as pd
 from .data import fetch_market_risk_premium, fetch_company_profile, fetch_forex_data
-from .constants import MARGINAL_TAX_RATE, TERMINAL_RISK_PREMIUM, RISK_FREE_RATE_US, RISK_FREE_RATE_CHINA, RISK_FREE_RATE_INTERNATIONAL
+from .constants import MARGINAL_TAX_RATE, TERMINAL_RISK_PREMIUM, RISK_FREE_RATE_US, RISK_FREE_RATE_CHINA, RISK_FREE_RATE_INTERNATIONAL, CHINA_MARKET_RISK_PREMIUM, HK_MARKET_RISK_PREMIUM
 from . import style as S
 
 def get_risk_free_rate(country):
@@ -11,19 +11,35 @@ def get_risk_free_rate(country):
         return RISK_FREE_RATE_US
     elif country in ['China', 'CN']:
         return RISK_FREE_RATE_CHINA
+    elif country in ['Hong Kong', 'HK']:
+        return RISK_FREE_RATE_INTERNATIONAL
     else:
         return RISK_FREE_RATE_INTERNATIONAL
 
 def calculate_wacc(base_year_data, company_profile, apikey, verbose=True):
-    forex_data = fetch_forex_data(apikey)
-    country_mapping = {'CN': 'China', 'US': 'United States'}
+    country_mapping = {'CN': 'China', 'US': 'United States', 'HK': 'Hong Kong'}
     country = company_profile.get('country', 'United States')
     mapped_country = country_mapping.get(country, country)
 
-    market_risk_premium_data = fetch_market_risk_premium(apikey)
-    total_equity_risk_premium = market_risk_premium_data.get(mapped_country, 5.0) / 100
+    # For A-shares (China) and HK stocks, skip FMP API calls for market risk premium
+    if mapped_country == 'China':
+        forex_data = {}
+        total_equity_risk_premium = CHINA_MARKET_RISK_PREMIUM
+    elif mapped_country == 'Hong Kong':
+        total_equity_risk_premium = HK_MARKET_RISK_PREMIUM
+        # Forex: some HK-listed companies report in different currency (e.g. CNY)
+        reporting_currency = base_year_data.get('Reported Currency', 'HKD')
+        company_currency = company_profile.get('currency', 'HKD')
+        if company_currency != reporting_currency and apikey:
+            forex_data = fetch_forex_data(apikey)
+        else:
+            forex_data = {}
+    else:
+        forex_data = fetch_forex_data(apikey)
+        market_risk_premium_data = fetch_market_risk_premium(apikey)
+        total_equity_risk_premium = market_risk_premium_data.get(mapped_country, 5.0) / 100
 
-    total_debt = float(base_year_data.get('Total Debt', 0))
+    total_debt = float(base_year_data.get('(+) Total Debt', 0))
     market_cap = float(company_profile.get('marketCap', 0))
     reporting_currency = base_year_data.get('Reported Currency', 'USD')
     company_currency = company_profile.get('currency', 'USD')
@@ -34,7 +50,7 @@ def calculate_wacc(base_year_data, company_profile, apikey, verbose=True):
         market_cap = market_cap * exchange_rate
 
     beta = float(company_profile.get('beta', 1.0))
-    cost_of_debt = float(base_year_data.get('Cost of Debt', 0)) / 100
+    cost_of_debt = float(base_year_data.get('Cost of Debt (%)', 0)) / 100
 
     if pd.isna(total_debt) or total_debt == 0:
         if verbose:
@@ -77,7 +93,7 @@ def print_wacc_details(wacc_details):
     max_value_length = max(len(val) for _, val in wacc_details)
     for lbl, val in wacc_details:
         is_result = lbl.startswith('Calculated')
-        lbl_str = S.label(lbl.ljust(max_label_length)) if is_result else f"  {lbl.ljust(max_label_length)}"
+        lbl_str = f"  {S.label(lbl.ljust(max_label_length))}" if is_result else f"  {lbl.ljust(max_label_length)}"
         val_str = S.value(val.rjust(max_value_length)) if is_result else val.rjust(max_value_length)
         print(f"{lbl_str} : {val_str}")
 
@@ -87,14 +103,14 @@ def calculate_dcf(base_year_data, valuation_params, financial_data, company_info
     ebit = float(base_year_data['EBIT'])
     tax_rate = float(base_year_data['Average Tax Rate'])
     invested_capital = float(base_year_data['Invested Capital'])
-    cash = float(base_year_data['Cash & Cash Equivalents'])
-    total_investments = float(base_year_data['Total Investments'])
-    total_debt = float(base_year_data['Total Debt'])
+    cash = float(base_year_data['(-) Cash & Equivalents'])
+    total_investments = float(base_year_data['(-) Total Investments'])
+    total_debt = float(base_year_data['(+) Total Debt'])
     minority_interest = float(base_year_data['Minority Interest'])
     outstanding_shares = float(base_year_data['Outstanding Shares'])
     reported_currency = base_year_data.get('Reported Currency')
-    revenue_growth_rate_base_year = float(base_year_data['Revenue Growth']) / 100
-    reinvestments_base_year = float(base_year_data['Total Reinvestments'])
+    revenue_growth_rate_base_year = float(base_year_data['Revenue Growth (%)']) / 100
+    reinvestments_base_year = float(base_year_data['Total Reinvestment'])
  
     revenue_growth_1 = valuation_params['revenue_growth_1'] / 100
     revenue_growth_2 = valuation_params['revenue_growth_2'] / 100
@@ -190,7 +206,10 @@ def calculate_dcf(base_year_data, valuation_params, financial_data, company_info
     enterprise_value = pv_cf_next_10_years + pv_terminal_value + cash + total_investments
 
     equity_value = enterprise_value - total_debt - minority_interest
-    price_per_share = (equity_value * 1_000_000) / outstanding_shares
+    if outstanding_shares > 0:
+        price_per_share = (equity_value * 1_000_000) / outstanding_shares
+    else:
+        price_per_share = 0
 
     results = {
         'dcf_table': dcf_table,
@@ -224,35 +243,92 @@ def sensitivity_analysis(base_year_data, valuation_params, financial_data, compa
             results = calculate_dcf(base_year_data, updated_params, financial_data, company_info, company_profile)
             sensitivity_table.loc[revenue_growth_2, ebit_margin] = results['price_per_share']
 
-    sensitivity_table.index.name = 'Revenue Growth (%)'
-    sensitivity_table.columns.name = 'EBIT Margin (%)'
-    sensitivity_table.index = sensitivity_table.index.map(lambda x: f"{int(x)}%")
-    sensitivity_table.columns = sensitivity_table.columns.map(lambda x: f"{int(x)}%")
-    sensitivity_table = sensitivity_table.map(lambda x: f"{x:,.2f}")
-
     return sensitivity_table
+
+
+def print_sensitivity_table(table, valuation_params):
+    """Print revenue growth vs EBIT margin sensitivity table with highlighting."""
+    base_growth = valuation_params['revenue_growth_2']
+    base_margin = valuation_params['ebit_margin']
+
+    # Column header (EBIT Margin label + values)
+    col_width = 10
+    row_label_width = 8
+    margin_label = f"{S.DIM}{'EBIT ▸':>{row_label_width}}{S.RESET}  "
+    header = margin_label
+    for col in table.columns:
+        col_str = f"{int(col)}%"
+        if col == base_margin:
+            header += f"{S.BOLD}{S.BRIGHT_CYAN}{col_str:>{col_width}}{S.RESET}"
+        else:
+            header += f"{col_str:>{col_width}}"
+    print(header)
+    # Separator
+    print(f"{S.DIM}{'Growth ▾':>{row_label_width}}{S.RESET}  {'─' * (col_width * len(table.columns))}")
+
+    # Data rows
+    for idx in table.index:
+        # Row label
+        row_label = f"{int(idx)}%"
+        if idx == base_growth:
+            row_str = f"{S.BOLD}{S.BRIGHT_CYAN}{row_label:>{row_label_width}}{S.RESET} |"
+        else:
+            row_str = f"{row_label:>{row_label_width}} |"
+
+        for col in table.columns:
+            val = table.loc[idx, col]
+            formatted = f"{val:,.0f}"
+            if idx == base_growth and col == base_margin:
+                row_str += f"{S.BOLD}{S.BRIGHT_GREEN}{formatted:>{col_width}}{S.RESET}"
+            elif idx == base_growth or col == base_margin:
+                row_str += f"{S.BRIGHT_CYAN}{formatted:>{col_width}}{S.RESET}"
+            else:
+                row_str += f"{formatted:>{col_width}}"
+        print(row_str)
+
 
 def wacc_sensitivity_analysis(base_year_data, valuation_params, financial_data, company_info, company_profile):
     """Sensitivity analysis: price per share vs WACC."""
     wacc_base = valuation_params['wacc']
-    wacc_range = [round(wacc_base + i * 0.5, 1) for i in range(-5, 6)]
+    # Round base to 1 decimal so it matches a wacc_range entry (which are all round(..., 1))
+    wacc_base_rounded = round(wacc_base, 1)
+    wacc_range = [round(wacc_base_rounded + i * 0.5, 1) for i in range(-5, 6)]
 
-    results_list = []
+    results_list = {}
     for wacc_val in wacc_range:
         updated_params = valuation_params.copy()
         updated_params['wacc'] = wacc_val
         result = calculate_dcf(base_year_data, updated_params, financial_data, company_info, company_profile)
-        results_list.append({
-            'WACC (%)': f"{wacc_val:.1f}%",
-            'Price per Share': f"{result['price_per_share']:,.2f}"
-        })
+        results_list[wacc_val] = result['price_per_share']
 
-    sensitivity_table = pd.DataFrame(results_list)
-    sensitivity_table = sensitivity_table.set_index('WACC (%)')
-    return sensitivity_table
+    return results_list, wacc_base_rounded
 
 
-def print_dcf_results(results, company_name):
+def print_wacc_sensitivity(results_list, wacc_base):
+    """Print WACC sensitivity table with highlighting."""
+    col_width = 12
+    # Header row
+    header = ' ' * 4
+    for wacc_val in results_list:
+        wacc_str = f"{wacc_val:.1f}%"
+        if wacc_val == wacc_base:
+            header += f"{S.BOLD}{S.BRIGHT_CYAN}{wacc_str:>{col_width}}{S.RESET}"
+        else:
+            header += f"{wacc_str:>{col_width}}"
+    print(header)
+
+    # Value row
+    row_str = '    '
+    for wacc_val, price in results_list.items():
+        formatted = f"{price:,.0f}"
+        if wacc_val == wacc_base:
+            row_str += f"{S.BOLD}{S.BRIGHT_GREEN}{formatted:>{col_width}}{S.RESET}"
+        else:
+            row_str += f"{formatted:>{col_width}}"
+    print(row_str)
+
+
+def print_dcf_results(results, company_name, ttm_quarter='', ttm_label=''):
     dcf_table = results['dcf_table']
     print(f"\n{S.header(f'{company_name} Free Cashflow Forecast Results - 10 years, in millions')}")
 
@@ -267,7 +343,14 @@ def print_dcf_results(results, company_name):
         elif col in ['Revenue', 'EBIT', 'EBIT(1-t)', 'Reinvestments', 'FCFF', 'PV (FCFF)']:
             formatted_dcf_table[col] = formatted_dcf_table[col].apply(lambda x: f"{x:,.0f}" if pd.notnull(x) else 'N/A')
 
-    formatted_dcf_table.index = ['Base Year'] + list(range(1, 11)) + ['Terminal Year']
+    # ttm_label: e.g. '2026Q1 TTM'; ttm_quarter: legacy fallback e.g. 'Q1'
+    if ttm_label:
+        base_label = f'Base ({ttm_label})'
+    elif ttm_quarter:
+        base_label = f'Base ({ttm_quarter} LTM)'
+    else:
+        base_label = 'Base Year'
+    formatted_dcf_table.index = [base_label] + list(range(1, 11)) + ['Terminal Year']
 
     print(formatted_dcf_table.T.to_string())
 

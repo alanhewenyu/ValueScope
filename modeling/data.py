@@ -1,13 +1,82 @@
 from urllib.request import urlopen
-import json, traceback
+import re, json, traceback
 import pandas as pd
 from . import style as S
+from .constants import CHINA_DEFAULT_BETA
 
-try:
-    import akshare as ak
-    HAS_AKSHARE = True
-except ImportError:
-    HAS_AKSHARE = False
+# Lazy-loaded: akshare is only needed for A-shares and takes ~1s to import
+ak = None
+
+def _get_ak():
+    """Lazy import akshare on first use."""
+    global ak
+    if ak is None:
+        import akshare as _ak
+        ak = _ak
+    return ak
+
+
+def _normalize_ticker(ticker):
+    """Normalize ticker: convert .SH alias to .SS for internal consistency.
+
+    Shanghai Stock Exchange uses .SS (Yahoo/FMP convention). Users may also enter
+    .SH (intuitive Chinese abbreviation 上海=SH). Both are accepted, but .SH is
+    auto-converted to .SS internally since FMP and other data sources use .SS.
+    """
+    t = ticker.strip().upper()
+    if t.endswith('.SH'):
+        return t[:-3] + '.SS'
+    return t
+
+
+def is_a_share(ticker):
+    """Return True if ticker is a Chinese A-share (SSE/SZSE)."""
+    t = _normalize_ticker(ticker)
+    return t.endswith('.SS') or t.endswith('.SZ')
+
+
+def is_hk_stock(ticker):
+    """Return True if ticker is a Hong Kong stock (.HK)."""
+    t = _normalize_ticker(ticker)
+    return t.endswith('.HK')
+
+
+def validate_ticker(ticker):
+    """Validate stock ticker format. Returns (is_valid, error_message).
+
+    Accepts .SH as alias for .SS (Shanghai Stock Exchange).
+    """
+    if not ticker or not ticker.strip():
+        return False, "股票代码不能为空"
+
+    t = _normalize_ticker(ticker)
+
+    # A-share: 6 digits + .SS or .SZ (also accepts .SH → auto-converted to .SS)
+    if t.endswith('.SS') or t.endswith('.SZ'):
+        code = t.split('.')[0]
+        if not re.match(r'^\d{6}$', code):
+            return False, f"A股代码应为6位数字，如 600519.SS 或 000333.SZ（当前: {ticker}）"
+        return True, ""
+
+    # HK stock: 4-5 digits + .HK
+    if t.endswith('.HK'):
+        code = t.split('.')[0]
+        if not re.match(r'^\d{4,5}$', code):
+            return False, f"港股代码应为4-5位数字，如 0700.HK 或 9988.HK（当前: {ticker}）"
+        return True, ""
+
+    # US stock: 1-5 letters (no suffix needed)
+    if re.match(r'^[A-Z]{1,5}$', t):
+        return True, ""
+
+    # US stock with exchange suffix (e.g., AAPL.US, AAPL.O)
+    if re.match(r'^[A-Z]{1,5}\.[A-Z]{1,3}$', t):
+        return True, ""
+
+    return False, (
+        f"无法识别的股票代码格式: {ticker}\n"
+        f"  支持格式:  美股 AAPL | 港股 0700.HK | A股 600519.SS / 000333.SZ"
+    )
 
 def get_api_url(requested_data, ticker, period, apikey):
     base_url = f'https://financialmodelingprep.com/api/v3/{requested_data}/{ticker}?apikey={apikey}'
@@ -35,19 +104,35 @@ def fetch_market_risk_premium(apikey):
     data = get_jsonparsed_data(url)
     return {item['country']: item['totalEquityRiskPremium'] for item in data}
 
-def get_company_share_float(ticker, apikey):
+def get_company_share_float(ticker, apikey='', company_profile=None):
+    if is_a_share(ticker):
+        # For A-shares, reuse outstandingShares from company_profile to avoid duplicate API call
+        if company_profile and 'outstandingShares' in company_profile:
+            return {'outstandingShares': company_profile['outstandingShares'], 'symbol': ticker}
+        return fetch_akshare_share_float(ticker)
+    if is_hk_stock(ticker):
+        # For HK stocks, reuse outstandingShares from company_profile (same pattern as A-shares)
+        if company_profile and 'outstandingShares' in company_profile:
+            return {'outstandingShares': company_profile['outstandingShares'], 'symbol': ticker}
+        from .yfinance_data import fetch_yfinance_hk_share_float
+        return fetch_yfinance_hk_share_float(ticker)
     url = f'https://financialmodelingprep.com/api/v4/shares_float?symbol={ticker}&apikey={apikey}'
     company_info = get_jsonparsed_data(url)
     if not company_info:
         raise ValueError(f"No company information found for ticker {ticker}.")
     return company_info[0]
 
-def fetch_company_profile(ticker, apikey):
+def fetch_company_profile(ticker, apikey=''):
+    if is_a_share(ticker):
+        return fetch_akshare_company_profile(ticker)
+    if is_hk_stock(ticker):
+        from .yfinance_data import fetch_yfinance_hk_company_profile
+        return fetch_yfinance_hk_company_profile(ticker)
     url = f'https://financialmodelingprep.com/api/v3/profile/{ticker}?apikey={apikey}'
     data = get_jsonparsed_data(url)
     if not data:
         raise ValueError(f"No company profile data found for ticker {ticker}.")
-    
+
     market_cap = data[0].get('mktCap', 0)
     if pd.isna(market_cap) or market_cap == 0:
         print(f"Warning: Market Cap for {ticker} is NaN or 0. Setting to default value.")
@@ -63,6 +148,41 @@ def fetch_company_profile(ticker, apikey):
         'price': data[0].get('price', 0),
     }
 
+def _safe_numeric(val, default=0):
+    """Convert a value to float, returning default if NaN/None/error."""
+    result = pd.to_numeric(val, errors='coerce')
+    return default if pd.isna(result) else float(result)
+
+
+def _build_raw_excel_df(df):
+    """Build a transposed DataFrame from raw akshare data for Excel export.
+
+    - Uses REPORT_DATE (year portion) as column headers
+    - Drops metadata columns (SECUCODE, SECURITY_CODE, etc.)
+    - Drops columns that are entirely NaN/None
+    - Returns transposed DataFrame: fields as rows, dates as columns
+    """
+    DROP_COLS = {'SECUCODE', 'SECURITY_CODE', 'SECURITY_NAME_ABBR',
+                 'ORG_CODE', 'ORG_TYPE', 'REPORT_TYPE', 'REPORT_DATE_NAME',
+                 'SECURITY_TYPE_CODE', 'NOTICE_DATE', 'UPDATE_DATE',
+                 'CURRENCY'}
+    raw = df.copy()
+
+    # Set REPORT_DATE as readable year labels
+    dates = pd.to_datetime(raw['REPORT_DATE']).dt.strftime('%Y-%m-%d')
+    raw = raw.drop(columns=[c for c in DROP_COLS if c in raw.columns], errors='ignore')
+    raw = raw.drop(columns=['REPORT_DATE'], errors='ignore')
+
+    # Drop columns that are entirely NaN
+    raw = raw.dropna(axis=1, how='all')
+
+    # Transpose: fields as rows, each column is a date period
+    raw = raw.T
+    raw.columns = dates.values
+
+    return raw
+
+
 def _calc_akshare_ebit(row):
     """Calculate EBIT from a single akshare profit sheet row (China GAAP).
 
@@ -72,7 +192,7 @@ def _calc_akshare_ebit(row):
     fields = ['OPERATE_PROFIT', 'INVEST_INCOME', 'FAIRVALUE_CHANGE_INCOME',
               'OTHER_INCOME', 'ASSET_DISPOSAL_INCOME', 'CREDIT_IMPAIRMENT_INCOME',
               'ASSET_IMPAIRMENT_INCOME', 'FINANCE_EXPENSE']
-    vals = {f: pd.to_numeric(row.get(f, 0), errors='coerce') or 0 for f in fields}
+    vals = {f: _safe_numeric(row.get(f, 0)) for f in fields}
     return (vals['OPERATE_PROFIT']
             - vals['INVEST_INCOME']
             - vals['FAIRVALUE_CHANGE_INCOME']
@@ -93,141 +213,789 @@ def _ticker_to_ak_symbol(ticker):
     return None
 
 
-def fetch_akshare_ebit(ticker, historical_periods=5, period='annual'):
-    """Fetch EBIT from akshare (东方财富) for Chinese A-shares.
+def _ticker_to_ak_indicator_symbol(ticker):
+    """Convert to akshare financial-indicator format: 600519.SS -> 600519.SH"""
+    t = ticker.upper()
+    if t.endswith('.SS'):
+        return t.replace('.SS', '.SH')
+    elif t.endswith('.SZ'):
+        return t
+    return None
 
-    For annual: uses stock_profit_sheet_by_report_em (filtered to 年报).
-    For quarter: uses stock_profit_sheet_by_quarterly_em (single-quarter data).
 
-    Returns dict:
-        annual:  {calendar_year: ebit_in_millions}      e.g. {'2024': 85432.5}
-        quarter: {'YYYY-QN': ebit_in_millions}           e.g. {'2024-Q3': 21500.0}
+def _ticker_to_bare_code(ticker):
+    """Convert to bare stock code: 600519.SS -> 600519"""
+    return ticker.split('.')[0]
+
+
+def _calculate_beta_akshare(ticker, years=3):
+    """Calculate beta for an A-share stock against CSI 300 index using daily returns.
+
+    Uses `years` years of daily data. Returns CHINA_DEFAULT_BETA on failure.
     """
-    if not HAS_AKSHARE:
-        print(S.warning("akshare not installed. Falling back to FMP EBIT for Chinese stocks."))
-        return {}
+    from datetime import datetime, timedelta
 
-    ak_symbol = _ticker_to_ak_symbol(ticker)
-    if ak_symbol is None:
-        return {}
+    bare_code = _ticker_to_bare_code(ticker)
+    end_date = datetime.now().strftime('%Y%m%d')
+    start_date = (datetime.now() - timedelta(days=years * 365)).strftime('%Y%m%d')
 
     try:
-        if period == 'annual':
-            print(S.info(f"Fetching annual EBIT from akshare (东方财富) for {ak_symbol}..."))
-            df = ak.stock_profit_sheet_by_report_em(symbol=ak_symbol)
-            df = df[df['REPORT_TYPE'] == '年报'].copy()
-        else:
-            print(S.info(f"Fetching quarterly EBIT from akshare (东方财富) for {ak_symbol}..."))
-            df = ak.stock_profit_sheet_by_quarterly_em(symbol=ak_symbol)
+        print(S.info(f"Calculating beta for {bare_code} vs CSI 300 ({years}Y daily)..."), end="")
 
-        df = df.sort_values('REPORT_DATE', ascending=False).head(historical_periods)
+        stock_df = _get_ak().stock_zh_a_hist(symbol=bare_code, period="daily",
+                                       start_date=start_date, end_date=end_date, adjust="qfq")
+        index_df = _get_ak().stock_zh_index_daily(symbol="sh000300")
 
-        month_to_quarter = {3: 'Q1', 6: 'Q2', 9: 'Q3', 12: 'Q4'}
-        result = {}
-        for _, row in df.iterrows():
-            # Use REPORT_DATE ('2025-09-30 00:00:00') for reliable parsing
-            # REPORT_DATE_NAME format differs: annual='2024-12-31', quarterly='2025三季度'
-            date_str = str(row['REPORT_DATE'])[:10]  # '2025-09-30'
-            year = date_str[:4]
+        stock_df['date'] = pd.to_datetime(stock_df['日期'])
+        stock_df['stock_return'] = stock_df['收盘'].pct_change()
 
-            if period == 'annual':
-                key = year
-            else:
-                month = int(date_str[5:7])
-                quarter = month_to_quarter.get(month, f'Q{(month - 1) // 3 + 1}')
-                key = f"{year}-{quarter}"
+        index_df['date'] = pd.to_datetime(index_df['date'])
+        index_df = index_df[index_df['date'] >= start_date]
+        index_df['index_return'] = index_df['close'].pct_change()
 
-            result[key] = _calc_akshare_ebit(row) / 1_000_000
+        merged = pd.merge(stock_df[['date', 'stock_return']],
+                          index_df[['date', 'index_return']], on='date').dropna()
 
-        print(f"  akshare EBIT fetched for: {', '.join(sorted(result.keys(), reverse=True))}")
-        return result
+        if len(merged) < 60:
+            print(S.warning(f"Insufficient data for beta calculation ({len(merged)} days). Using default."))
+            return CHINA_DEFAULT_BETA
+
+        cov = merged['stock_return'].cov(merged['index_return'])
+        var = merged['index_return'].var()
+        beta = cov / var if var != 0 else CHINA_DEFAULT_BETA
+
+        beta = round(beta, 2)
+        print(f" done.")
+        return beta
 
     except Exception as e:
-        print(S.warning(f"Failed to fetch akshare EBIT for {ak_symbol}: {e}"))
-        return {}
+        print(S.warning(f"Beta calculation failed: {e}. Using default {CHINA_DEFAULT_BETA}."))
+        return CHINA_DEFAULT_BETA
+
+
+def fetch_akshare_company_profile(ticker):
+    """Fetch company profile + share float from akshare for A-shares (single API call).
+    Returns dict with same keys as fetch_company_profile (FMP version),
+    plus 'outstandingShares' to avoid a second API call."""
+    bare_code = _ticker_to_bare_code(ticker)
+    print(S.info(f"Fetching company profile from akshare for {bare_code}..."))
+
+    info_df = _get_ak().stock_individual_info_em(symbol=bare_code)
+    info_dict = dict(zip(info_df['item'], info_df['value']))
+
+    exchange = 'Shanghai Stock Exchange' if ticker.upper().endswith('.SS') else 'Shenzhen Stock Exchange'
+
+    beta = _calculate_beta_akshare(ticker)
+
+    return {
+        'companyName': str(info_dict.get('股票简称', ticker)),
+        'marketCap': float(info_dict.get('总市值', 0)),
+        'beta': beta,
+        'country': 'China',
+        'currency': 'CNY',
+        'exchange': exchange,
+        'price': float(info_dict.get('最新', 0)),
+        'outstandingShares': float(info_dict.get('总股本', 0)),
+    }
+
+
+def fetch_akshare_share_float(ticker):
+    """Fetch outstanding shares from akshare for A-shares.
+    Note: For A-shares, prefer using fetch_akshare_company_profile() which
+    includes outstandingShares and avoids a duplicate API call."""
+    bare_code = _ticker_to_bare_code(ticker)
+    info_df = _get_ak().stock_individual_info_em(symbol=bare_code)
+    info_dict = dict(zip(info_df['item'], info_df['value']))
+
+    return {
+        'outstandingShares': float(info_dict.get('总股本', 0)),
+        'symbol': ticker,
+    }
+
+
+def fetch_akshare_income_statement(ticker, period='annual', historical_periods=5):
+    """Fetch income statements from akshare, returning (FMP-compatible dicts, raw DataFrame, full cumulative DataFrame).
+
+    The third return value (full_cumulative_df) is the complete cumulative report DataFrame
+    before annual filtering, used for TTM calculation to avoid duplicate API calls.
+    For quarter mode, it is None (quarter data uses a different API).
+    """
+    ak_symbol = _ticker_to_ak_symbol(ticker)
+    print(S.info(f"Fetching income statement from akshare for {ak_symbol}..."))
+
+    full_cumulative_df = None
+    if period == 'annual':
+        full_cumulative_df = _get_ak().stock_profit_sheet_by_report_em(symbol=ak_symbol)
+        df = full_cumulative_df[full_cumulative_df['REPORT_TYPE'] == '年报'].copy()
+    else:
+        df = _get_ak().stock_profit_sheet_by_quarterly_em(symbol=ak_symbol)
+
+    df = df.sort_values('REPORT_DATE', ascending=False).head(historical_periods)
+
+    month_to_quarter = {3: 'Q1', 6: 'Q2', 9: 'Q3', 12: 'Q4'}
+    result = []
+
+    for _, row in df.iterrows():
+        date_str = str(row['REPORT_DATE'])[:10]
+        year = date_str[:4]
+        month = int(date_str[5:7])
+
+        if period == 'annual':
+            period_name = 'FY'
+        else:
+            period_name = month_to_quarter.get(month, f'Q{(month - 1) // 3 + 1}')
+
+        revenue = _safe_numeric(row.get('OPERATE_INCOME', 0))
+        ebit = _calc_akshare_ebit(row)
+
+        interest_expense_val = _safe_numeric(row.get('FE_INTEREST_EXPENSE', 0))
+        interest_income_val = _safe_numeric(row.get('FE_INTEREST_INCOME', 0))
+        total_profit = _safe_numeric(row.get('TOTAL_PROFIT', 0))
+        income_tax = _safe_numeric(row.get('INCOME_TAX', 0))
+
+        result.append({
+            'calendarYear': year,
+            'date': date_str,
+            'period': period_name,
+            'reportedCurrency': 'CNY',
+            'revenue': revenue,
+            'operatingIncome': ebit,
+            'interestExpense': interest_expense_val,
+            'interestIncome': interest_income_val,
+            'incomeBeforeTax': total_profit,
+            'incomeTaxExpense': income_tax,
+        })
+
+    # Build raw DataFrame for Excel export (transposed: fields as rows, dates as columns)
+    raw_df = _build_raw_excel_df(df)
+
+    return result, raw_df, full_cumulative_df
+
+
+def _parse_akshare_bs_row(row):
+    """Parse a single akshare balance sheet row into FMP-compatible dict."""
+    short_loan = _safe_numeric(row.get('SHORT_LOAN', 0))
+    long_loan = _safe_numeric(row.get('LONG_LOAN', 0))
+    bond_payable = _safe_numeric(row.get('BOND_PAYABLE', 0))
+    noncurrent_1year = _safe_numeric(row.get('NONCURRENT_LIAB_1YEAR', 0))
+    lease_liab = _safe_numeric(row.get('LEASE_LIAB', 0))
+    total_debt = short_loan + long_loan + bond_payable + noncurrent_1year + lease_liab
+
+    total_equity = _safe_numeric(row.get('TOTAL_EQUITY', 0))
+    minority_equity = _safe_numeric(row.get('MINORITY_EQUITY', 0))
+
+    # Cash: 货币资金 + 财务公司类现金净额
+    #   净额 = 发放贷款及垫款 - 吸收存款及同业存放 + 拆出资金 - 拆入资金
+    cash_monetary = _safe_numeric(row.get('MONETARYFUNDS', 0))
+    loan_advance = _safe_numeric(row.get('LOAN_ADVANCE', 0))
+    accept_deposit = _safe_numeric(row.get('ACCEPT_DEPOSIT_INTERBANK', 0))
+    lend_fund = _safe_numeric(row.get('LEND_FUND', 0))
+    borrow_fund = _safe_numeric(row.get('BORROW_FUND', 0))
+    fin_company_net = loan_advance - accept_deposit + lend_fund - borrow_fund
+    cash = cash_monetary + fin_company_net
+
+    # Investments: 金融资产 (IFRS 9 一般企业字段)
+    trade_fin = _safe_numeric(row.get('TRADE_FINASSET_NOTFVTPL', 0))     # FVTPL
+    creditor_invest = _safe_numeric(row.get('CREDITOR_INVEST', 0))        # AC 债权投资
+    other_creditor = _safe_numeric(row.get('OTHER_CREDITOR_INVEST', 0))   # FVOCI 其他债权投资
+    other_equity_inv = _safe_numeric(row.get('OTHER_EQUITY_INVEST', 0))   # FVOCI 其他权益工具
+    other_nc_fin = _safe_numeric(row.get('OTHER_NONCURRENT_FINASSET', 0)) # 其他非流动金融资产
+    long_equity = _safe_numeric(row.get('LONG_EQUITY_INVEST', 0))         # 长期股权投资
+    total_investments = trade_fin + creditor_invest + other_creditor + other_equity_inv + other_nc_fin + long_equity
+
+    total_assets = _safe_numeric(row.get('TOTAL_ASSETS', 0))
+
+    return {
+        'totalDebt': total_debt,
+        'totalEquity': total_equity,
+        'minorityInterest': minority_equity,
+        'cashAndCashEquivalents': cash,
+        'totalInvestments': total_investments,
+        'totalAssets': total_assets,
+    }
+
+
+def fetch_akshare_balance_sheet(ticker, period='annual', historical_periods=5):
+    """Fetch balance sheet from akshare, returning (FMP-compatible dicts, raw DataFrame, full DataFrame).
+
+    The third return value is the full (unfiltered) DataFrame, used by TTM to
+    retrieve the latest quarterly balance sheet even when period='annual'.
+    """
+    ak_symbol = _ticker_to_ak_symbol(ticker)
+    print(S.info(f"Fetching balance sheet from akshare for {ak_symbol}..."))
+
+    df = _get_ak().stock_balance_sheet_by_report_em(symbol=ak_symbol)
+    full_df = df.copy()  # Keep unfiltered for TTM quarterly lookups
+    if period == 'annual':
+        months = pd.to_datetime(df['REPORT_DATE']).dt.month
+        df = df[months == 12].copy()
+    df = df.sort_values('REPORT_DATE', ascending=False).head(historical_periods)
+
+    result = []
+    for _, row in df.iterrows():
+        result.append(_parse_akshare_bs_row(row))
+
+    # Build raw DataFrame for Excel export
+    raw_df = _build_raw_excel_df(df)
+
+    return result, raw_df, full_df
+
+
+def _extract_cashflow_fields(row):
+    """Extract D&A, capex, WC change from a single akshare cashflow row.
+    Returns (da, capex, change_in_wc) — all in raw akshare units.
+    D&A and WC fields may be NaN in Q1/Q3 reports (indirect method not disclosed).
+    """
+    fa_depr = _safe_numeric(row.get('FA_IR_DEPR', 0))
+    ia_amort = _safe_numeric(row.get('IA_AMORTIZE', 0))
+    lpe_amort = _safe_numeric(row.get('LPE_AMORTIZE', 0))
+    ura_amort = _safe_numeric(row.get('USERIGHT_ASSET_AMORTIZE', 0))
+    da = fa_depr + ia_amort + lpe_amort + ura_amort
+
+    # akshare: CONSTRUCT_LONG_ASSET is positive (cash outflow for capex)
+    # FMP: investmentsInPropertyPlantAndEquipment is negative
+    capex_raw = _safe_numeric(row.get('CONSTRUCT_LONG_ASSET', 0))
+    capex = -capex_raw
+
+    inv_reduce = _safe_numeric(row.get('INVENTORY_REDUCE', 0))
+    recv_reduce = _safe_numeric(row.get('OPERATE_RECE_REDUCE', 0))
+    payable_add = _safe_numeric(row.get('OPERATE_PAYABLE_ADD', 0))
+    change_in_wc = inv_reduce + recv_reduce + payable_add
+
+    return da, capex, change_in_wc
+
+
+def fetch_akshare_cashflow(ticker, period='annual', historical_periods=5):
+    """Fetch cash flow statement from akshare, returning (FMP-compatible dicts, raw DataFrame, full cumulative DataFrame).
+
+    IMPORTANT: akshare cash flow data from stock_cash_flow_sheet_by_report_em is
+    *cumulative* (YTD). For annual mode this is fine (full year).
+    For quarter mode, the returned dicts still contain YTD cumulative values.
+    TTM calculation in get_historical_financials() handles this via the cumulative method.
+
+    The third return value (full_cumulative_df) is the complete cumulative report DataFrame
+    before annual filtering, used for TTM calculation to avoid duplicate API calls.
+    For quarter mode, it is the same as the fetched df (already cumulative).
+    """
+    ak_symbol = _ticker_to_ak_symbol(ticker)
+    print(S.info(f"Fetching cash flow statement from akshare for {ak_symbol}..."))
+
+    full_cumulative_df = _get_ak().stock_cash_flow_sheet_by_report_em(symbol=ak_symbol)
+    if period == 'annual':
+        months = pd.to_datetime(full_cumulative_df['REPORT_DATE']).dt.month
+        df = full_cumulative_df[months == 12].copy()
+    else:
+        df = full_cumulative_df
+    df = df.sort_values('REPORT_DATE', ascending=False).head(historical_periods)
+
+    result = []
+    for _, row in df.iterrows():
+        da, capex, change_in_wc = _extract_cashflow_fields(row)
+        result.append({
+            'depreciationAndAmortization': da,
+            'investmentsInPropertyPlantAndEquipment': capex,
+            'changeInWorkingCapital': change_in_wc,
+        })
+
+    raw_df = _build_raw_excel_df(df)
+    return result, raw_df, full_cumulative_df
+
+
+def fetch_akshare_key_metrics(ticker, balance_sheets, income_statements, period='annual', historical_periods=5):
+    """Compute key metrics for A-shares, returning FMP-compatible dicts."""
+    indicator_symbol = _ticker_to_ak_indicator_symbol(ticker)
+    print(S.info(f"Fetching key metrics from akshare for {indicator_symbol}..."))
+
+    # Fetch financial indicators from akshare
+    indicator_df = pd.DataFrame()
+    try:
+        indicator_df = _get_ak().stock_financial_analysis_indicator_em(
+            symbol=indicator_symbol, indicator="按报告期"
+        )
+        indicator_df = indicator_df.sort_values('REPORT_DATE', ascending=False)
+        if period == 'annual':
+            months = pd.to_datetime(indicator_df['REPORT_DATE']).dt.month
+            indicator_df = indicator_df[months == 12]
+        indicator_df = indicator_df.head(historical_periods).reset_index(drop=True)
+    except Exception as e:
+        print(S.warning(f"Failed to fetch financial indicators: {e}"))
+
+    result = []
+    for i in range(len(balance_sheets)):
+        bs = balance_sheets[i]
+
+        total_assets = bs.get('totalAssets', 0) or 1
+        total_debt = bs.get('totalDebt', 0) or 0
+        debt_to_assets = total_debt / total_assets if total_assets != 0 else 0
+
+        # ROIC and ROE from indicator_df (values are percentages, e.g. 25.5 for 25.5%)
+        roic_val = 0
+        roe_val = 0
+        if not indicator_df.empty and i < len(indicator_df):
+            row = indicator_df.iloc[i]
+            roic_val = _safe_numeric(row.get('ROIC', 0)) / 100
+            roe_val = _safe_numeric(row.get('ROEJQ', 0)) / 100
+
+        result.append({
+            'debtToAssets': debt_to_assets,
+            'roic': roic_val,
+            'roe': roe_val,
+        })
+
+    return result
+
+
+def _compute_akshare_ttm_income(ticker, df=None):
+    """Compute TTM income values for A-shares using the YTD cumulative method.
+
+    TTM = latest YTD + (prior FY − prior same-period YTD)
+    Uses stock_profit_sheet_by_report_em (cumulative reports).
+
+    Args:
+        ticker: Stock ticker string.
+        df: Optional pre-fetched cumulative DataFrame from stock_profit_sheet_by_report_em.
+            If None, fetches from API (for backward compatibility).
+
+    Returns dict with keys: revenue, operatingIncome (EBIT), incomeBeforeTax,
+    incomeTaxExpense (all in raw akshare units), or None if unable to compute.
+    """
+    if df is None:
+        ak_symbol = _ticker_to_ak_symbol(ticker)
+        df = _get_ak().stock_profit_sheet_by_report_em(symbol=ak_symbol)
+    df = df.sort_values('REPORT_DATE', ascending=False).copy()
+    df['_date'] = pd.to_datetime(df['REPORT_DATE'])
+    df['_year'] = df['_date'].dt.year
+    df['_month'] = df['_date'].dt.month
+
+    if len(df) < 2:
+        return None
+
+    latest = df.iloc[0]
+    latest_month = int(latest['_month'])
+    latest_year = int(latest['_year'])
+
+    if latest_month == 12:
+        return None  # Already full year
+    if latest_month == 3:
+        return None  # Q1: too early for meaningful TTM, use annual data as base
+
+    # Build lookup
+    ytd_lookup = {}
+    for _, row in df.iterrows():
+        key = (int(row['_year']), int(row['_month']))
+        if key not in ytd_lookup:
+            ytd_lookup[key] = row
+
+    prior_fy = ytd_lookup.get((latest_year - 1, 12))
+    prior_same = ytd_lookup.get((latest_year - 1, latest_month))
+    if prior_fy is None:
+        return None
+
+    def _ytd_val(row, field):
+        return _safe_numeric(row.get(field, 0))
+
+    rev_latest = _ytd_val(latest, 'OPERATE_INCOME')
+    rev_fy = _ytd_val(prior_fy, 'OPERATE_INCOME')
+    rev_same = _ytd_val(prior_same, 'OPERATE_INCOME') if prior_same is not None else 0
+
+    ebit_latest = _calc_akshare_ebit(latest)
+    ebit_fy = _calc_akshare_ebit(prior_fy)
+    ebit_same = _calc_akshare_ebit(prior_same) if prior_same is not None else 0
+
+    pbt_latest = _ytd_val(latest, 'TOTAL_PROFIT')
+    pbt_fy = _ytd_val(prior_fy, 'TOTAL_PROFIT')
+    pbt_same = _ytd_val(prior_same, 'TOTAL_PROFIT') if prior_same is not None else 0
+
+    tax_latest = _ytd_val(latest, 'INCOME_TAX')
+    tax_fy = _ytd_val(prior_fy, 'INCOME_TAX')
+    tax_same = _ytd_val(prior_same, 'INCOME_TAX') if prior_same is not None else 0
+
+    latest_date_str = str(latest['REPORT_DATE'])[:10]
+
+    # Also compute prior-year TTM for YoY growth
+    prior_year_fy = ytd_lookup.get((latest_year - 2, 12))
+    prior_year_same = ytd_lookup.get((latest_year - 2, latest_month))
+    if prior_same is not None and prior_year_fy is not None:
+        rev_prior_same = _ytd_val(prior_same, 'OPERATE_INCOME')
+        rev_prior_fy = _ytd_val(prior_year_fy, 'OPERATE_INCOME')
+        rev_prior_year_same = _ytd_val(prior_year_same, 'OPERATE_INCOME') if prior_year_same is not None else 0
+        prior_ttm_revenue = rev_prior_same + (rev_prior_fy - rev_prior_year_same)
+
+        ebit_prior_same = _calc_akshare_ebit(prior_same)
+        ebit_prior_fy = _calc_akshare_ebit(prior_year_fy)
+        ebit_prior_year_same = _calc_akshare_ebit(prior_year_same) if prior_year_same is not None else 0
+        prior_ttm_ebit = ebit_prior_same + (ebit_prior_fy - ebit_prior_year_same)
+    else:
+        prior_ttm_revenue = None
+        prior_ttm_ebit = None
+
+    return {
+        'revenue': rev_latest + (rev_fy - rev_same),
+        'operatingIncome': ebit_latest + (ebit_fy - ebit_same),
+        'incomeBeforeTax': pbt_latest + (pbt_fy - pbt_same),
+        'incomeTaxExpense': tax_latest + (tax_fy - tax_same),
+        '_latest_quarter': f'Q{latest_month // 3}',
+        '_latest_date': latest_date_str,
+        '_prior_ttm_revenue': prior_ttm_revenue,
+        '_prior_ttm_ebit': prior_ttm_ebit,
+    }
+
+
+def _compute_akshare_ttm_cashflow(ticker, df=None):
+    """Compute TTM cashflow values for A-shares using the YTD cumulative method.
+
+    TTM = latest YTD + (prior FY − prior same-period YTD)
+
+    Args:
+        ticker: Stock ticker string.
+        df: Optional pre-fetched cumulative DataFrame from stock_cash_flow_sheet_by_report_em.
+            If None, fetches from API (for backward compatibility).
+
+    Returns dict with keys: depreciationAndAmortization,
+    investmentsInPropertyPlantAndEquipment, changeInWorkingCapital
+    (all in raw akshare units, i.e., yuan), or None if unable to compute.
+
+    For indirect-method items (D&A, WC change), only H1 and FY reports have data.
+    If the latest report is Q1 or Q3, those items fall back to the most recent FY value.
+    """
+    if df is None:
+        ak_symbol = _ticker_to_ak_symbol(ticker)
+        df = _get_ak().stock_cash_flow_sheet_by_report_em(symbol=ak_symbol)
+    df = df.sort_values('REPORT_DATE', ascending=False).copy()
+    df['_date'] = pd.to_datetime(df['REPORT_DATE'])
+    df['_year'] = df['_date'].dt.year
+    df['_month'] = df['_date'].dt.month
+
+    if len(df) < 2:
+        return None
+
+    latest = df.iloc[0]
+    latest_month = int(latest['_month'])
+    latest_year = int(latest['_year'])
+
+    if latest_month == 12:
+        # Already full year, no TTM needed
+        return None
+    if latest_month == 3:
+        # Q1: too early for meaningful TTM, use annual data as base
+        return None
+
+    # Build lookup: (year, month) -> row
+    ytd_lookup = {}
+    for _, row in df.iterrows():
+        key = (int(row['_year']), int(row['_month']))
+        if key not in ytd_lookup:
+            ytd_lookup[key] = row
+
+    # Prior FY (most recent annual report before the latest)
+    prior_fy_key = (latest_year - 1, 12)
+    prior_fy = ytd_lookup.get(prior_fy_key)
+    if prior_fy is None:
+        return None
+
+    # Prior same-period YTD
+    prior_same_key = (latest_year - 1, latest_month)
+    prior_same = ytd_lookup.get(prior_same_key)
+
+    da_latest, capex_latest, wc_latest = _extract_cashflow_fields(latest)
+    da_fy, capex_fy, wc_fy = _extract_cashflow_fields(prior_fy)
+
+    if prior_same is not None:
+        da_same, capex_same, wc_same = _extract_cashflow_fields(prior_same)
+    else:
+        da_same, capex_same, wc_same = 0, 0, 0
+
+    # Capex (CONSTRUCT_LONG_ASSET) is always available — use cumulative method
+    capex_ttm = capex_latest + (capex_fy - capex_same)
+
+    # D&A and WC: only available in H1 (month=6) and FY (month=12)
+    # Check if latest report has indirect-method data by inspecting a key field
+    latest_raw = latest
+    has_indirect = pd.notna(latest_raw.get('FA_IR_DEPR'))
+
+    note = ''
+    if has_indirect and prior_same is not None and pd.notna(prior_same.get('FA_IR_DEPR')):
+        # Both ends have data — cumulative method works
+        da_ttm = da_latest + (da_fy - da_same)
+        wc_ttm = wc_latest + (wc_fy - wc_same)
+    else:
+        # Q1/Q3: indirect-method items not available — fall back to prior FY
+        da_ttm = da_fy
+        wc_ttm = wc_fy
+        note = f'D&A and WC use FY{latest_year-1} annual data (Q{latest_month//3} indirect CF unavailable); Capex is TTM'
+
+    return {
+        'depreciationAndAmortization': da_ttm,
+        'investmentsInPropertyPlantAndEquipment': capex_ttm,
+        'changeInWorkingCapital': wc_ttm,
+        '_note': note,
+    }
+
+
+def _decumulate_quarterly_cf_if_needed(q_cf, summary_data=None):
+    """Detect and fix cumulative YTD cashflow data from FMP.
+
+    Under IAS 34 / HKFRS, interim cash flow statements are presented on a cumulative
+    year-to-date basis (Q2 = H1, Q3 = 9 months, Q4 = full year). Some data providers
+    return these raw values labeled as "quarterly" without de-cumulating.
+
+    Detection uses two complementary methods:
+    1. Monotonic check: within a fiscal year sorted chronologically, if abs(capex)
+       increases for every successive quarter (Q1 ≤ Q2 ≤ Q3 ≤ Q4), the data is
+       likely cumulative. Requires ≥3 quarters in a year.
+    2. Sum check (optional): if summary_data is provided (annual mode), compare the
+       quarterly sum for a full FY against the known annual capex. If >1.6x, cumulative.
+
+    De-cumulation: Within each fiscal year (sorted chronologically), subtract the prior
+    period's cumulative value to get single-quarter values.
+    """
+    if not q_cf:
+        return q_cf
+
+    from collections import defaultdict
+
+    cf_fields = ['investmentsInPropertyPlantAndEquipment', 'depreciationAndAmortization', 'changeInWorkingCapital']
+    capex_field = 'investmentsInPropertyPlantAndEquipment'
+
+    # Group by fiscal year, sort chronologically
+    by_year = defaultdict(list)
+    for d in q_cf:
+        by_year[d.get('calendarYear', '')].append(d)
+    for year in by_year:
+        by_year[year].sort(key=lambda x: x.get('date', ''))
+
+    is_cumulative = False
+
+    # Method 1: Monotonic check — within any year with ≥3 quarters,
+    # if abs(capex) is non-decreasing for all consecutive pairs, it's cumulative.
+    for year, quarters in by_year.items():
+        if len(quarters) >= 3:
+            capex_vals = [abs(q.get(capex_field, 0) or 0) for q in quarters]
+            if capex_vals[0] == 0:
+                continue  # Skip if Q1 capex is 0 (can't detect pattern)
+            # Check if non-decreasing (allowing small tolerance for rounding)
+            if all(capex_vals[i+1] >= capex_vals[i] * 0.95 for i in range(len(capex_vals) - 1)):
+                # Additional check: the last value should be significantly larger than the first
+                if capex_vals[-1] > capex_vals[0] * 1.8:
+                    is_cumulative = True
+                    break
+
+    # Method 2: Sum check — compare against known annual capex (when summary_data available)
+    if not is_cumulative and summary_data:
+        annual_capex = abs(summary_data[0].get('(+) Capital Expenditure', 0))
+        annual_year = str(summary_data[0].get('Calendar Year', ''))[:4]
+        if annual_capex > 0:
+            fy_quarters = by_year.get(annual_year, [])
+            if len(fy_quarters) >= 4:
+                quarterly_sum = sum(abs(d.get(capex_field, 0) or 0) for d in fy_quarters)
+                ratio = quarterly_sum / (annual_capex * 1_000_000)
+                if ratio > 1.6:
+                    is_cumulative = True
+
+    if not is_cumulative:
+        return q_cf
+
+    # De-cumulate: within each fiscal year, subtract prior period's cumulative values
+    result = []
+    for year, quarters in by_year.items():
+        for idx, q in enumerate(quarters):
+            if idx == 0:
+                # Q1 (or first quarter in year): already single-quarter
+                result.append(q)
+            else:
+                # Subtract prior cumulative to get single-quarter
+                prev = quarters[idx - 1]
+                decum = dict(q)  # shallow copy
+                for field in cf_fields:
+                    curr_val = q.get(field, 0) or 0
+                    prev_val = prev.get(field, 0) or 0
+                    decum[field] = curr_val - prev_val
+                result.append(decum)
+
+    # Re-sort in descending date order (most recent first, matching FMP convention)
+    result.sort(key=lambda x: x.get('date', ''), reverse=True)
+
+    print(S.muted(f"  ⓘ Detected cumulative YTD cashflow data. De-cumulated to single-quarter values."))
+
+    return result
 
 
 def get_historical_financials(ticker, period='annual', apikey='', historical_periods=5):
-    period_str = f"{historical_periods} years" if period == 'annual' else f"{historical_periods} quarters"
+    from concurrent.futures import ThreadPoolExecutor
+
+    if period == 'annual':
+        period_str = f"{historical_periods} years"
+    else:
+        period_str = f"{historical_periods} quarters"
     print(f"\n{S.info(f'Fetching financial data for {ticker} ({period_str})...')}")
-    
+
     try:
-        income_statement = get_jsonparsed_data(get_api_url('income-statement', ticker, period, apikey))[:historical_periods]
-        balance_sheet = get_jsonparsed_data(get_api_url('balance-sheet-statement', ticker, period, apikey))[:historical_periods]
-        cashflow_statement = get_jsonparsed_data(get_api_url('cash-flow-statement', ticker, period, apikey))[:historical_periods]
-        key_metrics = get_jsonparsed_data(get_api_url('key-metrics', ticker, period, apikey))[:historical_periods]
-        financial_growth = get_jsonparsed_data(get_api_url('financial-growth', ticker, period, apikey))[:historical_periods]
-        company_info = get_company_share_float(ticker, apikey)
-        company_profile = fetch_company_profile(ticker, apikey)
+        if is_a_share(ticker):
+            # --- A-share path: all data from akshare ---
+            print(S.info("检测到A股，使用 akshare 数据源..."))
+            income_statement, raw_income_df, _full_income_df = fetch_akshare_income_statement(ticker, period, historical_periods)
+            balance_sheet, raw_balance_df, _full_bs_df = fetch_akshare_balance_sheet(ticker, period, historical_periods)
+            cashflow_statement, raw_cashflow_df, _full_cf_df = fetch_akshare_cashflow(ticker, period, historical_periods)
+            key_metrics = fetch_akshare_key_metrics(ticker, balance_sheet, income_statement, period, historical_periods)
+        elif is_hk_stock(ticker):
+            if period == 'annual':
+                # --- HK annual path: all data from yfinance ---
+                from .yfinance_data import (
+                    fetch_yfinance_hk_income_statement,
+                    fetch_yfinance_hk_balance_sheet,
+                    fetch_yfinance_hk_cashflow,
+                    fetch_yfinance_hk_key_metrics,
+                )
+                print(S.info("检测到港股，使用 yfinance 数据源..."))
+                income_statement, raw_income_df = fetch_yfinance_hk_income_statement(ticker, period, historical_periods)
+                balance_sheet, raw_balance_df = fetch_yfinance_hk_balance_sheet(ticker, period, historical_periods)
+                cashflow_statement, raw_cashflow_df = fetch_yfinance_hk_cashflow(ticker, period, historical_periods)
+                key_metrics = fetch_yfinance_hk_key_metrics(ticker, balance_sheet, income_statement, period, historical_periods)
+            else:
+                # --- HK quarter path: use FMP (yfinance lacks proper quarterly data) ---
+                print(S.info("检测到港股季度查询，使用 FMP 数据源..."))
+                urls = {
+                    'income': get_api_url('income-statement', ticker, period, apikey),
+                    'balance': get_api_url('balance-sheet-statement', ticker, period, apikey),
+                    'cashflow': get_api_url('cash-flow-statement', ticker, period, apikey),
+                    'metrics': get_api_url('key-metrics', ticker, period, apikey),
+                }
+                with ThreadPoolExecutor(max_workers=4) as executor:
+                    futures = {k: executor.submit(get_jsonparsed_data, v) for k, v in urls.items()}
+                income_statement = futures['income'].result()[:historical_periods]
+                balance_sheet = futures['balance'].result()[:historical_periods]
+                cashflow_statement = futures['cashflow'].result()[:historical_periods]
+                key_metrics = futures['metrics'].result()[:historical_periods]
+
+                cashflow_statement = _decumulate_quarterly_cf_if_needed(cashflow_statement)
+
+                bs_by_date = {d.get('date'): d for d in reversed(balance_sheet)}
+                cf_by_date = {d.get('date'): d for d in reversed(cashflow_statement)}
+                km_by_date = {d.get('date'): d for d in reversed(key_metrics)}
+                _empty_cf = {'depreciationAndAmortization': 0, 'investmentsInPropertyPlantAndEquipment': 0, 'changeInWorkingCapital': 0}
+                _empty_km = {'debtToAssets': 0, 'roic': 0, 'roe': 0, 'dividendYield': 0, 'payoutRatio': 0}
+        else:
+            # --- Non-A-share path: all data from FMP (parallel requests) ---
+            urls = {
+                'income': get_api_url('income-statement', ticker, period, apikey),
+                'balance': get_api_url('balance-sheet-statement', ticker, period, apikey),
+                'cashflow': get_api_url('cash-flow-statement', ticker, period, apikey),
+                'metrics': get_api_url('key-metrics', ticker, period, apikey),
+            }
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                futures = {k: executor.submit(get_jsonparsed_data, v) for k, v in urls.items()}
+            income_statement = futures['income'].result()[:historical_periods]
+            balance_sheet = futures['balance'].result()[:historical_periods]
+            cashflow_statement = futures['cashflow'].result()[:historical_periods]
+            key_metrics = futures['metrics'].result()[:historical_periods]
+
+            # FMP totalDebt already includes capitalLeaseObligations — no adjustment needed
+
+            # Detect and fix cumulative YTD cashflow data (common for HK/IFRS stocks)
+            cashflow_statement = _decumulate_quarterly_cf_if_needed(cashflow_statement)
+
+            # FMP may return different numbers of quarters for each statement
+            # (e.g., HK stocks: income has Q3 but cashflow only up to Q2).
+            # Build date-based lookups so we always pair by date, not by index.
+            bs_by_date = {d.get('date'): d for d in reversed(balance_sheet)}
+            cf_by_date = {d.get('date'): d for d in reversed(cashflow_statement)}
+            km_by_date = {d.get('date'): d for d in reversed(key_metrics)}
+            _empty_cf = {'depreciationAndAmortization': 0, 'investmentsInPropertyPlantAndEquipment': 0, 'changeInWorkingCapital': 0}
+            _empty_km = {'debtToAssets': 0, 'roic': 0, 'roe': 0, 'dividendYield': 0, 'payoutRatio': 0}
+
+        # HK annual mode: build date-based lookups (yfinance lists may differ in length)
+        if is_hk_stock(ticker) and period == 'annual':
+            _hk_bs_by_date = {d.get('date'): d for d in reversed(balance_sheet)}
+            _hk_cf_by_date = {d.get('date'): d for d in reversed(cashflow_statement)}
+            _hk_km_by_date = {d.get('date'): d for d in reversed(key_metrics)}
+            _empty_cf = {'depreciationAndAmortization': 0, 'investmentsInPropertyPlantAndEquipment': 0, 'changeInWorkingCapital': 0}
+            _empty_km = {'debtToAssets': 0, 'roic': 0, 'roe': 0, 'dividendYield': 0, 'payoutRatio': 0}
 
         summary_data = []
         tax_rates = []
-        ebit_comparison = []
-
-        # For Chinese A-shares, fetch EBIT from akshare
-        exchange = company_profile.get('exchange', 'NASDAQ')
-        is_china_stock = exchange in ['Shenzhen Stock Exchange', 'Shanghai Stock Exchange']
-        akshare_ebit_data = {}
-        if is_china_stock:
-            akshare_ebit_data = fetch_akshare_ebit(ticker, historical_periods, period)
 
         for i in range(len(income_statement)):
-            fmp_ebit = (income_statement[i].get('operatingIncome', 0) or 0)
-            if is_china_stock:
-                fmp_ebit += (income_statement[i].get('interestExpense', 0) or 0) - (income_statement[i].get('interestIncome', 0) or 0)
+            inc = income_statement[i]
+            inc_date = inc.get('date', '')
 
-            calendar_year = income_statement[i].get('calendarYear', 'N/A')
-            period_name = income_statement[i].get('period', 'N/A')
-            ak_key = f"{calendar_year}-{period_name}" if period == 'quarter' else str(calendar_year)
-            ak_ebit = akshare_ebit_data.get(ak_key)
-            if ak_ebit is not None:
-                ebit = ak_ebit * 1_000_000  # Convert back to absolute for consistency
-                fmp_ebit_m = fmp_ebit / 1_000_000
-                ak_ebit_m = ak_ebit
-                diff_pct = ((ak_ebit_m - fmp_ebit_m) / fmp_ebit_m * 100) if fmp_ebit_m != 0 else 0
-                ebit_comparison.append({
-                    'year': ak_key,
-                    'akshare_ebit': ak_ebit_m,
-                    'fmp_ebit': fmp_ebit_m,
-                    'diff_pct': diff_pct
-                })
+            if is_a_share(ticker):
+                # A-shares: lists always aligned by index
+                bs = balance_sheet[i]
+                cf = cashflow_statement[i]
+                km = key_metrics[i]
+            elif is_hk_stock(ticker) and period == 'annual':
+                # HK annual: date-based matching (yfinance lists may differ in length)
+                bs = _hk_bs_by_date.get(inc_date) or (balance_sheet[i] if i < len(balance_sheet) else {})
+                cf = _hk_cf_by_date.get(inc_date) or _empty_cf
+                km = _hk_km_by_date.get(inc_date) or (key_metrics[i] if i < len(key_metrics) else _empty_km)
             else:
-                ebit = fmp_ebit
+                bs = bs_by_date.get(inc_date) or (balance_sheet[i] if i < len(balance_sheet) else {})
+                cf = cf_by_date.get(inc_date) or _empty_cf
+                km = km_by_date.get(inc_date) or (key_metrics[i] if i < len(key_metrics) else _empty_km)
 
-            income_before_tax = income_statement[i].get('incomeBeforeTax', 0) or 0
-            income_tax_expense = income_statement[i].get('incomeTaxExpense', 0) or 0
+            ebit = (inc.get('operatingIncome', 0) or 0)
+
+            income_before_tax = inc.get('incomeBeforeTax', 0) or 0
+            income_tax_expense = inc.get('incomeTaxExpense', 0) or 0
             tax_rate = income_tax_expense / income_before_tax if income_before_tax != 0 else 0
             tax_rates.append(tax_rate)
 
-            invested_capital = (balance_sheet[i].get('totalDebt', 0) or 0) + \
-                              (balance_sheet[i].get('totalEquity', 0) or 0) - \
-                              (balance_sheet[i].get('cashAndCashEquivalents', 0) or 0) - \
-                              (balance_sheet[i].get('totalInvestments', 0) or 0)
-            revenue_to_invested_capital = (income_statement[i].get('revenue', 0) or 0) / invested_capital if invested_capital != 0 else 0
-            total_reinvestments = -(cashflow_statement[i].get('investmentsInPropertyPlantAndEquipment', 0) or 0) + \
-                                 -(cashflow_statement[i].get('changeInWorkingCapital', 0) or 0) - \
-                                 (cashflow_statement[i].get('depreciationAndAmortization', 0) or 0)
+            invested_capital = (bs.get('totalDebt', 0) or 0) + \
+                              (bs.get('totalEquity', 0) or 0) - \
+                              (bs.get('cashAndCashEquivalents', 0) or 0) - \
+                              (bs.get('totalInvestments', 0) or 0)
+            revenue_to_invested_capital = (inc.get('revenue', 0) or 0) / invested_capital if invested_capital != 0 else 0
+            total_reinvestments = -(cf.get('investmentsInPropertyPlantAndEquipment', 0) or 0) + \
+                                 -(cf.get('changeInWorkingCapital', 0) or 0) - \
+                                 (cf.get('depreciationAndAmortization', 0) or 0)
 
-            interest_expense = income_statement[i].get('interestExpense', 0) or 0
-            total_debt = balance_sheet[i].get('totalDebt', 0) or 0
-            prev_total_debt = balance_sheet[i - 1].get('totalDebt', 0) or 0 if i > 0 else total_debt
-            cost_of_debt = interest_expense / ((total_debt + prev_total_debt) / 2) if (total_debt + prev_total_debt) != 0 else 0
+            interest_expense = inc.get('interestExpense', 0) or 0
+            total_debt = bs.get('totalDebt', 0) or 0
+            # For prev_total_debt, look up the previous income_statement date
+            if i > 0:
+                prev_inc_date = income_statement[i - 1].get('date', '')
+                if is_a_share(ticker):
+                    prev_total_debt = balance_sheet[i - 1].get('totalDebt', 0) or 0 if i - 1 < len(balance_sheet) else total_debt
+                elif is_hk_stock(ticker) and period == 'annual':
+                    prev_bs = _hk_bs_by_date.get(prev_inc_date)
+                    prev_total_debt = (prev_bs.get('totalDebt', 0) or 0) if prev_bs else total_debt
+                else:
+                    prev_bs = bs_by_date.get(prev_inc_date)
+                    prev_total_debt = (prev_bs.get('totalDebt', 0) or 0) if prev_bs else total_debt
+            else:
+                prev_total_debt = total_debt
+            avg_total_debt = (total_debt + prev_total_debt) / 2
+
+            # Fallback: when FMP reports interestExpense=0 but company has debt,
+            # estimate net interest from operatingIncome - incomeBeforeTax
+            if interest_expense == 0 and total_debt > 0:
+                _op_inc = inc.get('operatingIncome', 0) or 0
+                _pbt = inc.get('incomeBeforeTax', 0) or 0
+                net_interest = _op_inc - _pbt  # positive = net interest expense
+                if net_interest > 0:
+                    interest_expense = net_interest
+
+            cost_of_debt = interest_expense / avg_total_debt if avg_total_debt != 0 else 0
+            # Cap cost_of_debt: when debt is trivially small relative to total assets,
+            # the ratio is meaningless (e.g., finance charges / tiny lease liability = 13%).
+            # Also cap at 15% to avoid distortions from data anomalies.
+            total_assets = bs.get('totalAssets', 0) or 0
+            if total_assets > 0 and total_debt / total_assets < 0.01:
+                cost_of_debt = 0
+            elif cost_of_debt > 0.15:
+                cost_of_debt = 0.15
 
             if i < len(income_statement) - 1:
-                prev_index = i + 1 if period == 'annual' else i + 4
+                if period == 'annual':
+                    prev_index = i + 1
+                else:
+                    prev_index = i + 4
                 if prev_index < len(income_statement):
                     prev_revenue = income_statement[prev_index].get('revenue', 0) or 0
-                    current_revenue = income_statement[i].get('revenue', 0) or 0
+                    current_revenue = inc.get('revenue', 0) or 0
                     revenue_growth = (current_revenue - prev_revenue) / prev_revenue * 100 if prev_revenue != 0 else 0
 
-                    prev_year = income_statement[prev_index].get('calendarYear', 'N/A')
-                    prev_period_name = income_statement[prev_index].get('period', 'N/A')
-                    prev_ak_key = f"{prev_year}-{prev_period_name}" if period == 'quarter' else str(prev_year)
-                    prev_ak_ebit = akshare_ebit_data.get(prev_ak_key)
-                    if prev_ak_ebit is not None:
-                        prev_ebit = prev_ak_ebit * 1_000_000
-                    else:
-                        prev_ebit = income_statement[prev_index].get('operatingIncome', 0) or 0
+                    prev_ebit = income_statement[prev_index].get('operatingIncome', 0) or 0
                     current_ebit = ebit or 0
                     ebit_growth = (current_ebit - prev_ebit) / prev_ebit * 100 if prev_ebit != 0 else 0
                 else:
@@ -237,108 +1005,585 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                 revenue_growth = 0
                 ebit_growth = 0
 
+            revenue_val = (inc.get('revenue', 0) or 0) / 1_000_000
+            ebit_val = (ebit or 0) / 1_000_000
+            da_val = (cf.get('depreciationAndAmortization', 0) or 0) / 1_000_000
+            wc_val = -(cf.get('changeInWorkingCapital', 0) or 0) / 1_000_000
+            capex_val = -(cf.get('investmentsInPropertyPlantAndEquipment', 0) or 0) / 1_000_000
+            reinvest_val = (total_reinvestments or 0) / 1_000_000
+            debt_val = (total_debt or 0) / 1_000_000
+            equity_val = (bs.get('totalEquity', 0) or 0) / 1_000_000
+            minority_val = (bs.get('minorityInterest', 0) or 0) / 1_000_000
+            cash_val = (bs.get('cashAndCashEquivalents', 0) or 0) / 1_000_000
+            invest_val = (bs.get('totalInvestments', 0) or 0) / 1_000_000
+            ic_val = (invested_capital or 0) / 1_000_000
+            ebit_margin = (ebit / (inc.get('revenue', 0) or 1)) * 100 if inc.get('revenue', 0) != 0 else 0
+
+            # Tag whether this quarter has actual cashflow data (vs. date-gap fill with zeros)
+            _has_cf = is_a_share(ticker) or (is_hk_stock(ticker) and period == 'annual') or (cf is not _empty_cf)
+
             data = {
-                'Calendar Year': income_statement[i].get('calendarYear', 'N/A'),
-                'Date': income_statement[i].get('date', 'N/A'),
-                'Period': income_statement[i].get('period', 'N/A'),
-                'Reported Currency': income_statement[i].get('reportedCurrency', 'N/A'),
-                'Revenue': (income_statement[i].get('revenue', 0) or 0) / 1_000_000,
-                'EBIT': (ebit or 0) / 1_000_000,
-                'Depreciation & Amortization': (cashflow_statement[i].get('depreciationAndAmortization', 0) or 0) / 1_000_000,
-                'Increase in Working Capital': (-cashflow_statement[i].get('changeInWorkingCapital', 0) or 0) / 1_000_000,
-                'Capital Expenditure': (-cashflow_statement[i].get('investmentsInPropertyPlantAndEquipment', 0) or 0) / 1_000_000,
-                'Total Reinvestments': (total_reinvestments or 0) / 1_000_000,
-                'Total Debt': (total_debt or 0) / 1_000_000,
-                'Total Equity': (balance_sheet[i].get('totalEquity', 0) or 0) / 1_000_000,
-                'Minority Interest': (balance_sheet[i].get('minorityInterest', 0) or 0) / 1_000_000,
-                'Cash & Cash Equivalents': (balance_sheet[i].get('cashAndCashEquivalents', 0) or 0) / 1_000_000,
-                'Total Investments': (balance_sheet[i].get('totalInvestments', 0) or 0) / 1_000_000,
-                'Invested Capital': (invested_capital or 0) / 1_000_000,
-                '[break line]': '',
-                'Revenue Growth': revenue_growth,
-                'EBIT Growth': ebit_growth,
-                'EBIT Margin': (ebit / (income_statement[i].get('revenue', 0) or 1)) * 100 if income_statement[i].get('revenue', 0) != 0 else 0,
-                'Tax Rate': tax_rate * 100,
-                'Revenue to Invested Capital': revenue_to_invested_capital,
-                'Debt to Assets': (key_metrics[i].get('debtToAssets', 0) or 0) * 100,
-                'Cost of Debt': cost_of_debt * 100,              
-                'ROIC': (key_metrics[i].get('roic', 0) or 0) * 100,
-                'ROE': (key_metrics[i].get('roe', 0) or 0) * 100,
-                'Dividend Yield': (key_metrics[i].get('dividendYield', 0) or 0) * 100,
-                'Payout Ratio': (key_metrics[i].get('payoutRatio', 0) or 0) * 100,
+                'Calendar Year': inc.get('calendarYear', 'N/A'),
+                'Date': inc.get('date', 'N/A'),
+                'Period': inc.get('period', 'N/A'),
+                'Reported Currency': inc.get('reportedCurrency', 'N/A'),
+                '_has_cf': _has_cf,
+                # ── Profitability ──
+                '▸ Profitability': '',
+                'Revenue': revenue_val,
+                'EBIT': ebit_val,
+                'Revenue Growth (%)': revenue_growth,
+                'EBIT Growth (%)': ebit_growth,
+                'EBIT Margin (%)': ebit_margin,
+                'Tax Rate (%)': tax_rate * 100,
+                # ── Reinvestment ──
+                '▸ Reinvestment': '',
+                '(+) Capital Expenditure': capex_val,
+                '(-) D&A': da_val,
+                '(+) ΔWorking Capital': wc_val,
+                'Total Reinvestment': reinvest_val,
+                # ── Capital Structure ──
+                '▸ Capital Structure': '',
+                '(+) Total Debt': debt_val,
+                '(+) Total Equity': equity_val,
+                '(-) Cash & Equivalents': cash_val,
+                '(-) Total Investments': invest_val,
+                'Invested Capital': ic_val,
+                'Minority Interest': minority_val,
+                # ── Key Ratios ──
+                '▸ Key Ratios': '',
+                'Revenue / IC': revenue_to_invested_capital,
+                'Debt to Assets (%)': (km.get('debtToAssets', 0) or 0) * 100,
+                'Cost of Debt (%)': cost_of_debt * 100,
+                'ROIC (%)': (km.get('roic', 0) or 0) * 100,
+                'ROE (%)': (km.get('roe', 0) or 0) * 100,
             }
+            if not is_a_share(ticker):
+                data['Dividend Yield (%)'] = (km.get('dividendYield', 0) or 0) * 100
+                data['Payout Ratio (%)'] = (km.get('payoutRatio', 0) or 0) * 100
             summary_data.append(data)
-  
-        # --- TTM column for quarterly data (if latest quarter is not Q4) ---
+
+        # --- TTM column: prepend to summary_data when latest data is not full-year ---
+        # For quarter mode: compute if latest quarter is not Q4
+        # For annual mode: always attempt (latest quarterly data may be more recent than latest FY)
+        _need_ttm = False
+        _ttm_latest_quarter = ''
         if period == 'quarter' and len(summary_data) >= 4:
-            latest_period = summary_data[0].get('Period', '')
-            if latest_period not in ('Q4', 'FY'):
-                flow_items = ['Revenue', 'EBIT', 'Depreciation & Amortization',
-                              'Increase in Working Capital', 'Capital Expenditure',
-                              'Total Reinvestments']
-                bs_items = ['Total Debt', 'Total Equity', 'Minority Interest',
-                            'Cash & Cash Equivalents', 'Total Investments', 'Invested Capital']
+            if is_hk_stock(ticker):
+                pass  # HK quarter mode: no TTM column
+            else:
+                latest_period = summary_data[0].get('Period', '')
+                # Skip TTM for Q1 (too early), Q4/FY (already full year)
+                if latest_period not in ('Q4', 'FY', 'Q1'):
+                    _need_ttm = True
+        elif period == 'annual' and len(summary_data) >= 1:
+            _need_ttm = True  # Always attempt TTM for annual; will check quarterly data availability
 
-                ttm_data = {
-                    'Calendar Year': 'TTM',
-                    'Date': summary_data[0]['Date'],
-                    'Period': 'TTM',
-                    'Reported Currency': summary_data[0]['Reported Currency'],
-                }
+        _ttm_end_date = ''  # Track TTM end date for output
+        _ttm_net_income_m = None  # TTM net income in millions (for ROIC/ROE calculation)
 
-                for item in flow_items:
-                    ttm_data[item] = sum(summary_data[j][item] for j in range(4))
+        if _need_ttm:
+            # Find the latest full-year Calendar Year from summary_data.
+            # Annual mode: summary_data[0] is always FY.
+            # Quarter mode: scan for Period='FY' or 'Q4' entry.
+            _latest_fy_cal_year = ''
+            for _sd in summary_data:
+                if _sd.get('Period', '') in ('FY', 'Q4'):
+                    _latest_fy_cal_year = str(_sd.get('Calendar Year', ''))
+                    break
+            if not _latest_fy_cal_year and summary_data:
+                # Fallback: use summary_data[0] Calendar Year (annual mode always works)
+                _latest_fy_cal_year = str(summary_data[0].get('Calendar Year', ''))
 
-                for item in bs_items:
-                    ttm_data[item] = summary_data[0][item]
+            bs_items = ['(+) Total Debt', '(+) Total Equity',
+                        '(-) Cash & Equivalents', '(-) Total Investments',
+                        'Invested Capital', 'Minority Interest']
+            ttm_data = None
+            ttm_note = ''  # Note about data sources for reinvestment items
+            _akshare_latest_q_bs = {}  # Latest quarterly BS for A-shares (populated below)
 
-                ttm_data['[break line]'] = ''
+            if is_a_share(ticker):
+                # --- A-share TTM: use YTD cumulative method ---
+                # Reuse cached full cumulative DataFrames to avoid duplicate API calls
+                ttm_income = _compute_akshare_ttm_income(ticker, df=_full_income_df)
+                ttm_cf = _compute_akshare_ttm_cashflow(ticker, df=_full_cf_df)
 
-                ttm_revenue = ttm_data['Revenue']
-                ttm_ebit = ttm_data['EBIT']
+                # Check if latest report is Q1 — show message (ttm_income will be None)
+                if ttm_income is None and _full_income_df is not None:
+                    _ak_sorted = _full_income_df.sort_values('REPORT_DATE', ascending=False)
+                    if not _ak_sorted.empty:
+                        _ak_latest_month = int(str(_ak_sorted.iloc[0]['REPORT_DATE'])[5:7])
+                        if _ak_latest_month == 3:
+                            print(S.muted(f"  ⓘ 最新季度为 Q1，数据不足以计算有意义的 TTM，使用最近年度数据作为估值基础。"))
 
-                # YoY growth: TTM vs previous TTM (quarters [4..7])
-                if len(summary_data) >= 8:
-                    prev_ttm_revenue = sum(summary_data[j]['Revenue'] for j in range(4, 8))
-                    ttm_data['Revenue Growth'] = ((ttm_revenue - prev_ttm_revenue) / prev_ttm_revenue * 100) if prev_ttm_revenue != 0 else 0
-                    prev_ttm_ebit = sum(summary_data[j]['EBIT'] for j in range(4, 8))
-                    ttm_data['EBIT Growth'] = ((ttm_ebit - prev_ttm_ebit) / prev_ttm_ebit * 100) if prev_ttm_ebit != 0 else 0
+                if ttm_income:
+                    _ttm_latest_date = ttm_income.get('_latest_date', '')
+                    _ttm_latest_quarter = ttm_income.get('_latest_quarter', '')
+                    _ttm_end_date = _ttm_latest_date
+                    # TTM calendar year = latest full-year calendar year + 1
+                    _ttm_label_year = str(int(_latest_fy_cal_year) + 1) if _latest_fy_cal_year.isdigit() else (_ttm_latest_date[:4] if _ttm_latest_date else '')
+                    ttm_revenue = ttm_income['revenue'] / 1_000_000
+                    ttm_ebit = ttm_income['operatingIncome'] / 1_000_000
+                    ttm_tax_rate = (ttm_income['incomeTaxExpense'] / ttm_income['incomeBeforeTax'] * 100
+                                    ) if ttm_income['incomeBeforeTax'] != 0 else summary_data[0]['Tax Rate (%)']
+                    _ttm_net_income_m = (ttm_income['incomeBeforeTax'] - ttm_income['incomeTaxExpense']) / 1_000_000
+
+                    # Growth: TTM vs prior-year TTM (not vs FY)
+                    prior_ttm_rev = ttm_income.get('_prior_ttm_revenue')
+                    prior_ttm_ebit_raw = ttm_income.get('_prior_ttm_ebit')
+                    if prior_ttm_rev is not None:
+                        prev_revenue = prior_ttm_rev / 1_000_000
+                        prev_ebit = prior_ttm_ebit_raw / 1_000_000
+                    else:
+                        prev_revenue = summary_data[0]['Revenue']
+                        prev_ebit = summary_data[0]['EBIT']
+
+                    _ttm_period_label = f'{_ttm_label_year}{_ttm_latest_quarter}(TTM)' if _ttm_latest_quarter else 'TTM'
+                    ttm_data = {
+                        'Calendar Year': _ttm_label_year,
+                        'Date': _ttm_latest_date,
+                        'Period': _ttm_period_label,
+                        'Reported Currency': summary_data[0]['Reported Currency'],
+                        '▸ Profitability': '',
+                        'Revenue': ttm_revenue,
+                        'EBIT': ttm_ebit,
+                        'Revenue Growth (%)': ((ttm_revenue - prev_revenue) / prev_revenue * 100) if prev_revenue != 0 else 0,
+                        'EBIT Growth (%)': ((ttm_ebit - prev_ebit) / prev_ebit * 100) if prev_ebit != 0 else 0,
+                        'EBIT Margin (%)': (ttm_ebit / ttm_revenue * 100) if ttm_revenue != 0 else 0,
+                        'Tax Rate (%)': ttm_tax_rate,
+                    }
+
+                    if ttm_cf:
+                        capex_ttm = -ttm_cf['investmentsInPropertyPlantAndEquipment'] / 1_000_000
+                        da_ttm = ttm_cf['depreciationAndAmortization'] / 1_000_000
+                        wc_ttm = -ttm_cf['changeInWorkingCapital'] / 1_000_000
+                        ttm_note = ttm_cf.get('_note', '')
+                    else:
+                        # Fallback: use most recent FY values
+                        capex_ttm = summary_data[0]['(+) Capital Expenditure']
+                        da_ttm = summary_data[0]['(-) D&A']
+                        wc_ttm = summary_data[0]['(+) ΔWorking Capital']
+                        _fy_year = summary_data[0].get('Calendar Year', '?')
+                        ttm_note = f'Capex/D&A/WC use FY{_fy_year} annual data (quarterly CF unavailable)'
+
+                    ttm_data['▸ Reinvestment'] = ''
+                    ttm_data['(+) Capital Expenditure'] = capex_ttm
+                    ttm_data['(-) D&A'] = da_ttm
+                    ttm_data['(+) ΔWorking Capital'] = wc_ttm
+                    ttm_data['Total Reinvestment'] = capex_ttm - da_ttm + wc_ttm
+
+                    # Look up latest quarterly BS from unfiltered balance sheet DataFrame.
+                    # _full_bs_df contains all report periods (Q1/Q2/Q3/FY); match by TTM end date.
+                    _akshare_latest_q_bs = {}
+                    if _full_bs_df is not None and _ttm_latest_date:
+                        _bs_sorted = _full_bs_df.sort_values('REPORT_DATE', ascending=False)
+                        _ttm_date_str_short = _ttm_latest_date[:10]  # 'YYYY-MM-DD'
+                        for _, _bs_row in _bs_sorted.iterrows():
+                            _bs_date = str(_bs_row.get('REPORT_DATE', ''))[:10]
+                            if _bs_date <= _ttm_date_str_short:
+                                _akshare_latest_q_bs = _parse_akshare_bs_row(_bs_row)
+                                break
+
+            elif is_hk_stock(ticker):
+                # --- HK stock TTM: use yfinance built-in TTM APIs ---
+                # yfinance ttm_income_stmt / ttm_cash_flow provide pre-computed TTM
+                # data that may include Q1/Q3 data not exposed in quarterly_income_stmt
+                # for semi-annual reporters (e.g. Tencent, Xiaomi).
+                from .yfinance_data import (
+                    fetch_yfinance_hk_ttm as _yf_ttm,
+                    fetch_yfinance_hk_balance_sheet as _yf_bs,
+                )
+                _hk_ttm_data = None
+                if period == 'annual':
+                    print(S.info(f"Fetching TTM data from yfinance for {ticker}..."))
+                    _hk_ttm_data = _yf_ttm(ticker)
+                    if _hk_ttm_data and _hk_ttm_data.get('has_ttm_income'):
+                        _hk_ttm_quarter = _hk_ttm_data['ttm_quarter']
+                        # Skip TTM if:
+                        # - Q4/FY: latest annual data is sufficient
+                        # - Q1: too early for meaningful TTM, use annual data as base
+                        if _hk_ttm_quarter in ('Q4', 'Q1'):
+                            if _hk_ttm_quarter == 'Q1':
+                                print(S.muted(f"  ⓘ 最新季度为 Q1，数据不足以计算有意义的 TTM，使用最近年度数据作为估值基础。"))
+                            _hk_ttm_data = None  # skip TTM
+                        else:
+                            # Fetch latest quarterly BS for capital structure
+                            q_bs_list, _ = _yf_bs(ticker, 'quarter', 4)
+                            q_bs_by_date = {d.get('date'): d for d in reversed(q_bs_list)} if q_bs_list else {}
+                    else:
+                        _hk_ttm_data = None
+
+                    # Set q_inc = None so shared TTM block (FMP path) doesn't run
+                    q_inc = None
+
+                    if _hk_ttm_data:
+                        _ttm_q_date = _hk_ttm_data['ttm_end_date']
+                        _ttm_latest_quarter = _hk_ttm_data['ttm_quarter']
+                        _ttm_end_date = _ttm_q_date
+                        _ttm_label_year = str(int(_latest_fy_cal_year) + 1) if _latest_fy_cal_year.isdigit() else (_ttm_q_date[:4] if _ttm_q_date else '')
+
+                        ttm_revenue = _hk_ttm_data['revenue'] / 1_000_000
+                        ttm_ebit = _hk_ttm_data['operatingIncome'] / 1_000_000
+
+                        ttm_pbt = _hk_ttm_data['incomeBeforeTax']
+                        ttm_tax_exp = _hk_ttm_data['incomeTaxExpense']
+                        ttm_tax_rate = (ttm_tax_exp / ttm_pbt * 100) if ttm_pbt != 0 else summary_data[0]['Tax Rate (%)']
+                        _ttm_net_income_m = (ttm_pbt - ttm_tax_exp) / 1_000_000
+
+                        # Growth: TTM vs prior FY
+                        prev_revenue = summary_data[0]['Revenue']
+                        prev_ebit = summary_data[0]['EBIT']
+
+                        _ttm_period_label = f'{_ttm_label_year}{_ttm_latest_quarter}(TTM)' if _ttm_latest_quarter else 'TTM'
+                        ttm_data = {
+                            'Calendar Year': _ttm_label_year,
+                            'Date': _ttm_q_date,
+                            'Period': _ttm_period_label,
+                            'Reported Currency': _hk_ttm_data.get('reportedCurrency', summary_data[0]['Reported Currency']),
+                            '▸ Profitability': '',
+                            'Revenue': ttm_revenue,
+                            'EBIT': ttm_ebit,
+                            'Revenue Growth (%)': ((ttm_revenue - prev_revenue) / prev_revenue * 100) if prev_revenue != 0 else 0,
+                            'EBIT Growth (%)': ((ttm_ebit - prev_ebit) / prev_ebit * 100) if prev_ebit != 0 else 0,
+                            'EBIT Margin (%)': (ttm_ebit / ttm_revenue * 100) if ttm_revenue != 0 else 0,
+                            'Tax Rate (%)': ttm_tax_rate,
+                        }
+
+                        # Reinvestment: use TTM CF data; fall back to FY for missing items
+                        ttm_data['▸ Reinvestment'] = ''
+                        _cf_capex = _hk_ttm_data.get('investmentsInPropertyPlantAndEquipment')
+                        _cf_da = _hk_ttm_data.get('depreciationAndAmortization')
+                        _cf_wc = _hk_ttm_data.get('changeInWorkingCapital')
+
+                        _note_parts = []
+                        _fy_year_str = summary_data[0].get('Calendar Year', '?')
+                        ttm_capex = -_cf_capex / 1_000_000 if _cf_capex is not None else summary_data[0]['(+) Capital Expenditure']
+                        if _cf_capex is None:
+                            _note_parts.append('Capex')
+                        ttm_da = _cf_da / 1_000_000 if _cf_da is not None else summary_data[0]['(-) D&A']
+                        if _cf_da is None:
+                            _note_parts.append('D&A')
+                        ttm_wc = -_cf_wc / 1_000_000 if _cf_wc is not None else summary_data[0]['(+) ΔWorking Capital']
+                        if _cf_wc is None:
+                            _note_parts.append('WC')
+
+                        ttm_data['(+) Capital Expenditure'] = ttm_capex
+                        ttm_data['(-) D&A'] = ttm_da
+                        ttm_data['(+) ΔWorking Capital'] = ttm_wc
+                        ttm_data['Total Reinvestment'] = ttm_capex - ttm_da + ttm_wc
+                        if _note_parts:
+                            ttm_note = f'{"/".join(_note_parts)} use FY{_fy_year_str} data (TTM quarterly CF unavailable)'
+
+                        # BS: use latest quarterly BS if available
+                        latest_q_bs = q_bs_by_date.get(_ttm_q_date) or (q_bs_list[0] if q_bs_list else {})
+                    else:
+                        if period == 'annual':
+                            print(S.muted(f"  ⓘ No TTM data from yfinance for {ticker}; TTM skipped."))
+
+            else:
+                # --- FMP TTM: fetch quarterly data and sum 4 quarters ---
+                # For annual mode, we need to fetch quarterly data separately
+                if period == 'annual':
+                    q_urls = {
+                        'income': get_api_url('income-statement', ticker, 'quarter', apikey),
+                        'balance': get_api_url('balance-sheet-statement', ticker, 'quarter', apikey),
+                        'cashflow': get_api_url('cash-flow-statement', ticker, 'quarter', apikey),
+                    }
+                    with ThreadPoolExecutor(max_workers=3) as ex:
+                        q_futures = {k: ex.submit(get_jsonparsed_data, v) for k, v in q_urls.items()}
+                    q_inc = q_futures['income'].result()[:8]
+                    q_bs = q_futures['balance'].result()[:8]
+                    q_cf = q_futures['cashflow'].result()[:8]
+
+                    # FMP totalDebt already includes capitalLeaseObligations — no adjustment needed
+
+                    # Detect and fix cumulative YTD cashflow data (common for HK/IFRS stocks).
+                    # Under IAS 34, interim CF statements are cumulative YTD. Some data providers
+                    # return these raw without de-cumulating to single-quarter values.
+                    q_cf = _decumulate_quarterly_cf_if_needed(q_cf, summary_data)
+
+                    # Only compute TTM if latest quarter is Q2 or Q3
+                    # (Q1: too early, use annual; Q4/FY: already full year)
+                    _latest_q_period = q_inc[0].get('period', '') if q_inc else ''
+                    if _latest_q_period not in ('Q4', 'FY', 'Q1') and q_inc:
+                        q_cf_by_date = {d.get('date'): d for d in reversed(q_cf)}
+                        q_bs_by_date = {d.get('date'): d for d in reversed(q_bs)}
+                    else:
+                        if _latest_q_period == 'Q1':
+                            print(S.muted(f"  ⓘ 最新季度为 Q1，数据不足以计算有意义的 TTM，使用最近年度数据作为估值基础。"))
+                        q_inc = None  # Signal: no TTM needed
                 else:
-                    ttm_data['Revenue Growth'] = 0
-                    ttm_data['EBIT Growth'] = 0
+                    # Quarter mode: reuse already-fetched data
+                    q_inc = income_statement
+                    q_bs_by_date = bs_by_date
+                    q_cf_by_date = cf_by_date
 
-                ttm_data['EBIT Margin'] = (ttm_ebit / ttm_revenue * 100) if ttm_revenue != 0 else 0
+            # --- Shared TTM computation for FMP stocks ---
+            # (A-shares use YTD cumulative method above; HK stocks use yfinance TTM APIs above)
+            if not is_a_share(ticker) and not is_hk_stock(ticker):
+                # Detect semi-annual reporting: if data only has Q2/Q4 entries,
+                # the company reports semi-annually.
+                _is_semi_annual = False
+                if q_inc and len(q_inc) >= 2:
+                    _first_periods = [q_inc[j].get('period', '') for j in range(min(6, len(q_inc)))]
+                    _has_q1_or_q3 = any(p in ('Q1', 'Q3') for p in _first_periods)
+                    if not _has_q1_or_q3:
+                        _is_semi_annual = True
 
-                # Point-in-time ratios: use latest quarter
-                for ratio in ['Tax Rate', 'Debt to Assets', 'Cost of Debt', 'ROIC', 'ROE',
-                              'Dividend Yield', 'Payout Ratio']:
-                    ttm_data[ratio] = summary_data[0][ratio]
+                if _is_semi_annual and q_inc and len(q_inc) >= 2:
+                    # --- Semi-annual TTM: FY + (latest_Q - prior_year_Q) ---
+                    # yfinance quarterly data for semi-annual reporters contains single-
+                    # quarter figures (each ~3 months). We cannot simply sum 2 records
+                    # (that gives 6 months). Instead use the standard analyst method:
+                    # TTM = Latest FY + (latest quarter - same quarter prior year)
+                    print(S.muted(f"  ⓘ 检测到半年报公司，使用 FY + Δ 方法计算 TTM"))
 
-                ttm_invested_capital = ttm_data['Invested Capital']
-                ttm_data['Revenue to Invested Capital'] = (ttm_revenue / ttm_invested_capital) if ttm_invested_capital != 0 else 0
+                    _ttm_q_date = q_inc[0].get('date', '')
+                    _ttm_latest_quarter = q_inc[0].get('period', '')
+                    _ttm_end_date = _ttm_q_date
+                    _ttm_label_year = str(int(_latest_fy_cal_year) + 1) if _latest_fy_cal_year.isdigit() else (_ttm_q_date[:4] if _ttm_q_date else '')
+
+                    # q_inc[0] = latest quarter (e.g., Q2 2025)
+                    # q_inc[1] = same quarter prior year (e.g., Q2 2024)
+                    # summary_data[0] = latest FY (e.g., FY 2024)
+                    _q_latest = q_inc[0]
+                    _q_prior = q_inc[1]
+                    _fy = summary_data[0]
+
+                    # Revenue: TTM = FY + (Q_latest - Q_prior)
+                    _fy_rev_raw = _fy['Revenue'] * 1_000_000  # back to raw from millions
+                    _q_latest_rev = _q_latest.get('revenue', 0) or 0
+                    _q_prior_rev = _q_prior.get('revenue', 0) or 0
+                    ttm_revenue = (_fy_rev_raw + _q_latest_rev - _q_prior_rev) / 1_000_000
+
+                    # EBIT: same FY+delta approach
+                    _fy_ebit_raw = _fy['EBIT'] * 1_000_000
+                    _q_latest_ebit = _q_latest.get('operatingIncome', 0) or 0
+                    _q_prior_ebit = _q_prior.get('operatingIncome', 0) or 0
+                    ttm_ebit = (_fy_ebit_raw + _q_latest_ebit - _q_prior_ebit) / 1_000_000
+
+                    # Tax rate: FY+delta for PBT and tax
+                    _fy_tax_rate = _fy['Tax Rate (%)'] / 100
+                    _fy_pbt_raw = _fy_ebit_raw  # approximate (EBIT ≈ PBT for tax estimation)
+                    _q_latest_pbt = _q_latest.get('incomeBeforeTax', 0) or 0
+                    _q_prior_pbt = _q_prior.get('incomeBeforeTax', 0) or 0
+                    _q_latest_tax = _q_latest.get('incomeTaxExpense', 0) or 0
+                    _q_prior_tax = _q_prior.get('incomeTaxExpense', 0) or 0
+                    # Use actual PBT from income data for more accurate TTM tax rate
+                    _fy_inc_raw = income_statement[0]  # latest FY income data
+                    _fy_pbt_actual = _fy_inc_raw.get('incomeBeforeTax', 0) or 0
+                    _fy_tax_actual = _fy_inc_raw.get('incomeTaxExpense', 0) or 0
+                    ttm_pbt = _fy_pbt_actual + _q_latest_pbt - _q_prior_pbt
+                    ttm_tax_exp = _fy_tax_actual + _q_latest_tax - _q_prior_tax
+                    ttm_tax_rate = (ttm_tax_exp / ttm_pbt * 100) if ttm_pbt != 0 else _fy['Tax Rate (%)']
+                    _ttm_net_income_m = (ttm_pbt - ttm_tax_exp) / 1_000_000
+
+                    # Growth: TTM vs prior FY
+                    prev_revenue = _fy['Revenue']
+                    prev_ebit = _fy['EBIT']
+
+                    _ttm_period_label = f'{_ttm_label_year}{_ttm_latest_quarter}(TTM)' if _ttm_latest_quarter else 'TTM'
+                    ttm_data = {
+                        'Calendar Year': _ttm_label_year,
+                        'Date': _ttm_q_date,
+                        'Period': _ttm_period_label,
+                        'Reported Currency': q_inc[0].get('reportedCurrency', _fy['Reported Currency']),
+                        '▸ Profitability': '',
+                        'Revenue': ttm_revenue,
+                        'EBIT': ttm_ebit,
+                        'Revenue Growth (%)': ((ttm_revenue - prev_revenue) / prev_revenue * 100) if prev_revenue != 0 else 0,
+                        'EBIT Growth (%)': ((ttm_ebit - prev_ebit) / prev_ebit * 100) if prev_ebit != 0 else 0,
+                        'EBIT Margin (%)': (ttm_ebit / ttm_revenue * 100) if ttm_revenue != 0 else 0,
+                        'Tax Rate (%)': ttm_tax_rate,
+                    }
+
+                    # Reinvestment: no quarterly CF available for semi-annual reporters,
+                    # fall back to FY data
+                    ttm_data['▸ Reinvestment'] = ''
+                    ttm_data['(+) Capital Expenditure'] = _fy['(+) Capital Expenditure']
+                    ttm_data['(-) D&A'] = _fy['(-) D&A']
+                    ttm_data['(+) ΔWorking Capital'] = _fy['(+) ΔWorking Capital']
+                    ttm_data['Total Reinvestment'] = _fy['Total Reinvestment']
+                    _fy_year_str = _fy.get('Calendar Year', '?')
+                    ttm_note = f'Capex/D&A/WC use FY{_fy_year_str} annual data (quarterly CF unavailable for semi-annual reporters)'
+
+                    # BS: use quarterly BS if available, else FY
+                    latest_q_bs = q_bs_by_date.get(_ttm_q_date) if q_bs_by_date else {}
+                    if not latest_q_bs and q_bs:
+                        latest_q_bs = q_bs[0] if isinstance(q_bs, list) and q_bs else {}
+
+                elif not _is_semi_annual and q_inc and len(q_inc) >= 4:
+                    # --- Quarterly TTM: standard sum of 4 quarters ---
+                    n = 4
+                    _ttm_q_date = q_inc[0].get('date', '')
+                    _ttm_latest_quarter = q_inc[0].get('period', '')
+                    _ttm_end_date = _ttm_q_date
+                    _ttm_label_year = str(int(_latest_fy_cal_year) + 1) if _latest_fy_cal_year.isdigit() else (_ttm_q_date[:4] if _ttm_q_date else '')
+
+                    # Revenue & EBIT: sum 4 quarters
+                    ttm_revenue = sum((q_inc[j].get('revenue', 0) or 0) for j in range(n)) / 1_000_000
+                    ttm_ebit = sum((q_inc[j].get('operatingIncome', 0) or 0) for j in range(n)) / 1_000_000
+
+                    # TTM tax rate = sum(4 quarters tax) / sum(4 quarters pbt)
+                    ttm_pbt = sum((q_inc[j].get('incomeBeforeTax', 0) or 0) for j in range(n))
+                    ttm_tax_exp = sum((q_inc[j].get('incomeTaxExpense', 0) or 0) for j in range(n))
+                    ttm_tax_rate = (ttm_tax_exp / ttm_pbt * 100) if ttm_pbt != 0 else summary_data[0]['Tax Rate (%)']
+                    _ttm_net_income_m = (ttm_pbt - ttm_tax_exp) / 1_000_000
+
+                    # Growth: TTM vs prior-year TTM (next 4 quarters if available)
+                    if len(q_inc) >= 2 * n:
+                        prev_revenue = sum((q_inc[j].get('revenue', 0) or 0) for j in range(n, 2 * n)) / 1_000_000
+                        prev_ebit = sum((q_inc[j].get('operatingIncome', 0) or 0) for j in range(n, 2 * n)) / 1_000_000
+                    else:
+                        prev_revenue = summary_data[0]['Revenue']
+                        prev_ebit = summary_data[0]['EBIT']
+
+                    _ttm_period_label = f'{_ttm_label_year}{_ttm_latest_quarter}(TTM)' if _ttm_latest_quarter else 'TTM'
+                    ttm_data = {
+                        'Calendar Year': _ttm_label_year,
+                        'Date': _ttm_q_date,
+                        'Period': _ttm_period_label,
+                        'Reported Currency': q_inc[0].get('reportedCurrency', summary_data[0]['Reported Currency']),
+                        '▸ Profitability': '',
+                        'Revenue': ttm_revenue,
+                        'EBIT': ttm_ebit,
+                        'Revenue Growth (%)':((ttm_revenue - prev_revenue) / prev_revenue * 100) if prev_revenue != 0 else 0,
+                        'EBIT Growth (%)': ((ttm_ebit - prev_ebit) / prev_ebit * 100) if prev_ebit != 0 else 0,
+                        'EBIT Margin (%)': (ttm_ebit / ttm_revenue * 100) if ttm_revenue != 0 else 0,
+                        'Tax Rate (%)': ttm_tax_rate,
+                    }
+
+                    # Reinvestment: match CF by date, skip periods without CF data
+                    _q_empty_cf = {'depreciationAndAmortization': 0, 'investmentsInPropertyPlantAndEquipment': 0, 'changeInWorkingCapital': 0}
+                    q_cf_matched = []
+                    for j in range(len(q_inc)):
+                        qd = q_inc[j].get('date', '')
+                        matched_cf = q_cf_by_date.get(qd)
+                        q_cf_matched.append((j, matched_cf is not None, matched_cf or _q_empty_cf))
+
+                    # Find 4 quarters with actual CF data
+                    cf_quarters = [(j, cf_d) for j, has, cf_d in q_cf_matched if has][:n]
+
+                    ttm_data['▸ Reinvestment'] = ''
+                    if len(cf_quarters) >= n:
+                        ttm_capex = sum(-(cf_d.get('investmentsInPropertyPlantAndEquipment', 0) or 0) for _, cf_d in cf_quarters) / 1_000_000
+                        ttm_da = sum((cf_d.get('depreciationAndAmortization', 0) or 0) for _, cf_d in cf_quarters) / 1_000_000
+                        ttm_wc = sum(-(cf_d.get('changeInWorkingCapital', 0) or 0) for _, cf_d in cf_quarters) / 1_000_000
+                        # Build detailed note: distinguish Capex/D&A vs WC data sources
+                        _note_parts = []
+                        skipped_dates = [q_inc[j].get('date','?') for j, has, _ in q_cf_matched[:n] if not has]
+                        if skipped_dates:
+                            used_dates = [q_inc[j].get('date','?') for j, _ in cf_quarters]
+                            _note_parts.append(f'Capex/D&A: using {", ".join(used_dates)} ({", ".join(skipped_dates)} CF unavailable)')
+                        # Check WC: how many of the used periods have non-zero WC?
+                        wc_nonzero = [(j, cf_d) for j, cf_d in cf_quarters if (cf_d.get('changeInWorkingCapital', 0) or 0) != 0]
+                        if len(wc_nonzero) < len(cf_quarters):
+                            wc_dates = [q_inc[j].get('date','?') for j, _ in wc_nonzero] if wc_nonzero else ['N/A']
+                            _note_parts.append(f'WC: only {", ".join(wc_dates)} has data (other periods = 0)')
+                        if _note_parts:
+                            ttm_note = '; '.join(_note_parts)
+                    else:
+                        # Fallback: use FY data for reinvestment
+                        ttm_data['(+) Capital Expenditure'] = summary_data[0]['(+) Capital Expenditure']
+                        ttm_data['(-) D&A'] = summary_data[0]['(-) D&A']
+                        ttm_data['(+) ΔWorking Capital'] = summary_data[0]['(+) ΔWorking Capital']
+                        ttm_data['Total Reinvestment'] = summary_data[0]['Total Reinvestment']
+                        available_count = sum(1 for _, has, _ in q_cf_matched[:n] if has)
+                        _fy_year_str = summary_data[0].get('Calendar Year', '?')
+                        ttm_note = f'Capex/D&A/WC use FY{_fy_year_str} annual data (only {available_count}/4 quarters have CF data)'
+
+                    if 'Total Reinvestment' not in ttm_data:
+                        ttm_data['(+) Capital Expenditure'] = ttm_capex
+                        ttm_data['(-) D&A'] = ttm_da
+                        ttm_data['(+) ΔWorking Capital'] = ttm_wc
+                        ttm_data['Total Reinvestment'] = ttm_capex - ttm_da + ttm_wc
+
+                    # Use latest quarterly BS for capital structure
+                    if period == 'annual':
+                        latest_q_bs = q_bs_by_date.get(q_inc[0].get('date', '')) or (q_bs[0] if q_bs else {})
+                    else:
+                        latest_q_bs = q_bs_by_date.get(q_inc[0].get('date', '')) or {}
+
+                else:
+                    pass  # Not enough quarterly data for TTM; silently skip
+
+            # Finalize TTM: capital structure, key ratios
+            if ttm_data is not None:
+                # Capital Structure: point-in-time from latest quarterly BS
+                ttm_data['▸ Capital Structure'] = ''
+                # Determine quarterly BS source:
+                #   FMP/HK stocks (annual mode): latest_q_bs from quarterly API/yfinance
+                #   A-shares (annual mode): _akshare_latest_q_bs from unfiltered akshare DataFrame
+                #   Quarter mode: from existing quarterly data (already handled above)
+                _use_quarterly_bs = False
+                if is_a_share(ticker) and period == 'annual':
+                    _lbs = _akshare_latest_q_bs if _akshare_latest_q_bs else {}
+                    _use_quarterly_bs = bool(_lbs)
+                    _q_scale = 1_000_000  # akshare returns raw values in yuan
+                elif not is_a_share(ticker) and period == 'annual':
+                    _lbs = latest_q_bs
+                    _use_quarterly_bs = bool(_lbs)
+                    _q_scale = 1_000_000  # FMP/yfinance returns raw values in reporting currency
+
+                if _use_quarterly_bs:
+                    ttm_data['(+) Total Debt'] = (_lbs.get('totalDebt', 0) or 0) / _q_scale
+                    ttm_data['(+) Total Equity'] = (_lbs.get('totalEquity', 0) or 0) / _q_scale
+                    ttm_data['(-) Cash & Equivalents'] = (_lbs.get('cashAndCashEquivalents', 0) or 0) / _q_scale
+                    ttm_data['(-) Total Investments'] = (_lbs.get('totalInvestments', 0) or 0) / _q_scale
+                    ttm_data['Invested Capital'] = (ttm_data['(+) Total Debt'] + ttm_data['(+) Total Equity']
+                                                    - ttm_data['(-) Cash & Equivalents'] - ttm_data['(-) Total Investments'])
+                    ttm_data['Minority Interest'] = (_lbs.get('minorityInterest', 0) or 0) / _q_scale
+                else:
+                    for item in bs_items:
+                        ttm_data[item] = summary_data[0][item]
+
+                # Key Ratios
+                ttm_data['▸ Key Ratios'] = ''
+                ttm_ic = ttm_data['Invested Capital']
+                ttm_data['Revenue / IC'] = (ttm_data['Revenue'] / ttm_ic) if ttm_ic != 0 else 0
+
+                # ROIC and ROE: compute from TTM data using average denominators
+                # Average = (latest quarter-end + prior year-end) / 2
+                prior_fy_ic = summary_data[0].get('Invested Capital', 0)
+                prior_fy_equity = summary_data[0].get('(+) Total Equity', 0)
+                avg_ic = (ttm_ic + prior_fy_ic) / 2 if (ttm_ic + prior_fy_ic) != 0 else 0
+                avg_equity = (ttm_data.get('(+) Total Equity', 0) + prior_fy_equity) / 2
+
+                ttm_ebit_val = ttm_data['EBIT']
+                ttm_tax_pct = ttm_data['Tax Rate (%)']
+                ttm_data['ROIC (%)'] = ((ttm_ebit_val * (1 - ttm_tax_pct / 100)) / avg_ic * 100) if avg_ic != 0 else 0
+                if _ttm_net_income_m is not None and avg_equity != 0:
+                    ttm_data['ROE (%)'] = (_ttm_net_income_m / avg_equity * 100)
+                else:
+                    ttm_data['ROE (%)'] = summary_data[0].get('ROE (%)', 0)
+
+                # Other point-in-time ratios
+                # Debt to Assets: recompute from quarterly BS when available
+                if _use_quarterly_bs:
+                    _total_assets_raw = (_lbs.get('totalAssets', 0) or 0) / _q_scale
+                    _total_debt_raw = ttm_data['(+) Total Debt']
+                    ttm_data['Debt to Assets (%)'] = (_total_debt_raw / _total_assets_raw * 100) if _total_assets_raw != 0 else 0
+                else:
+                    ttm_data['Debt to Assets (%)'] = summary_data[0].get('Debt to Assets (%)', 0)
+                ttm_data['Cost of Debt (%)'] = summary_data[0].get('Cost of Debt (%)', 0)
+                if not is_a_share(ticker):
+                    for ratio in ['Dividend Yield (%)', 'Payout Ratio (%)']:
+                        ttm_data[ratio] = summary_data[0].get(ratio, 0)
+
+                # Add note about reinvestment data sources (if any)
+                if ttm_note:
+                    ttm_data['_ttm_note'] = ttm_note
 
                 summary_data.insert(0, ttm_data)
 
-                # TTM-level EBIT comparison (if all 4 quarters have akshare data)
-                if ebit_comparison:
-                    ttm_quarter_keys = set()
-                    for j in range(1, 5):  # indices 1..4 in summary_data after TTM insert
-                        yr = summary_data[j].get('Calendar Year', '')
-                        pr = summary_data[j].get('Period', '')
-                        ttm_quarter_keys.add(f"{yr}-{pr}")
-                    ttm_ak_items = [e for e in ebit_comparison if e['year'] in ttm_quarter_keys]
-                    if len(ttm_ak_items) == 4:
-                        ttm_ak = sum(e['akshare_ebit'] for e in ttm_ak_items)
-                        ttm_fmp = sum(e['fmp_ebit'] for e in ttm_ak_items)
-                        ttm_diff = ((ttm_ak - ttm_fmp) / ttm_fmp * 100) if ttm_fmp != 0 else 0
-                        ebit_comparison.insert(0, {
-                            'year': 'TTM',
-                            'akshare_ebit': ttm_ak,
-                            'fmp_ebit': ttm_fmp,
-                            'diff_pct': ttm_diff
-                        })
-
         avg_tax_rate = sum(tax_rates) / len(tax_rates) if tax_rates else 0
+
+        # Remove internal flags before building DataFrame
+        ttm_note = ''
+        for d in summary_data:
+            d.pop('_has_cf', None)
+            if '_ttm_note' in d:
+                ttm_note = d.pop('_ttm_note')
 
         summary_df = pd.DataFrame(summary_data).T
         summary_df.columns = summary_df.iloc[0]
@@ -353,24 +1598,37 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
             'balance_sheet': balance_df,
             'cashflow_statement': cashflow_df,
             'summary': summary_df,
-            'average_tax_rate': avg_tax_rate
+            'average_tax_rate': avg_tax_rate,
+            'ttm_note': ttm_note,
+            'ttm_latest_quarter': _ttm_latest_quarter if _need_ttm else '',
+            'ttm_end_date': _ttm_end_date,
         }
-        if ebit_comparison:
-            result['ebit_comparison'] = ebit_comparison
+
+        # For A-shares and HK annual (yfinance), include complete raw financial statements for Excel export
+        if is_a_share(ticker) or (is_hk_stock(ticker) and period == 'annual'):
+            result['raw_income_statement'] = raw_income_df
+            result['raw_balance_sheet'] = raw_balance_df
+            result['raw_cashflow_statement'] = raw_cashflow_df
+
         return result
     except Exception as e:
         print(f"Error fetching financial data: {e}")
+        traceback.print_exc()
         return None
 
 def format_summary_df(summary_df):
     """Format summary_df for terminal display. Returns a new formatted copy; original is NOT modified."""
     df = summary_df.copy()
 
-    AMOUNT_ROWS = ['Revenue', 'EBIT', 'Depreciation & Amortization', 'Increase in Working Capital',
-                   'Capital Expenditure', 'Total Reinvestments', 'Total Debt', 'Total Equity',
-                   'Minority Interest', 'Cash & Cash Equivalents', 'Total Investments', 'Invested Capital']
-    RATIO_ROWS = ['Revenue Growth', 'EBIT Growth', 'EBIT Margin', 'Tax Rate', 'Revenue to Invested Capital',
-                  'Debt to Assets', 'Cost of Debt', 'ROIC', 'ROE', 'Dividend Yield', 'Payout Ratio']
+    AMOUNT_ROWS = ['Revenue', 'EBIT',
+                   '(+) Capital Expenditure', '(-) D&A', '(+) ΔWorking Capital', 'Total Reinvestment',
+                   '(+) Total Debt', '(+) Total Equity',
+                   '(-) Cash & Equivalents', '(-) Total Investments',
+                   'Invested Capital', 'Minority Interest']
+    RATIO_ROWS = ['Revenue Growth (%)', 'EBIT Growth (%)', 'EBIT Margin (%)', 'Tax Rate (%)',
+                  'Revenue / IC', 'Debt to Assets (%)', 'Cost of Debt (%)',
+                  'ROIC (%)', 'ROE (%)', 'Dividend Yield (%)', 'Payout Ratio (%)']
+    SECTION_HEADERS = ['▸ Profitability', '▸ Reinvestment', '▸ Capital Structure', '▸ Key Ratios']
 
     for index in df.index:
         if index in AMOUNT_ROWS:
@@ -378,6 +1636,8 @@ def format_summary_df(summary_df):
                 lambda x: f"{int(x):,}" if pd.notnull(x) else 'N/A')
         elif index in RATIO_ROWS:
             df.loc[index] = pd.to_numeric(df.loc[index], errors='coerce').apply(
-                lambda x: f"{x:.2f}" if pd.notnull(x) else 'N/A')
+                lambda x: f"{x:.1f}" if pd.notnull(x) else 'N/A')
+        elif index in SECTION_HEADERS:
+            df.loc[index] = [''] * len(df.columns)
 
     return df
