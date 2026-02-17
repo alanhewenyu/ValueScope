@@ -63,10 +63,25 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 
 > Valuing Kweichow Moutai (600519.SS) with AI Copilot — from data to intrinsic value in minutes.
 
-<!-- Replace with your recorded demo GIF or video -->
-<!-- ![ValuX Demo](assets/demo.gif) -->
+**1. Historical Financial Data**
 
-*Demo coming soon — run `python main.py` and try it yourself!*
+<!-- ![Historical Data](assets/demo-1-historical.png) -->
+*Screenshot: Annual financial summary with TTM data*
+
+**2. AI Copilot — Parameter Suggestions**
+
+<!-- ![AI Analysis](assets/demo-2-ai-params.png) -->
+*Screenshot: AI suggests valuation parameters with web research and reasoning*
+
+**3. DCF Valuation Result**
+
+<!-- ![DCF Result](assets/demo-3-dcf-result.png) -->
+*Screenshot: Intrinsic value per share and calculation breakdown*
+
+**4. Sensitivity Analysis**
+
+<!-- ![Sensitivity](assets/demo-4-sensitivity.png) -->
+*Screenshot: Revenue Growth × EBIT Margin and WACC sensitivity tables*
 
 ---
 
