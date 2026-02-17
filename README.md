@@ -4,6 +4,16 @@
 
 ---
 
+# ValuX
+
+**AI-powered DCF valuation for global stocks — A-shares & HK stocks free, no API key needed.**
+
+[![Demo](https://img.shields.io/badge/▶_Watch_Demo-blue?style=for-the-badge)](#demo)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Python 3.8+](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
+
+---
+
 ## What is ValuX?
 
 ValuX is an AI-powered stock valuation tool built on the Discounted Cash Flow (DCF) model. It automates data collection, leverages AI to generate valuation parameters with real-time market research, and calculates a company's intrinsic value — all from your terminal.
@@ -46,6 +56,17 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 │  [Optional] Export to Excel                                  │
 └──────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Demo
+
+> Valuing Kweichow Moutai (600519.SS) with AI Copilot — from data to intrinsic value in minutes.
+
+<!-- Replace with your recorded demo GIF or video -->
+<!-- ![ValuX Demo](assets/demo.gif) -->
+
+*Demo coming soon — run `python main.py` and try it yourself!*
 
 ---
 

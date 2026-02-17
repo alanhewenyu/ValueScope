@@ -5,3 +5,4 @@ stock_valuation/
 .env
 *.swp
 *.swo
+assets/*.cast

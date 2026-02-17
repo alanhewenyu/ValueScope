@@ -4,6 +4,16 @@
 
 ---
 
+# ValuX
+
+**AI 驱动的 DCF 股票估值工具 — A 股、港股免费使用，无需 API Key。**
+
+[![Demo](https://img.shields.io/badge/▶_观看演示-blue?style=for-the-badge)](#demo)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Python 3.8+](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
+
+---
+
 ## ValuX 是什么？
 
 ValuX 是一个基于现金流折现模型（DCF）的 AI 股票估值工具。它自动抓取财务数据，借助 AI 实时搜索市场信息生成估值参数建议，并计算公司的内在价值 — 全部在终端中完成。
@@ -46,6 +56,17 @@ ValuX 是一个基于现金流折现模型（DCF）的 AI 股票估值工具。�
 │  [可选] 导出 Excel                                            │
 └──────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 演示
+
+> 使用 AI Copilot 对贵州茅台（600519.SS）进行 DCF 估值 — 从数据到内在价值，几分钟完成。
+
+<!-- 替换为录制的 demo GIF 或视频 -->
+<!-- ![ValuX 演示](assets/demo.gif) -->
+
+*演示视频即将上线 — 现在就运行 `python main.py` 亲自体验！*
 
 ---
 
