@@ -65,23 +65,19 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 
 **1. Historical Financial Data**
 
-<!-- ![Historical Data](assets/demo-1-historical.png) -->
-*Screenshot: Annual financial summary with TTM data*
+![Historical Data](assets/demo-1-historical.png)
 
 **2. AI Copilot — Parameter Suggestions**
 
-<!-- ![AI Analysis](assets/demo-2-ai-params.png) -->
-*Screenshot: AI suggests valuation parameters with web research and reasoning*
+![AI Analysis](assets/demo-2-ai-params.png)
 
 **3. DCF Valuation Result**
 
-<!-- ![DCF Result](assets/demo-3-dcf-result.png) -->
-*Screenshot: Intrinsic value per share and calculation breakdown*
+![DCF Result](assets/demo-3-dcf-result.png)
 
 **4. Sensitivity Analysis**
 
-<!-- ![Sensitivity](assets/demo-4-sensitivity.png) -->
-*Screenshot: Revenue Growth × EBIT Margin and WACC sensitivity tables*
+![Sensitivity](assets/demo-4-sensitivity.png)
 
 ---
 

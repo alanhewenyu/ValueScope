@@ -65,23 +65,19 @@ ValuX 是一个基于现金流折现模型（DCF）的 AI 股票估值工具。�
 
 **1. 历史财务数据**
 
-<!-- ![历史数据](assets/demo-1-historical.png) -->
-*截图：年度财务数据摘要（含 TTM）*
+![历史数据](assets/demo-1-historical.png)
 
 **2. AI Copilot — 参数建议**
 
-<!-- ![AI 分析](assets/demo-2-ai-params.png) -->
-*截图：AI 搜索市场数据，给出估值参数建议和分析依据*
+![AI 分析](assets/demo-2-ai-params.png)
 
 **3. DCF 估值结果**
 
-<!-- ![DCF 结果](assets/demo-3-dcf-result.png) -->
-*截图：每股内在价值及完整计算过程*
+![DCF 结果](assets/demo-3-dcf-result.png)
 
 **4. 敏感性分析**
 
-<!-- ![敏感性分析](assets/demo-4-sensitivity.png) -->
-*截图：收入增长率 × EBIT 利润率、WACC 敏感性分析表*
+![敏感性分析](assets/demo-4-sensitivity.png)
 
 ---
 
