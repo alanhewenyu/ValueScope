@@ -246,10 +246,17 @@ def sensitivity_analysis(base_year_data, valuation_params, financial_data, compa
     return sensitivity_table
 
 
-def print_sensitivity_table(table, valuation_params):
-    """Print revenue growth vs EBIT margin sensitivity table with highlighting."""
+def print_sensitivity_table(table, valuation_params, forex_rate=None, stock_currency=None, reported_currency=None):
+    """Print revenue growth vs EBIT margin sensitivity table with highlighting.
+
+    If forex_rate is provided and currencies differ, values are converted to stock trading currency.
+    """
     base_growth = valuation_params['revenue_growth_2']
     base_margin = valuation_params['ebit_margin']
+
+    # Determine if currency conversion is needed
+    need_convert = (forex_rate and stock_currency and reported_currency
+                    and reported_currency != stock_currency)
 
     # Column header (EBIT Margin label + values)
     col_width = 10
@@ -277,6 +284,8 @@ def print_sensitivity_table(table, valuation_params):
 
         for col in table.columns:
             val = table.loc[idx, col]
+            if need_convert:
+                val = val * forex_rate
             formatted = f"{val:,.0f}"
             if idx == base_growth and col == base_margin:
                 row_str += f"{S.BOLD}{S.BRIGHT_GREEN}{formatted:>{col_width}}{S.RESET}"
@@ -304,8 +313,15 @@ def wacc_sensitivity_analysis(base_year_data, valuation_params, financial_data, 
     return results_list, wacc_base_rounded
 
 
-def print_wacc_sensitivity(results_list, wacc_base):
-    """Print WACC sensitivity table with highlighting."""
+def print_wacc_sensitivity(results_list, wacc_base, forex_rate=None, stock_currency=None, reported_currency=None):
+    """Print WACC sensitivity table with highlighting.
+
+    If forex_rate is provided and currencies differ, values are converted to stock trading currency.
+    """
+    # Determine if currency conversion is needed
+    need_convert = (forex_rate and stock_currency and reported_currency
+                    and reported_currency != stock_currency)
+
     col_width = 12
     # Header row
     header = ' ' * 4
@@ -320,7 +336,8 @@ def print_wacc_sensitivity(results_list, wacc_base):
     # Value row
     row_str = '    '
     for wacc_val, price in results_list.items():
-        formatted = f"{price:,.0f}"
+        display_price = price * forex_rate if need_convert else price
+        formatted = f"{display_price:,.0f}"
         if wacc_val == wacc_base:
             row_str += f"{S.BOLD}{S.BRIGHT_GREEN}{formatted:>{col_width}}{S.RESET}"
         else:
@@ -328,7 +345,7 @@ def print_wacc_sensitivity(results_list, wacc_base):
     print(row_str)
 
 
-def print_dcf_results(results, company_name, ttm_quarter='', ttm_label=''):
+def print_dcf_results(results, company_name, ttm_quarter='', ttm_label='', forex_rate=None, stock_currency=None):
     dcf_table = results['dcf_table']
     print(f"\n{S.header(f'{company_name} Free Cashflow Forecast Results - 10 years, in millions')}")
 
@@ -369,13 +386,26 @@ def print_dcf_results(results, company_name, ttm_quarter='', ttm_label=''):
         (f"Equity Price per Share ({results['reported_currency']})" if results['reported_currency'] else "Equity Price per Share", results['price_per_share'])
     ]
 
+    # If reporting currency differs from stock trading currency, add a converted price line
+    converted_price = None
+    if forex_rate and stock_currency and results.get('reported_currency') and results['reported_currency'] != stock_currency:
+        converted_price = results['price_per_share'] * forex_rate
+        valuation_calculation.append(
+            (f"Equity Price per Share ({stock_currency})", converted_price)
+        )
+
     max_label_length = max(len(label) for label, _ in valuation_calculation)
     max_value_length = max(len(f"{value:,.0f}") if isinstance(value, (int, float)) else len(str(value)) for _, value in valuation_calculation)
 
     for lbl, val in valuation_calculation:
         if lbl.startswith("Equity Price per Share"):
             formatted_value = f"{val:,.2f}"
-            print(f"\n{S.label(lbl.ljust(max_label_length))} : {S.BOLD}{S.BRIGHT_GREEN}{formatted_value.rjust(max_value_length)}{S.RESET}")
+            # Show forex conversion note for the converted currency line
+            if converted_price is not None and stock_currency and lbl.endswith(f"({stock_currency})"):
+                forex_note = f"  {S.DIM}(× {forex_rate:.4f}){S.RESET}"
+                print(f"\n{S.label(lbl.ljust(max_label_length))} : {S.BOLD}{S.BRIGHT_GREEN}{formatted_value.rjust(max_value_length)}{S.RESET}{forex_note}")
+            else:
+                print(f"\n{S.label(lbl.ljust(max_label_length))} : {S.BOLD}{S.BRIGHT_GREEN}{formatted_value.rjust(max_value_length)}{S.RESET}")
         elif lbl == 'Equity Value':
             formatted_value = f"{val:,.0f}" if isinstance(val, (int, float)) else str(val)
             print(f"  {S.label(lbl.ljust(max_label_length))} : {S.value(formatted_value.rjust(max_value_length))}")

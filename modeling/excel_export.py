@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Alan He. Licensed under MIT.
 """Excel export utilities for DCF valuation results."""
 
+import io
 import os
 import re
 import shutil
@@ -21,15 +22,25 @@ def init_paths(project_root):
 def write_to_excel(filename, base_year_data, financial_data, valuation_params,
                    company_profile, total_equity_risk_premium,
                    gap_analysis_result=None, ai_result=None, wacc_sensitivity=None):
-    """Write all valuation data to an Excel workbook."""
+    """Write all valuation data to an Excel workbook.
+
+    *filename* can be a file path (str) or an ``io.BytesIO`` object.
+    When a BytesIO is passed the workbook is saved into it directly
+    (no filesystem side-effects) so callers can use it for downloads.
+    """
     from openpyxl import load_workbook
     from openpyxl.styles import Font, Alignment
     from openpyxl.utils.dataframe import dataframe_to_rows
 
-    if not os.path.exists(EXCEL_OUTPUT_DIR):
-        os.makedirs(EXCEL_OUTPUT_DIR)
-    shutil.copy(EXCEL_TEMPLATE_PATH, filename)
-    wb = load_workbook(filename)
+    _to_stream = isinstance(filename, io.BytesIO)
+
+    if _to_stream:
+        wb = load_workbook(EXCEL_TEMPLATE_PATH)
+    else:
+        if not os.path.exists(EXCEL_OUTPUT_DIR):
+            os.makedirs(EXCEL_OUTPUT_DIR)
+        shutil.copy(EXCEL_TEMPLATE_PATH, filename)
+        wb = load_workbook(filename)
     ws1 = wb['Input and sensitivity']
     ws2 = wb.create_sheet('Historical Financial Data')
     ws3 = wb.create_sheet('Income Statement')

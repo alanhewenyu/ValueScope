@@ -441,21 +441,34 @@ def main(args):
 
         # ── DCF calculation & output ──
         results = calculate_dcf(base_year_data, valuation_params, financial_data, company_info, company_profile)
-        print_dcf_results(results, company_name, ttm_label=valuation_params.get('ttm_label', ''))
+
+        # ── Compute forex rate early (needed for both DCF display and gap analysis) ──
+        forex_rate = _compute_forex_rate(results, company_profile, args.apikey)
+        stock_currency = company_profile.get('currency', 'USD')
+
+        print_dcf_results(results, company_name, ttm_label=valuation_params.get('ttm_label', ''),
+                          forex_rate=forex_rate, stock_currency=stock_currency)
 
         # ── Sensitivity analysis ──
+        reported_currency = results.get('reported_currency', '')
+        # Determine display currency for sensitivity tables
+        sensitivity_currency = stock_currency if (forex_rate and reported_currency and reported_currency != stock_currency) else (reported_currency or stock_currency)
+
         print(f"\n{S.info('Running sensitivity analysis...')}")
         sensitivity_table = sensitivity_analysis(base_year_data, valuation_params, financial_data, company_info, company_profile)
-        print(f"\n{S.subheader('Sensitivity Analysis - Revenue Growth vs EBIT Margin (Price per Share)')}")
-        print_sensitivity_table(sensitivity_table, valuation_params)
+        print(f"\n{S.subheader(f'Sensitivity Analysis - Revenue Growth vs EBIT Margin (Price per Share, {sensitivity_currency})')}")
+        print_sensitivity_table(sensitivity_table, valuation_params,
+                                forex_rate=forex_rate, stock_currency=stock_currency,
+                                reported_currency=reported_currency)
 
         print(f"\n{S.info('Running WACC sensitivity analysis...')}")
         wacc_results, wacc_base = wacc_sensitivity_analysis(base_year_data, valuation_params, financial_data, company_info, company_profile)
-        print(f"\n{S.subheader('Sensitivity Analysis - WACC (Price per Share)')}")
-        print_wacc_sensitivity(wacc_results, wacc_base)
+        print(f"\n{S.subheader(f'Sensitivity Analysis - WACC (Price per Share, {sensitivity_currency})')}")
+        print_wacc_sensitivity(wacc_results, wacc_base,
+                               forex_rate=forex_rate, stock_currency=stock_currency,
+                               reported_currency=reported_currency)
 
         # ── Gap analysis ──
-        forex_rate = _compute_forex_rate(results, company_profile, args.apikey)
         gap_analysis_result = _run_gap_analysis(
             auto_mode, ticker, company_profile, results, valuation_params,
             summary_df, base_year, forecast_year_1, forex_rate)

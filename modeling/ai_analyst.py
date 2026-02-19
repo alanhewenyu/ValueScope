@@ -155,8 +155,17 @@ def _run_engine(engine, prompt):
         return None
 
     _timeout = 600  # 10 minutes for search + analysis
+    # Build a clean env without CLAUDE* markers to avoid
+    # "nested session" error when launched from Claude Code.
+    clean_env = {k: v for k, v in os.environ.items()
+                 if not k.startswith('CLAUDE')}
+    for _ek in ('PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'TERM',
+                'FMP_API_KEY', 'GEMINI_API_KEY', 'OPENAI_API_KEY'):
+        if _ek in os.environ:
+            clean_env[_ek] = os.environ[_ek]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=_timeout)
+        result = subprocess.run(cmd, capture_output=True, text=True,
+                                timeout=_timeout, env=clean_env)
     except subprocess.TimeoutExpired:
         print(f"  {S.warning(f'{engine_label} 调用超时 ({_timeout}s)')}")
         return None
@@ -170,6 +179,18 @@ def _run_engine(engine, prompt):
     if not raw:
         print(f"  {S.warning(f'{engine_label} 返回空内容')}")
         return None
+
+    # Claude CLI may return exit code 0 but with is_error:true in JSON
+    # (e.g. rate limit hit). Detect this and treat as failure so fallback kicks in.
+    if engine == 'claude':
+        try:
+            _parsed = json.loads(raw)
+            if isinstance(_parsed, dict) and _parsed.get('is_error'):
+                error_msg = _parsed.get('result', '') or 'Unknown error'
+                print(f"  {S.warning(f'{engine_label} 调用失败: {error_msg}')}")
+                return None
+        except (json.JSONDecodeError, KeyError):
+            pass  # not JSON or unexpected structure — continue normally
 
     return (raw, engine)
 
@@ -204,12 +225,25 @@ def _call_ai_cli(prompt):
     engine = _AI_ENGINE
     result = _run_engine(engine, prompt)
 
-    # Fallback: if non-Claude engine failed and Claude is available, retry with Claude
-    if result is None and engine != 'claude' and shutil.which('claude'):
-        print(f"  {S.info('自动切换到 Claude CLI 继续分析...')}")
-        _AI_ENGINE = 'claude'
-        _detected_model_name = None
-        result = _run_engine('claude', prompt)
+    # Fallback chain: try other available engines if the primary one fails.
+    # Priority order: claude → gemini → qwen
+    if result is None:
+        _all_engines = ['claude', 'gemini', 'qwen']
+        for fallback in _all_engines:
+            if fallback == engine:
+                continue  # skip the engine that already failed
+            cmd_name = 'qwen' if fallback == 'qwen' else fallback
+            if not shutil.which(cmd_name):
+                continue  # not installed
+            fallback_label = _ENGINE_LABELS.get(fallback, fallback)
+            print(f"  {S.info(f'自动切换到 {fallback_label} 继续分析...')}")
+            if fallback == 'gemini':
+                _ensure_gemini_preview()
+            _AI_ENGINE = fallback
+            _detected_model_name = None
+            result = _run_engine(fallback, prompt)
+            if result is not None:
+                break  # success
 
     if result is None:
         raise RuntimeError(f"{_ENGINE_LABELS.get(_AI_ENGINE, _AI_ENGINE)} 调用失败")
