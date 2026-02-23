@@ -319,6 +319,7 @@ section[data-testid="stSidebar"] div[data-testid="stTextInput"] input {
     border: 2px solid var(--vx-accent, #0969da) !important; border-radius: 8px !important;
     font-size: 1.05rem !important; font-weight: 600 !important; padding: 8px 12px !important;
     background: var(--vx-input-bg, #fff) !important;
+    color: var(--vx-text, #1f2328) !important;
     transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
 }
 section[data-testid="stSidebar"] div[data-testid="stTextInput"] input:focus {
@@ -348,6 +349,11 @@ div[data-testid="stSidebarCollapsedControl"] { z-index: 999999 !important; }
 .company-header-bar { background: transparent; padding: 0; margin: 0; display: flex; align-items: center; min-height: 38px; gap: 14px; flex-wrap: wrap; }
 .company-header-bar .company-name { font-size: 1.4rem; font-weight: 700; color: var(--vx-text); margin: 0; padding: 0 0 0 8px; line-height: 38px; white-space: nowrap; }
 /* Inline intrinsic value badge in sticky header */
+
+/* ── Ensure all inputs have visible text colour ── */
+input, textarea, select, [data-baseweb="input"] input, [data-baseweb="select"] div {
+    color: var(--vx-text, #1f2328) !important;
+}
 
 /* ── Hide zero-height iframes ── */
 iframe[height="0"] { display: none !important; }
@@ -991,8 +997,10 @@ with st.sidebar:
         '</div>',
         unsafe_allow_html=True)
 
+    _ai_disabled = (_AI_ENGINE is None)
     oneclick_btn = st.button(t('sidebar_oneclick_btn'), type="primary", use_container_width=True,
-                              help=t('sidebar_oneclick_help'), key='oneclick_btn')
+                              help=t('sidebar_oneclick_help'), key='oneclick_btn',
+                              disabled=_ai_disabled)
 
     # Determine internal mode based on button clicks
     if oneclick_btn:
@@ -1122,7 +1130,7 @@ with st.sidebar:
             )
             st.session_state[_state_key] = _speed
     else:
-        st.warning(t('sidebar_no_engine'))
+        st.info(t('sidebar_no_engine'))
 
     # ── Language is now controlled by EN|CN buttons in brand area (query params) ──
 

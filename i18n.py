@@ -26,7 +26,13 @@ _STRINGS = {
         'sidebar_speed_quality_qwen': '\U0001f50d Quality (+ Web)',
         'sidebar_speed_fast_qwen': '\u26a1 Fast (data only)',
         'sidebar_speed_help_qwen': 'Quality enables web search via Tavily. Fast uses only the financial data provided \u2014 no web access, much faster.',
-        'sidebar_no_engine': 'No AI engine detected. Please ensure an AI CLI is installed.',
+        'sidebar_no_engine': ('**AI Valuation is not available in the web version.**\n\n'
+                               'AI Valuation requires a locally installed AI CLI '
+                               '(Claude Code, Gemini CLI, or Qwen CLI).\n\n'
+                               'To use AI Valuation, download and run ValuX locally:\n\n'
+                               '```\ngit clone https://github.com/alanhewenyu/ValuX.git\ncd ValuX && pip install -r requirements.txt\nstreamlit run web_app.py\n```\n\n'
+                               'You can still use **Manual Valuation** on this page \u2014 it works the same way, '
+                               'you just set the assumptions yourself.'),
         'sidebar_language': 'Language',
         'sidebar_language_help': 'Interface & AI output language. EN = English, CN = \u4e2d\u6587.',
         'sidebar_fmp_label': 'Financial Modeling Prep (FMP) API Key',
@@ -289,7 +295,12 @@ _STRINGS = {
         'sidebar_speed_quality_qwen': '\U0001f50d \u7cbe\u7ec6 (+ \u7f51\u7edc\u641c\u7d22)',
         'sidebar_speed_fast_qwen': '\u26a1 \u5feb\u901f (\u4ec5\u6570\u636e)',
         'sidebar_speed_help_qwen': '\u7cbe\u7ec6\u6a21\u5f0f\u901a\u8fc7 Tavily \u542f\u7528\u7f51\u7edc\u641c\u7d22\u3002\u5feb\u901f\u6a21\u5f0f\u4ec5\u4f7f\u7528\u63d0\u4f9b\u7684\u8d22\u52a1\u6570\u636e\u2014\u2014\u65e0\u7f51\u7edc\u8bbf\u95ee\uff0c\u901f\u5ea6\u66f4\u5feb\u3002',
-        'sidebar_no_engine': '\u672a\u68c0\u6d4b\u5230 AI \u5f15\u64ce\u3002\u8bf7\u786e\u4fdd\u5df2\u5b89\u88c5 AI CLI\u3002',
+        'sidebar_no_engine': ('**\u7f51\u9875\u7248\u6682\u4e0d\u652f\u6301 AI \u4f30\u503c\u3002**\n\n'
+                               'AI \u4f30\u503c\u9700\u8981\u672c\u5730\u5b89\u88c5 AI CLI\uff08Claude Code\u3001Gemini CLI \u6216 Qwen CLI\uff09\u3002\n\n'
+                               '\u5982\u9700\u4f7f\u7528 AI \u4f30\u503c\uff0c\u8bf7\u4e0b\u8f7d\u5e76\u5728\u672c\u5730\u8fd0\u884c ValuX\uff1a\n\n'
+                               '```\ngit clone https://github.com/alanhewenyu/ValuX.git\ncd ValuX && pip install -r requirements.txt\nstreamlit run web_app.py\n```\n\n'
+                               '\u60a8\u4ecd\u53ef\u4ee5\u5728\u6b64\u9875\u9762\u4f7f\u7528 **\u624b\u52a8\u4f30\u503c** \u2014\u2014 \u529f\u80fd\u5b8c\u5168\u76f8\u540c\uff0c'
+                               '\u53ea\u662f\u9700\u8981\u60a8\u81ea\u5df1\u8bbe\u5b9a\u5047\u8bbe\u53c2\u6570\u3002'),
         'sidebar_language': '\u8bed\u8a00',
         'sidebar_language_help': '\u754c\u9762\u548c AI \u8f93\u51fa\u8bed\u8a00\u3002EN = English\uff0cCN = \u4e2d\u6587\u3002',
         'sidebar_fmp_label': 'FMP API 密钥',
