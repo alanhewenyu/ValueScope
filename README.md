@@ -12,9 +12,9 @@
 
 > **No installation needed!** Try ValuX directly in your browser:
 >
-> **[valux.streamlit.app](https://valux.streamlit.app)**
+> **[valux-dcf.streamlit.app](https://valux-dcf.streamlit.app)**
 
-[![Web App](https://img.shields.io/badge/🌐_Web_App-valux.streamlit.app-FF4B4B?style=for-the-badge)](https://valux.streamlit.app)
+[![Web App](https://img.shields.io/badge/🌐_Web_App-valux-dcf.streamlit.app-FF4B4B?style=for-the-badge)](https://valux-dcf.streamlit.app)
 [![Demo](https://img.shields.io/badge/▶_Watch_Demo-blue?style=for-the-badge)](#demo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)

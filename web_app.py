@@ -94,6 +94,20 @@ import time
 st.set_page_config(page_title="ValuX", page_icon="📊", layout="wide",
                    initial_sidebar_state="expanded")
 
+# ── Google Analytics ──
+_GA_ID = os.environ.get("GA_MEASUREMENT_ID") or st.secrets.get("GA_MEASUREMENT_ID", "")
+if _GA_ID:
+    import streamlit.components.v1 as _ga_components
+    _ga_components.html(f"""
+    <script async src="https://www.googletagmanager.com/gtag/js?id={_GA_ID}"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){{dataLayer.push(arguments);}}
+      gtag('js', new Date());
+      gtag('config', '{_GA_ID}');
+    </script>
+    """, height=0)
+
 # ── Initialize language early so all t() calls during sidebar rendering work ──
 # Language is toggled via EN/CN buttons in the sidebar brand area.
 # They set st.session_state._lang directly and call st.rerun().

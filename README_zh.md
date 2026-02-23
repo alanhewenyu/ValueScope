@@ -12,9 +12,9 @@
 
 > **无需安装！** 直接在浏览器中使用 ValuX：
 >
-> **[valux.streamlit.app](https://valux.streamlit.app)**
+> **[valux-dcf.streamlit.app](https://valux-dcf.streamlit.app)**
 
-[![Web App](https://img.shields.io/badge/🌐_在线体验-valux.streamlit.app-FF4B4B?style=for-the-badge)](https://valux.streamlit.app)
+[![Web App](https://img.shields.io/badge/🌐_在线体验-valux-dcf.streamlit.app-FF4B4B?style=for-the-badge)](https://valux-dcf.streamlit.app)
 [![Demo](https://img.shields.io/badge/▶_观看演示-blue?style=for-the-badge)](#demo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
