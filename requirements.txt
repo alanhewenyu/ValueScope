@@ -6,6 +6,6 @@ urllib3
 akshare
 yfinance
 markdown
-streamlit
+streamlit>=1.42.0
 plotly
-altair
+altair>=5
