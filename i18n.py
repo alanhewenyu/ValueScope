@@ -43,6 +43,8 @@ _STRINGS = {
         # ── Welcome page ──
         'welcome_instruction': 'Enter a stock symbol in the sidebar, then click<br>'
                                '<b>\U0001f4dd Manual Valuation</b> or <b>\U0001f916 AI Valuation</b> to begin.',
+        'welcome_instruction_web': 'Enter a stock symbol in the sidebar, then click<br>'
+                                   '<b>\U0001f4dd Manual Valuation</b> to begin.',
         'welcome_us': '\U0001f1fa\U0001f1f8 US \u2014 e.g. AAPL',
         'welcome_hk': '\U0001f1ed\U0001f1f0 HK \u2014 e.g. 0700.HK',
         'welcome_cn': '\U0001f1e8\U0001f1f3 A-shares \u2014 e.g. 600519.SS',
@@ -311,6 +313,8 @@ _STRINGS = {
         # ── Welcome page ──
         'welcome_instruction': '\u5728\u4fa7\u8fb9\u680f\u8f93\u5165\u80a1\u7968\u4ee3\u7801\uff0c\u7136\u540e\u70b9\u51fb<br>'
                                '<b>\U0001f4dd \u624b\u52a8\u4f30\u503c</b> \u6216 <b>\U0001f916 AI \u4f30\u503c</b> \u5f00\u59cb\u3002',
+        'welcome_instruction_web': '\u5728\u4fa7\u8fb9\u680f\u8f93\u5165\u80a1\u7968\u4ee3\u7801\uff0c\u7136\u540e\u70b9\u51fb<br>'
+                                   '<b>\U0001f4dd \u624b\u52a8\u4f30\u503c</b> \u5f00\u59cb\u3002',
         'welcome_us': '\U0001f1fa\U0001f1f8 \u7f8e\u80a1 \u2014 \u4f8b\u5982 AAPL',
         'welcome_hk': '\U0001f1ed\U0001f1f0 \u6e2f\u80a1 \u2014 \u4f8b\u5982 0700.HK',
         'welcome_cn': '\U0001f1e8\U0001f1f3 A \u80a1 \u2014 \u4f8b\u5982 600519.SS',

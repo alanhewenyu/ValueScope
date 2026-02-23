@@ -94,6 +94,9 @@ import time
 st.set_page_config(page_title="ValuX", page_icon="📊", layout="wide",
                    initial_sidebar_state="expanded")
 
+# ── AI availability flag (False on Streamlit Cloud where no CLI is installed) ──
+_has_ai = (_AI_ENGINE is not None)
+
 # ── Google Analytics ──
 _GA_ID = os.environ.get("GA_MEASUREMENT_ID") or st.secrets.get("GA_MEASUREMENT_ID", "")
 if _GA_ID:
@@ -982,25 +985,27 @@ with st.sidebar:
 
     # ── Action buttons ──
     if 'use_ai' not in st.session_state:
-        st.session_state.use_ai = True
+        st.session_state.use_ai = bool(_AI_ENGINE)
 
     st.markdown('<div style="margin-top:8px;"></div>', unsafe_allow_html=True)
     manual_btn = st.button(t('sidebar_manual_btn'), use_container_width=True,
-                            help=t('sidebar_manual_help'), key='manual_btn')
+                            help=t('sidebar_manual_help'), key='manual_btn',
+                            type="primary" if not _has_ai else "secondary")
 
-    st.markdown(
-        '<div style="display:flex; align-items:center; justify-content:center; gap:8px; '
-        'margin:2px 0; padding:0;">'
-        '<div style="width:24px; height:1px; background:var(--vx-border, #d0d7de);"></div>'
-        f'<span style="color:var(--vx-text-muted, #999); font-size:0.7rem; letter-spacing:0.5px;">{t("sidebar_or")}</span>'
-        '<div style="width:24px; height:1px; background:var(--vx-border, #d0d7de);"></div>'
-        '</div>',
-        unsafe_allow_html=True)
+    if _has_ai:
+        st.markdown(
+            '<div style="display:flex; align-items:center; justify-content:center; gap:8px; '
+            'margin:2px 0; padding:0;">'
+            '<div style="width:24px; height:1px; background:var(--vx-border, #d0d7de);"></div>'
+            f'<span style="color:var(--vx-text-muted, #999); font-size:0.7rem; letter-spacing:0.5px;">{t("sidebar_or")}</span>'
+            '<div style="width:24px; height:1px; background:var(--vx-border, #d0d7de);"></div>'
+            '</div>',
+            unsafe_allow_html=True)
 
-    _ai_disabled = (_AI_ENGINE is None)
-    oneclick_btn = st.button(t('sidebar_oneclick_btn'), type="primary", use_container_width=True,
-                              help=t('sidebar_oneclick_help'), key='oneclick_btn',
-                              disabled=_ai_disabled)
+        oneclick_btn = st.button(t('sidebar_oneclick_btn'), type="primary", use_container_width=True,
+                                  help=t('sidebar_oneclick_help'), key='oneclick_btn')
+    else:
+        oneclick_btn = False
 
     # Determine internal mode based on button clicks
     if oneclick_btn:
@@ -1045,9 +1050,9 @@ with st.sidebar:
 
     use_ai = st.session_state.use_ai
 
-    # ── Engine / Settings ──
-    st.markdown('<hr style="margin:4px 0; border:none; border-top:1px solid var(--vx-border, #d0d7de);">', unsafe_allow_html=True)
+    # ── Engine / Settings (only shown when AI CLI is available, i.e. local) ──
     if _AI_ENGINE:
+        st.markdown('<hr style="margin:4px 0; border:none; border-top:1px solid var(--vx-border, #d0d7de);">', unsafe_allow_html=True)
         # Show engine options if AI is enabled or being used
         engine_options = ["claude", "gemini", "qwen"]
         engine_labels = {"claude": "Claude CLI", "gemini": "Gemini CLI", "qwen": "Qwen Code CLI"}
@@ -1129,9 +1134,6 @@ with st.sidebar:
                 key='_qwen_speed_radio',
             )
             st.session_state[_state_key] = _speed
-    else:
-        st.info(t('sidebar_no_engine'))
-
     # ── Language is now controlled by EN|CN buttons in brand area (query params) ──
 
     # ── API key ──
@@ -2378,7 +2380,7 @@ if 'summary_df' not in st.session_state:
                 ValuX
             </p>
             <p style="font-size:1.05rem; color:var(--vx-text-secondary, #656d76); line-height:1.6; margin-bottom:20px;">
-                {t('welcome_instruction')}
+                {t('welcome_instruction_web') if not _has_ai else t('welcome_instruction')}
             </p>
             <div style="display:flex; justify-content:center; gap:12px; flex-wrap:wrap; margin-bottom:20px;">
                 <span style="font-size:0.8rem; padding:4px 14px; border-radius:20px;
