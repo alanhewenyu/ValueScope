@@ -6,8 +6,15 @@
 
 # ValuX
 
-**AI 驱动的 DCF 股票估值工具 — A 股、港股免费使用，无需 API Key。**
+**AI 驱动的交互式 DCF 股票估值工具 — 标准化模型、实时调参、可复现结果。A 股、港股免费使用，无需 API Key。**
 
+### 在线体验
+
+> **无需安装！** 直接在浏览器中使用 ValuX：
+>
+> **[valux.streamlit.app](https://valux.streamlit.app)**
+
+[![Web App](https://img.shields.io/badge/🌐_在线体验-valux.streamlit.app-FF4B4B?style=for-the-badge)](https://valux.streamlit.app)
 [![Demo](https://img.shields.io/badge/▶_观看演示-blue?style=for-the-badge)](#demo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
@@ -16,9 +23,15 @@
 
 ## ValuX 是什么？
 
-ValuX 是一个基于现金流折现模型（DCF）的 AI 股票估值工具。它自动抓取财务数据，借助 AI 实时搜索市场信息生成估值参数建议，并计算公司的内在价值 — 全部在终端中完成。
+ValuX 是一个基于**标准化 DCF 引擎**的 AI 股票估值工具 — 10 年显性预测期、终值、WACC、敏感性分析，框架固定、结果可复现。与直接让大模型"估个值"不同（每次对话可能用不同的方法、不同的折现框架、甚至不同的估值模型），ValuX 产出**一致、可比较的估值结果**，为投资决策提供可靠依据。
 
-你可以把它想象成一位坐在身边的股权研究分析师：AI 帮你搜索业绩指引、分析师一致预期和行业数据，然后给出估值参数建议。你来审核和调整，AI 负责繁重的工作。
+**ValuX 相比直接用 AI 对话估值的优势：**
+
+- 🔧 **标准化 DCF 引擎** — 固定的估值框架（10 年 FCFF、WACC、终值），确保每次估值可复现、跨公司可比较。不用再猜 AI 这次用了什么方法。
+- 📊 **结构化数据管道** — 自动拉取历史财务数据，计算 TTM、WACC、历史参考区间。A 股和港股数据完全免费，人人可用。
+- 🎚️ **交互式调参 + 即时重算** — 拖动滑块，估值实时更新。这种探索假设的即时反馈，是 AI 对话做不到的。
+
+你可以把它想象成一位坐在身边的股权研究分析师：AI 帮你搜索业绩指引、分析师一致预期和行业数据，然后给出估值参数建议 — 而底层模型始终是严谨、透明、由你掌控的。
 
 ---
 

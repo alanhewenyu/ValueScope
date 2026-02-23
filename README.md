@@ -6,8 +6,15 @@
 
 # ValuX
 
-**AI-powered DCF valuation for global stocks — A-shares & HK stocks free, no API key needed.**
+**AI-powered interactive DCF valuation for global stocks — standardized model, real-time parameter tuning, reproducible results. A-shares & HK stocks free, no API key needed.**
 
+### Try the Web App
+
+> **No installation needed!** Try ValuX directly in your browser:
+>
+> **[valux.streamlit.app](https://valux.streamlit.app)**
+
+[![Web App](https://img.shields.io/badge/🌐_Web_App-valux.streamlit.app-FF4B4B?style=for-the-badge)](https://valux.streamlit.app)
 [![Demo](https://img.shields.io/badge/▶_Watch_Demo-blue?style=for-the-badge)](#demo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
@@ -16,9 +23,15 @@
 
 ## What is ValuX?
 
-ValuX is an AI-powered stock valuation tool built on the Discounted Cash Flow (DCF) model. It automates data collection, leverages AI to generate valuation parameters with real-time market research, and calculates a company's intrinsic value — all from your terminal.
+ValuX is an AI-powered stock valuation tool built on a **standardized DCF engine** — 10-year explicit forecast, terminal value, WACC, and sensitivity analysis in a fixed, reproducible framework. Unlike asking an LLM to "value this stock" (where every conversation may use a different method, different discount rates, or even different valuation approaches), ValuX produces **consistent, comparable results** you can trust for investment decisions.
 
-Think of it as having an equity research analyst sitting next to you: AI searches for earnings guidance, analyst consensus, and industry benchmarks, then suggests valuation parameters for your review. You stay in control; AI handles the heavy lifting.
+**What sets ValuX apart from raw AI chat?**
+
+- 🔧 **Standardized DCF Engine** — A fixed valuation framework (10-year FCFF, WACC, terminal value) ensures every valuation is reproducible and comparable across companies and time periods. No more guessing which method the AI used this time.
+- 📊 **Structured Data Pipeline** — Automatically fetches historical financials, calculates TTM metrics, WACC, and historical reference ranges. A-shares and HK stock data are free for everyone.
+- 🎚️ **Interactive Parameter Tuning** — Drag a slider, see the valuation update instantly. This real-time feedback loop for exploring assumptions is something AI chat simply cannot offer.
+
+Think of it as having an equity research analyst sitting next to you: AI searches for earnings guidance, analyst consensus, and industry benchmarks, then suggests valuation parameters — but the underlying model is always rigorous, transparent, and under your control.
 
 ---
 

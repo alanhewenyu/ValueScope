@@ -13,10 +13,18 @@ EXCEL_OUTPUT_DIR = ''
 
 
 def init_paths(project_root):
-    """Set template and output directory paths based on project root."""
+    """Set template and output directory paths based on project root.
+
+    Output directory priority:
+      1. VALUX_OUTPUT_DIR environment variable (user override)
+      2. ./stock_valuation  (default — inside project directory)
+    """
     global EXCEL_TEMPLATE_PATH, EXCEL_OUTPUT_DIR
     EXCEL_TEMPLATE_PATH = os.path.join(project_root, 'modeling', 'DCF valuation template.xlsx')
-    EXCEL_OUTPUT_DIR = os.path.join(os.getcwd(), 'stock_valuation')
+    EXCEL_OUTPUT_DIR = os.environ.get(
+        'VALUX_OUTPUT_DIR',
+        os.path.join(project_root, 'stock_valuation')
+    )
 
 
 def write_to_excel(filename, base_year_data, financial_data, valuation_params,

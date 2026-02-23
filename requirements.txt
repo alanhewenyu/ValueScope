@@ -5,3 +5,6 @@ numpy
 urllib3
 akshare
 yfinance
+markdown
+streamlit
+plotly

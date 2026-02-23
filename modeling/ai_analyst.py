@@ -149,7 +149,7 @@ def _run_engine(engine, prompt):
     elif engine == 'gemini':
         cmd = ['gemini', '-p', prompt, '--output-format', 'json', '-m', GEMINI_MODEL]
     elif engine == 'qwen':
-        cmd = ['qwen', '-p', prompt]
+        cmd = ['qwen', '-p', prompt, '--output-format', 'json']
     else:
         print(f"  {S.error(f'未知引擎: {engine}')}")
         return None
@@ -269,8 +269,9 @@ def _call_ai_cli(prompt):
                     model_id = next(iter(model_stats))
                     pretty = model_id.replace('gemini-', 'Gemini ').replace('-', ' ').title()
                     _detected_model_name = pretty
-        else:  # qwen — plain text, no JSON output to detect model
-            text = raw
+        elif engine_used == 'qwen':
+            data = json.loads(raw)
+            text = data.get('result', raw)
     except (json.JSONDecodeError, KeyError, StopIteration):
         pass
 
@@ -360,6 +361,88 @@ ANALYSIS_PROMPT_TEMPLATE = """你是一位资深的股权研究分析师和DCF�
 ```
 
 **注意：JSON 必须是有效格式，所有字符串用双引号，不要有注释。reasoning 中如有引用数据源请注明。**"""
+
+
+ANALYSIS_PROMPT_TEMPLATE_EN = """You are a senior equity research analyst and DCF valuation expert. Based on the following historical financial data and publicly available market information, generate DCF valuation parameter recommendations for {company_name} ({ticker}).
+
+**Note: The most recent year in the historical data below (leftmost column) is {base_year}{ttm_context}. Please base your analysis on the latest {base_year} data. {forecast_year_guidance}**
+
+**Important: You MUST use WebSearch to search for the following information before starting your analysis:**
+1. Search "{ticker} earnings guidance revenue outlook {search_year}" — find management earnings guidance (highest priority)
+2. Search "{ticker} revenue forecast {search_year} {search_year_2} analyst consensus" — find analyst consensus estimates
+3. Search "{ticker} EBIT margin operating margin industry average" — find industry benchmarks
+4. Search "{ticker} WACC cost of capital" — find WACC data from multiple sources
+
+## Company Information
+- Company Name: {company_name}
+- Ticker: {ticker}
+- Country: {country}
+- Beta: {beta}
+- Market Cap: {market_cap}
+- Valuation Base Year: {base_year}{ttm_base_label}
+
+## Pre-calculated Parameters (for reference)
+- Model-calculated WACC: {calculated_wacc}
+- Historical average effective tax rate: {calculated_tax_rate}
+
+## Historical Financial Data (in millions, leftmost column is most recent year {base_year})
+{financial_table}
+
+---
+
+Please conduct **independent, in-depth** analysis for each parameter below. Each analysis must include:
+- Your reasoning logic and analytical process
+- Cited data sources (e.g., analyst estimates, industry data found via search)
+- Final recommended value with justification
+
+**Output format: Must output a strict JSON code block with value and reasoning fields for each parameter. The reasoning field must contain detailed English analysis (at least 2-3 sentences) with supporting data and reasoning process.**
+
+```json
+{{
+  "revenue_growth_1": {{
+    "value": <number, e.g. 5 means 5%>,
+    "reasoning": "<Detailed analysis: **Prioritize finding management's latest earnings guidance.** If explicit revenue guidance exists, use it as the primary reference; otherwise, focus on analyst consensus estimates. Cite data sources.>"
+  }},
+  "revenue_growth_2": {{
+    "value": <number>,
+    "reasoning": "<Detailed analysis: Reasoning for 2-5 year CAGR, considering industry ceiling, competitive landscape, company moat, etc.>"
+  }},
+  "ebit_margin": {{
+    "value": <number>,
+    "reasoning": "<Detailed analysis: Basis for target EBIT margin, referencing industry benchmarks, company historical trends, operating leverage, etc.>"
+  }},
+  "convergence": {{
+    "value": <number>,
+    "reasoning": "<Detailed analysis: Why this convergence period — how long to move from current margin to target margin.>"
+  }},
+  "revenue_invested_capital_ratio_1": {{
+    "value": <number, use 0 if recommending zero>,
+    "reasoning": "<Detailed analysis: **Analysis steps (must follow in order):**\n1. **First**, check if historical Revenue / IC ratios (in Key Ratios section) are stable across years (fluctuation within ±20%). If stable, **prioritize using the historical average** as baseline, with adjustments based on projected revenue growth (faster growth → slightly higher ratio, slower growth → slightly lower).\n2. **Second**, if Revenue / IC is volatile or not applicable, check historical Total Reinvestments: if consistently negative (company is returning capital), it's asset-light — set to 0; if positive, back-calculate a reasonable ratio (= revenue increment / Total Reinvestments) and verify that implied capex aligns with historical levels.\nClearly state which method you used and why.>"
+  }},
+  "revenue_invested_capital_ratio_2": {{
+    "value": <number>,
+    "reasoning": "<Detailed analysis: Basis for Year 3-5 ratio. Similarly prioritize historical Revenue / IC stability, then cross-check against historical reinvestment levels.>"
+  }},
+  "revenue_invested_capital_ratio_3": {{
+    "value": <number>,
+    "reasoning": "<Detailed analysis: Basis for Year 5-10 ratio. Consider mature-stage capital efficiency changes, historical Revenue / IC trends and reinvestment levels.>"
+  }},
+  "tax_rate": {{
+    "value": <number>,
+    "reasoning": "<Detailed analysis: Tax rate recommendation basis, referencing historical effective rates, statutory rates, tax incentives, etc.>"
+  }},
+  "wacc": {{
+    "value": <number>,
+    "reasoning": "<Detailed analysis: WACC recommendation basis, synthesizing model-calculated value and third-party data sources.>"
+  }},
+  "ronic_match_wacc": {{
+    "value": <true or false>,
+    "reasoning": "<Detailed analysis: Whether ROIC should converge to WACC in terminal period, considering durability of competitive advantages.>"
+  }}
+}}
+```
+
+**Note: JSON must be valid format, all strings in double quotes, no comments. Cite data sources in reasoning where applicable.**"""
 
 
 def analyze_company(ticker, summary_df, base_year_data, company_profile, calculated_wacc, calculated_tax_rate, base_year, ttm_quarter='', ttm_end_date=''):
@@ -645,6 +728,72 @@ GAP_ANALYSIS_PROMPT_TEMPLATE = """你是一位资深的股权研究分析师。�
    ADJUSTED_PRICE: <数值>
 
 请直接输出分析内容，不需要 JSON 格式（仅最后一行的 ADJUSTED_PRICE 需要严格格式）。"""
+
+
+GAP_ANALYSIS_PROMPT_TEMPLATE_EN = """You are a senior equity research analyst. Analyze the gap between the following DCF valuation result and the current market stock price, and provide possible explanations for the discrepancy.
+
+## Company Information
+- Company Name: {company_name}
+- Ticker: {ticker}
+- Country: {country}
+- Current Stock Price: {current_price} {currency}
+- DCF Valuation Per Share: {dcf_price:.2f} {currency}
+- Gap: {gap_pct:+.1f}% ({gap_direction})
+
+## Key DCF Assumptions
+- Year 1 Revenue Growth: {revenue_growth_1}%
+- Years 2-5 CAGR: {revenue_growth_2}%
+- Target EBIT Margin: {ebit_margin}%
+- WACC: {wacc}%
+- Tax Rate: {tax_rate}%
+
+## Valuation Summary (in millions)
+- PV of Next 10 Years Cash Flows: {pv_cf:,.0f}
+- PV of Terminal Value: {pv_terminal:,.0f}
+- Enterprise Value: {enterprise_value:,.0f}
+- Equity Value: {equity_value:,.0f}
+
+## Historical Financial Data (in millions)
+{financial_table}
+
+---
+
+**Please use WebSearch to search for the following information to support your analysis:**
+1. Search "{ticker} stock price target analyst {forecast_year}" — find analyst price targets
+2. Search "{ticker} risks challenges {forecast_year}" — find company risks and challenges
+3. Search "{ticker} growth catalysts outlook" — find growth catalysts
+
+Please conduct your analysis in **English**, covering the following:
+
+1. **Valuation Gap Summary**: Briefly describe the magnitude and direction of the gap between DCF valuation and market price
+2. **DCF Key Assumptions vs Market/Analyst Expectations** (present in table format):
+   Compare each DCF assumption against searched data, noting data sources and applicable time periods.
+   **Strictly distinguish short-term vs long-term data applicability:**
+   - Analyst forecasts for a specific year's revenue/EPS → only supports the corresponding year's assumption (usually Year 1)
+   - Historical growth rates → reference only, cannot be directly extrapolated as future 5-year CAGR
+   - Years 2-5 CAGR assessment should be based on: long-term industry growth potential, competitive moats, Total Addressable Market (TAM) ceiling, sustainability analysis of historical growth
+   - Do not use 1-2 year analyst estimates as basis for 5-year CAGR
+3. **Possible Overvaluation/Undervaluation Reasons** (list at least 3-5 factors):
+   - Market sentiment / macro factors
+   - Industry trends / competitive landscape changes
+   - Company-specific risks or catalysts
+   - Areas where DCF model assumptions may be too conservative/aggressive
+4. **Analyst Consensus Comparison**: Compare DCF results with analyst price targets found via search
+5. **Recommendations**: Based on the above analysis, provide a confidence assessment of the valuation result and key risks to monitor
+6. **Adjusted Valuation**: Considering all the above factors, provide what you believe is a more reasonable intrinsic value per share.
+
+**Key Principles for Adjusted Valuation (must strictly follow):**
+- The purpose of adjustment is: to incorporate **new information discovered through search that may not have been considered when setting DCF parameters** (e.g., recent industry policy changes, major risk events, shifts in market sentiment), and decide whether adjustments are needed
+- The adjusted valuation must be **logically consistent** with your analysis:
+  - If search reveals **significant new negative information affecting valuation** (e.g., tightening industry regulations, major litigation risk, deteriorating competitive landscape, etc., not already factored into DCF parameters), adjust downward
+  - If search reveals no major new information beyond what DCF assumptions already capture, the DCF parameters reasonably reflect company fundamentals and **no adjustment is needed** — DCF above stock price may indicate market mispricing or short-term sentiment, which is precisely a value investing buy opportunity
+  - **Absolutely forbidden**: listing negative factors in analysis but then adjusting valuation higher than DCF
+- Do not automatically gravitate toward market price just because DCF valuation differs from it. Market prices can be wrong
+
+On the very last line of your analysis, output strictly in this format (number only, no currency symbol):
+   ADJUSTED_PRICE: <number>
+
+Output analysis content directly, no JSON format needed (only the final ADJUSTED_PRICE line requires strict format)."""
 
 
 def analyze_valuation_gap(ticker, company_profile, results, valuation_params, summary_df, base_year, forecast_year_1=None, forex_rate=None):
