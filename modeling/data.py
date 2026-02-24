@@ -360,23 +360,40 @@ def fetch_akshare_company_profile(ticker):
         'outstandingShares': 0,
     }
 
-    # Price: daily history API (different endpoint from stock_individual_info_em)
+    # --- Price + shares: try multiple endpoints (different backends) ---
+
+    # 1) eastmoney historical (push2his.eastmoney.com)
     try:
         hist_df = _get_ak().stock_zh_a_hist(symbol=bare_code, period='daily', adjust='qfq')
         if hist_df is not None and not hist_df.empty:
             profile['price'] = float(hist_df.iloc[-1]['收盘'])
-            print(S.muted(f"  ✓ Price from daily history: {profile['price']}"))
-    except Exception as e_price:
-        print(S.muted(f"  ⓘ stock_zh_a_hist failed ({type(e_price).__name__})"))
+            print(S.muted(f"  ✓ Price from eastmoney daily: {profile['price']}"))
+    except Exception as e1:
+        print(S.muted(f"  ⓘ stock_zh_a_hist failed ({type(e1).__name__})"))
 
-    # Note: company name and outstanding shares will be filled from already-fetched
-    # financial data by the caller (web_app._fetch_data / main.py) to avoid
-    # duplicate heavy API calls. See _fill_profile_from_financial_data().
+    # 2) Sina Finance fallback (finance.sina.com.cn — different backend)
+    if profile['price'] <= 0:
+        try:
+            _sina_prefix = 'sh' if ticker.upper().endswith('.SS') else 'sz'
+            _sina_df = _get_ak().stock_zh_a_daily(symbol=f'{_sina_prefix}{bare_code}', adjust='qfq')
+            if _sina_df is not None and not _sina_df.empty:
+                _last = _sina_df.iloc[-1]
+                profile['price'] = float(_last['close'])
+                # Bonus: Sina provides outstanding_share
+                _sina_shares = float(_last.get('outstanding_share', 0) or 0)
+                if _sina_shares > 0 and not profile.get('outstandingShares'):
+                    profile['outstandingShares'] = _sina_shares
+                print(S.muted(f"  ✓ Price from Sina: {profile['price']}"))
+        except Exception as e2:
+            print(S.muted(f"  ⓘ stock_zh_a_daily (Sina) failed ({type(e2).__name__})"))
+
+    # Note: company name and outstanding shares will also be filled from
+    # already-fetched financial data by _fill_profile_from_financial_data().
 
     if profile['price'] > 0:
         print(S.info(f"  ✓ Partial company profile assembled (name/shares pending)"))
     else:
-        print(S.muted(f"  ⓘ Partial company profile — price unavailable, will fill from financial data"))
+        print(S.muted(f"  ⓘ Partial company profile — all price sources failed"))
     return profile
 
 
