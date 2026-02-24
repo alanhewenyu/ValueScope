@@ -80,13 +80,9 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 
 ![AI Analysis](assets/demo-2-ai-params.png)
 
-**DCF Valuation Result**
+**DCF Valuation Result & Sensitivity Analysis**
 
 ![DCF Result](assets/demo-3-dcf-result.png)
-
-**Sensitivity Analysis**
-
-![Sensitivity](assets/demo-4-sensitivity.png)
 
 ### Local Web GUI
 
