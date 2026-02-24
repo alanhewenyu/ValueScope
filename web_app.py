@@ -58,6 +58,7 @@ from modeling.data import (
     is_hk_stock,
     validate_ticker,
     _normalize_ticker,
+    _fill_profile_from_financial_data,
 )
 from modeling.dcf import (
     calculate_dcf,
@@ -98,7 +99,10 @@ st.set_page_config(page_title="ValuX", page_icon="📊", layout="wide",
 _has_ai = (_AI_ENGINE is not None)
 
 # ── Google Analytics ──
-_GA_ID = os.environ.get("GA_MEASUREMENT_ID") or st.secrets.get("GA_MEASUREMENT_ID", "")
+try:
+    _GA_ID = os.environ.get("GA_MEASUREMENT_ID") or st.secrets.get("GA_MEASUREMENT_ID", "")
+except Exception:
+    _GA_ID = ""
 if _GA_ID:
     import streamlit.components.v1 as _ga_components
     _ga_components.html(f"""
@@ -1430,6 +1434,7 @@ def _fetch_data(ticker_raw, apikey_val):
         return False
 
     company_profile = fetch_company_profile(ticker, apikey_val)
+    company_profile = _fill_profile_from_financial_data(company_profile, financial_data)
     company_info = get_company_share_float(ticker, apikey_val, company_profile=company_profile)
 
     summary_df = financial_data['summary']

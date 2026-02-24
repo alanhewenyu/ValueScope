@@ -310,14 +310,14 @@ def _calculate_beta_akshare(ticker, years=3):
 def fetch_akshare_company_profile(ticker):
     """Fetch company profile + share float from akshare for A-shares.
 
-    Primary source: ``stock_individual_info_em`` (works locally).
-    Fallback: ``stock_zh_a_spot_em`` real-time quotes (works on Streamlit Cloud
-    where the individual-info endpoint may be blocked).
+    Primary: ``stock_individual_info_em`` (works locally).
+    Fallback: piece together from lightweight APIs that work on Streamlit Cloud
+    (same strategy as HK company profile).
     """
     bare_code = _ticker_to_bare_code(ticker)
     exchange = 'Shanghai Stock Exchange' if ticker.upper().endswith('.SS') else 'Shenzhen Stock Exchange'
 
-    # --- Primary: stock_individual_info_em ---
+    # --- Primary: stock_individual_info_em (fast, all-in-one) ---
     try:
         print(S.info(f"Fetching company profile from akshare for {bare_code}..."))
         info_df = _get_ak().stock_individual_info_em(symbol=bare_code)
@@ -334,76 +334,84 @@ def fetch_akshare_company_profile(ticker):
             'outstandingShares': float(info_dict.get('总股本', 0)),
         }
     except Exception as e:
-        print(S.muted(f"  ⓘ stock_individual_info_em failed ({type(e).__name__}), trying fallback..."))
+        print(S.muted(f"  ⓘ stock_individual_info_em failed ({type(e).__name__}), building profile from alternative sources..."))
 
-    # --- Fallback: stock_zh_a_spot_em (real-time spot data for all A-shares) ---
-    try:
-        spot_df = _get_ak().stock_zh_a_spot_em()
-        row = spot_df[spot_df['代码'] == bare_code]
-        if not row.empty:
-            r = row.iloc[0]
-            name = str(r.get('名称', ticker))
-            price = float(r.get('最新价', 0) or 0)
-            market_cap = float(r.get('总市值', 0) or 0)
-            outstanding = float(r.get('总股本', 0) or 0)
-            # spot_em 总股本 is in "shares", 总市值 is in yuan
-            # Some versions return 总股本 in 万股 — detect and correct
-            if outstanding > 0 and market_cap > 0 and price > 0:
-                implied_shares = market_cap / price
-                if abs(outstanding - implied_shares) / implied_shares > 5:
-                    outstanding = implied_shares  # use implied value
-            beta = _calculate_beta_akshare(ticker)
-            print(S.info(f"  ✓ Company profile from real-time spot data: {name}"))
-            return {
-                'companyName': name,
-                'marketCap': market_cap,
-                'beta': beta,
-                'country': 'China',
-                'currency': 'CNY',
-                'exchange': exchange,
-                'price': price,
-                'outstandingShares': outstanding,
-            }
-    except Exception as e2:
-        print(S.muted(f"  ⓘ spot_em fallback also failed ({type(e2).__name__})"))
-
-    # --- Last resort: yfinance ---
-    try:
-        from .yfinance_data import _get_yf
-        yf = _get_yf()
-        t_obj = yf.Ticker(ticker)
-        info = t_obj.info or {}
-        price = info.get('regularMarketPrice') or info.get('currentPrice') or info.get('previousClose', 0) or 0
-        shares = info.get('sharesOutstanding', 0) or 0
-        mkt_cap = info.get('marketCap', 0) or 0
-        beta = info.get('beta', 1.0) or 1.0
-        name = info.get('shortName') or info.get('longName') or ticker
-        print(S.info(f"  ✓ Company profile from yfinance: {name}"))
-        return {
-            'companyName': name,
-            'marketCap': float(mkt_cap),
-            'beta': float(beta),
-            'country': 'China',
-            'currency': 'CNY',
-            'exchange': exchange,
-            'price': float(price),
-            'outstandingShares': float(shares),
-        }
-    except Exception:
-        pass
-
-    # --- Absolute fallback: minimal data ---
-    print(S.warning(f"  ⚠ Could not fetch company profile for {ticker}. Using minimal defaults."))
-    return {
+    # --- Fallback: lightweight APIs (same strategy as HK company profile) ---
+    profile = {
         'companyName': ticker,
         'marketCap': 0,
-        'beta': 1.0,
+        'beta': _calculate_beta_akshare(ticker),
         'country': 'China',
         'currency': 'CNY',
         'exchange': exchange,
         'price': 0,
         'outstandingShares': 0,
     }
+
+    # Price: daily history API (different endpoint from stock_individual_info_em)
+    try:
+        hist_df = _get_ak().stock_zh_a_hist(symbol=bare_code, period='daily', adjust='qfq')
+        if hist_df is not None and not hist_df.empty:
+            profile['price'] = float(hist_df.iloc[-1]['收盘'])
+            print(S.muted(f"  ✓ Price from daily history: {profile['price']}"))
+    except Exception as e_price:
+        print(S.muted(f"  ⓘ stock_zh_a_hist failed ({type(e_price).__name__})"))
+
+    # Note: company name and outstanding shares will be filled from already-fetched
+    # financial data by the caller (web_app._fetch_data / main.py) to avoid
+    # duplicate heavy API calls. See _fill_profile_from_financial_data().
+
+    if profile['price'] > 0:
+        print(S.info(f"  ✓ Partial company profile assembled (name/shares pending)"))
+    else:
+        print(S.muted(f"  ⓘ Partial company profile — price unavailable, will fill from financial data"))
+    return profile
+
+
+def _fill_profile_from_financial_data(profile, financial_data):
+    """Fill missing company profile fields from already-fetched financial data.
+
+    Called after get_historical_financials() succeeds — avoids duplicate API calls.
+    Fills: companyName (from raw DataFrame), outstandingShares (from SHARE_CAPITAL
+    in balance sheet), and marketCap (price × shares).
+    """
+    if profile is None or financial_data is None:
+        return profile
+
+    # Company name from raw income statement DataFrame
+    # Fill if name is missing, or looks like a raw ticker symbol (e.g. "600519.SS")
+    _name = profile.get('companyName', '')
+    _looks_like_ticker = (not _name
+                          or _name == profile.get('_ticker', '')
+                          or _name == profile.get('symbol', '')
+                          or re.match(r'^\d{5,6}\.\w{1,2}$', _name))  # e.g. 600519.SS / 00700.HK
+    if _looks_like_ticker:
+        raw_inc = financial_data.get('raw_income_statement')
+        if raw_inc is not None and not raw_inc.empty:
+            # raw DataFrame from akshare has SECURITY_NAME_ABBR column
+            for col in ['SECURITY_NAME_ABBR']:
+                if col in raw_inc.columns:
+                    name = str(raw_inc[col].dropna().iloc[0]) if not raw_inc[col].dropna().empty else ''
+                    if name:
+                        profile['companyName'] = name
+                        break
+
+    # Outstanding shares from raw balance sheet (SHARE_CAPITAL = 实收资本/股本)
+    if not profile.get('outstandingShares'):
+        raw_bs = financial_data.get('raw_balance_sheet')
+        if raw_bs is not None and not raw_bs.empty:
+            if 'SHARE_CAPITAL' in raw_bs.columns:
+                sc_vals = raw_bs['SHARE_CAPITAL'].dropna()
+                if not sc_vals.empty:
+                    shares = float(sc_vals.iloc[0])
+                    if shares > 0:
+                        profile['outstandingShares'] = shares
+
+    # Market cap = price × shares
+    if not profile.get('marketCap') and profile.get('price', 0) > 0 and profile.get('outstandingShares', 0) > 0:
+        profile['marketCap'] = profile['price'] * profile['outstandingShares']
+
+    return profile
 
 
 def fetch_akshare_share_float(ticker):
