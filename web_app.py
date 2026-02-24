@@ -925,7 +925,7 @@ with st.sidebar:
     st.markdown(f"""
     <div class="sidebar-brand">
         <h1>ValuX</h1>
-        <div class="sub">{t('sidebar_brand_sub')}</div>
+        <div class="sub">{t('sidebar_brand_sub_web') if not _has_ai else t('sidebar_brand_sub')}</div>
     </div>
     """, unsafe_allow_html=True)
     # ── Language switch: two tiny buttons styled as text ──
@@ -978,8 +978,8 @@ with st.sidebar:
     </script>""", height=0)
 
     ticker_input = st.text_input(
-        t('sidebar_ticker_label'),
-        placeholder=t('sidebar_ticker_placeholder'),
+        t('sidebar_ticker_label_web') if not _has_ai else t('sidebar_ticker_label'),
+        placeholder=t('sidebar_ticker_placeholder_web') if not _has_ai else t('sidebar_ticker_placeholder'),
         label_visibility="visible",
     )
 
@@ -987,10 +987,15 @@ with st.sidebar:
     if 'use_ai' not in st.session_state:
         st.session_state.use_ai = bool(_AI_ENGINE)
 
-    st.markdown('<div style="margin-top:8px;"></div>', unsafe_allow_html=True)
-    manual_btn = st.button(t('sidebar_manual_btn'), use_container_width=True,
-                            help=t('sidebar_manual_help'), key='manual_btn',
-                            type="primary" if not _has_ai else "secondary")
+    if _has_ai:
+        # Local version: show Manual + AI buttons
+        st.markdown('<div style="margin-top:8px;"></div>', unsafe_allow_html=True)
+        manual_btn = st.button(t('sidebar_manual_btn'), use_container_width=True,
+                                help=t('sidebar_manual_help'), key='manual_btn',
+                                type="secondary")
+    else:
+        # Web version: no button — Enter on ticker triggers valuation
+        manual_btn = False
 
     if _has_ai:
         st.markdown(
@@ -1013,19 +1018,21 @@ with st.sidebar:
     elif manual_btn:
         st.session_state.use_ai = False
 
-    # Detect Enter key on ticker input: show a prompt to pick a mode
-    # (Do NOT auto-trigger valuation — user must explicitly click a button)
+    # Detect Enter key on ticker input
     _ticker_enter = False
     _show_mode_prompt = False
     if ticker_input and not oneclick_btn and not manual_btn:
         _prev_ticker = st.session_state.get('_prev_ticker_input', '')
         if ticker_input != _prev_ticker:
-            _show_mode_prompt = True
+            if _has_ai:
+                _show_mode_prompt = True   # Local: prompt user to pick a mode
+            else:
+                _ticker_enter = True       # Web: Enter triggers manual valuation
     if ticker_input:
         st.session_state._prev_ticker_input = ticker_input
 
-    # Show mode-selection prompt when user types a ticker without clicking a button
-    if _show_mode_prompt:
+    # Show mode-selection prompt (local only — web auto-triggers on Enter)
+    if _show_mode_prompt and _has_ai:
         st.markdown(
             '<div style="text-align:center; padding:8px 12px; margin:4px 0; '
             'border-radius:8px; background:color-mix(in srgb, var(--vx-accent) 10%, transparent); '
@@ -1138,13 +1145,25 @@ with st.sidebar:
 
     # ── API key ──
     _fmp_env = os.environ.get("FMP_API_KEY", "")
-    apikey = st.text_input(
-        t('sidebar_fmp_label'),
-        type="password",
-        value=_fmp_env,
-        placeholder=t('sidebar_fmp_placeholder'),
-    )
-    st.caption(t('sidebar_fmp_hint'))
+    if not _has_ai and _fmp_env:
+        # Web with pre-filled key: collapse into expander to declutter sidebar
+        with st.expander(t('sidebar_fmp_expander'), expanded=False):
+            apikey = st.text_input(
+                t('sidebar_fmp_label'),
+                type="password",
+                value=_fmp_env,
+                placeholder=t('sidebar_fmp_placeholder'),
+            )
+            st.caption(t('sidebar_fmp_hint'))
+    else:
+        # Local or no pre-filled key: show normally
+        apikey = st.text_input(
+            t('sidebar_fmp_label'),
+            type="password",
+            value=_fmp_env,
+            placeholder=t('sidebar_fmp_placeholder'),
+        )
+        st.caption(t('sidebar_fmp_hint'))
 
     # ── Copyright & contact ──
     st.markdown('<hr style="margin:4px 0; border:none; border-top:1px solid var(--vx-border, #d0d7de);">', unsafe_allow_html=True)
@@ -2277,9 +2296,9 @@ if (st.session_state.get('_ai_pending')
         and 'ai_result' not in st.session_state):
     _pending_oneclick = True
 
-# Effective triggers: explicit button click only (Enter shows mode prompt)
+# Effective triggers: button click (local) or Enter key (web)
 _trigger_ai = oneclick_btn and ticker_input
-_trigger_manual = manual_btn and ticker_input
+_trigger_manual = (manual_btn and ticker_input) or (_ticker_enter and ticker_input)
 
 # ── Clean-slate reset: clear ALL previous results so the page starts fresh ──
 _ALL_RESULT_KEYS = (
@@ -2366,8 +2385,11 @@ if 'summary_df' not in st.session_state:
             st.session_state._ai_pending = False
             st.session_state._show_fin_data = True
             with st.spinner(t('fetching_fin_data', ticker=_fr_ticker)):
-                _fetch_data(_fr_ticker, apikey)
-            st.rerun()
+                ok = _fetch_data(_fr_ticker, apikey)
+            if ok:
+                st.rerun()
+            else:
+                st.stop()  # Let the error from _fetch_data stay visible
     else:
         if _empty_ticker_warning:
             st.warning(t('welcome_empty_warning'))
@@ -2955,19 +2977,27 @@ def _run_dcf_calc():
     ss._last_dcf_input_snapshot = _current_raw_snapshot
     return results
 
-# First-time run: show default-values warning + Run DCF button (Manual mode, no prior results)
+# First-time run: auto-run on web, explicit button on local
 if not _has_results:
-    st.markdown(
-        f'<div class="slider-hint">'
-        f'<span class="hint-title">{t("defaults_warning_title")}</span>'
-        f'<span class="hint-body">{t("defaults_warning_body")}</span>'
-        f'</div>',
-        unsafe_allow_html=True)
-    if st.button(t('btn_run_dcf'), type="primary", use_container_width=True):
+    if not _has_ai:
+        # Web: auto-run DCF with defaults for immediate results
         _run_dcf_calc()
         _has_results = True
         ss._scroll_to_results = True
         st.rerun()
+    else:
+        # Local: show default-values warning + explicit Run DCF button
+        st.markdown(
+            f'<div class="slider-hint">'
+            f'<span class="hint-title">{t("defaults_warning_title")}</span>'
+            f'<span class="hint-body">{t("defaults_warning_body")}</span>'
+            f'</div>',
+            unsafe_allow_html=True)
+        if st.button(t('btn_run_dcf'), type="primary", use_container_width=True):
+            _run_dcf_calc()
+            _has_results = True
+            ss._scroll_to_results = True
+            st.rerun()
 
 # Auto-recalculate: triggered when sliders change after first run
 if _should_recalc:
@@ -3138,6 +3168,6 @@ elif _gap_just_done:
 # ── Footer — tagline only ──
 st.markdown(f"""
 <div style="margin-top:48px; padding:16px 0 8px 0; border-top:1px solid var(--vx-border-light, #d0d7de); text-align:center; color:var(--vx-text-muted, #8b949e); font-size:0.78rem;">
-    {t('footer_tagline')}
+    {t('footer_tagline_web') if not _has_ai else t('footer_tagline')}
 </div>
 """, unsafe_allow_html=True)

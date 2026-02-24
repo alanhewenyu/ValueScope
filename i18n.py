@@ -10,8 +10,11 @@ _STRINGS = {
     'en': {
         # ── Sidebar ──
         'sidebar_brand_sub': 'AI-Powered Interactive DCF Valuation',
+        'sidebar_brand_sub_web': 'Interactive DCF Valuation',
         'sidebar_ticker_label': 'Enter a stock symbol below to start',
+        'sidebar_ticker_label_web': 'Stock Symbol',
         'sidebar_ticker_placeholder': 'e.g. AAPL, 0700.HK, or 600519.SS',
+        'sidebar_ticker_placeholder_web': 'e.g. AAPL, 0700.HK \u2014 press Enter',
         'sidebar_manual_btn': '\U0001f4dd Manual Valuation',
         'sidebar_manual_help': 'We fetch the data \u2014 you review it and set each assumption yourself for full control.',
         'sidebar_or': 'or',
@@ -38,13 +41,13 @@ _STRINGS = {
         'sidebar_fmp_label': 'Financial Modeling Prep (FMP) API Key',
         'sidebar_fmp_placeholder': 'Enter your FMP key (Required for US stocks)',
         'sidebar_fmp_hint': '\U0001f4a1 HK & A-shares do not require an API key.',
+        'sidebar_fmp_expander': 'API Key (for US stocks)',
         'sidebar_engine_not_installed': '**{engine}** is not installed.',
 
         # ── Welcome page ──
         'welcome_instruction': 'Enter a stock symbol in the sidebar, then click<br>'
                                '<b>\U0001f4dd Manual Valuation</b> or <b>\U0001f916 AI Valuation</b> to begin.',
-        'welcome_instruction_web': 'Enter a stock symbol in the sidebar, then click<br>'
-                                   '<b>\U0001f4dd Manual Valuation</b> to begin.',
+        'welcome_instruction_web': 'Enter a stock symbol in the sidebar and press <b>Enter</b> to begin.',
         'welcome_us': '\U0001f1fa\U0001f1f8 US \u2014 e.g. AAPL',
         'welcome_hk': '\U0001f1ed\U0001f1f0 HK \u2014 e.g. 0700.HK',
         'welcome_cn': '\U0001f1e8\U0001f1f3 A-shares \u2014 e.g. 600519.SS',
@@ -246,6 +249,7 @@ _STRINGS = {
 
         # ── Footer ──
         'footer_tagline': '<b>ValuX</b> \u2014 AI-Powered Interactive DCF Valuation',
+        'footer_tagline_web': '<b>ValuX</b> \u2014 Interactive DCF Valuation',
 
         # ── Financial table row labels ──
         'fin_reported_currency': 'Reported Currency',
@@ -281,8 +285,11 @@ _STRINGS = {
     'zh': {
         # ── Sidebar ──
         'sidebar_brand_sub': 'AI \u667a\u80fd\u4ea4\u4e92\u5f0f DCF \u4f30\u503c',
+        'sidebar_brand_sub_web': '\u4ea4\u4e92\u5f0f DCF \u4f30\u503c',
         'sidebar_ticker_label': '\u5728\u4e0b\u65b9\u8f93\u5165\u80a1\u7968\u4ee3\u7801\u5f00\u59cb',
+        'sidebar_ticker_label_web': '\u80a1\u7968\u4ee3\u7801',
         'sidebar_ticker_placeholder': '\u4f8b\u5982 AAPL, 0700.HK, 600519.SS',
+        'sidebar_ticker_placeholder_web': '\u4f8b\u5982 AAPL, 0700.HK \u2014 \u6309 Enter',
         'sidebar_manual_btn': '\U0001f4dd \u624b\u52a8\u4f30\u503c',
         'sidebar_manual_help': '\u6211\u4eec\u83b7\u53d6\u6570\u636e\u2014\u2014\u60a8\u5ba1\u9605\u5e76\u81ea\u884c\u8bbe\u5b9a\u6bcf\u4e2a\u5047\u8bbe\uff0c\u5b8c\u5168\u638c\u63a7\u3002',
         'sidebar_or': '\u6216',
@@ -308,13 +315,13 @@ _STRINGS = {
         'sidebar_fmp_label': 'FMP API 密钥',
         'sidebar_fmp_placeholder': '输入 FMP 密钥（美股必填）',
         'sidebar_fmp_hint': '\U0001f4a1 \u6e2f\u80a1\u548c A \u80a1\u65e0\u9700 API \u5bc6\u94a5\u3002',
+        'sidebar_fmp_expander': 'API \u5bc6\u94a5\uff08\u7f8e\u80a1\u9700\u8981\uff09',
         'sidebar_engine_not_installed': '**{engine}** \u672a\u5b89\u88c5\u3002',
 
         # ── Welcome page ──
         'welcome_instruction': '\u5728\u4fa7\u8fb9\u680f\u8f93\u5165\u80a1\u7968\u4ee3\u7801\uff0c\u7136\u540e\u70b9\u51fb<br>'
                                '<b>\U0001f4dd \u624b\u52a8\u4f30\u503c</b> \u6216 <b>\U0001f916 AI \u4f30\u503c</b> \u5f00\u59cb\u3002',
-        'welcome_instruction_web': '\u5728\u4fa7\u8fb9\u680f\u8f93\u5165\u80a1\u7968\u4ee3\u7801\uff0c\u7136\u540e\u70b9\u51fb<br>'
-                                   '<b>\U0001f4dd \u624b\u52a8\u4f30\u503c</b> \u5f00\u59cb\u3002',
+        'welcome_instruction_web': '\u5728\u4fa7\u8fb9\u680f\u8f93\u5165\u80a1\u7968\u4ee3\u7801\uff0c\u6309 <b>Enter</b> \u5f00\u59cb\u3002',
         'welcome_us': '\U0001f1fa\U0001f1f8 \u7f8e\u80a1 \u2014 \u4f8b\u5982 AAPL',
         'welcome_hk': '\U0001f1ed\U0001f1f0 \u6e2f\u80a1 \u2014 \u4f8b\u5982 0700.HK',
         'welcome_cn': '\U0001f1e8\U0001f1f3 A \u80a1 \u2014 \u4f8b\u5982 600519.SS',
@@ -516,6 +523,7 @@ _STRINGS = {
 
         # ── Footer ──
         'footer_tagline': '<b>ValuX</b> \u2014 AI \u667a\u80fd\u4ea4\u4e92\u5f0f DCF \u4f30\u503c',
+        'footer_tagline_web': '<b>ValuX</b> \u2014 \u4ea4\u4e92\u5f0f DCF \u4f30\u503c',
 
         # ── Financial table row labels ──
         'fin_reported_currency': '\u62a5\u544a\u8d27\u5e01',
