@@ -152,7 +152,7 @@ def get_company_share_float(ticker, apikey='', company_profile=None):
         if company_profile and 'outstandingShares' in company_profile:
             return {'outstandingShares': company_profile['outstandingShares'], 'symbol': ticker}
         # Fallback: fetch company profile
-        if _is_web_mode():
+        if _is_cloud_mode():
             from .akshare_hk_data import fetch_akshare_hk_company_profile
             profile = fetch_akshare_hk_company_profile(ticker)
         else:
@@ -177,7 +177,7 @@ def fetch_company_profile(ticker, apikey=''):
                     'price': 0, 'outstandingShares': 0}
     if is_hk_stock(ticker):
         try:
-            if _is_web_mode():
+            if _is_cloud_mode():
                 from .akshare_hk_data import fetch_akshare_hk_company_profile
                 return fetch_akshare_hk_company_profile(ticker)
             else:
@@ -1032,7 +1032,7 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
             # Key metrics computed from already-fetched data (no API call)
             key_metrics = fetch_akshare_key_metrics(ticker, balance_sheet, income_statement, period, historical_periods)
         elif is_hk_stock(ticker):
-            _hk_use_akshare = _is_web_mode()
+            _hk_use_akshare = _is_cloud_mode()
             if _hk_use_akshare:
                 # --- HK web path: akshare (东方财富, works on Streamlit Cloud) ---
                 from .akshare_hk_data import (
