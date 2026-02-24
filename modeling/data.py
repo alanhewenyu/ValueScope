@@ -154,14 +154,27 @@ def get_company_share_float(ticker, apikey='', company_profile=None):
 
 def fetch_company_profile(ticker, apikey=''):
     if is_a_share(ticker):
-        return fetch_akshare_company_profile(ticker)
+        try:
+            return fetch_akshare_company_profile(ticker)
+        except Exception as e:
+            print(S.warning(f"⚠ fetch_akshare_company_profile failed ({type(e).__name__}: {e}). Using minimal profile."))
+            exchange = 'Shanghai Stock Exchange' if ticker.upper().endswith('.SS') else 'Shenzhen Stock Exchange'
+            return {'companyName': ticker, 'marketCap': 0, 'beta': 1.0,
+                    'country': 'China', 'currency': 'CNY', 'exchange': exchange,
+                    'price': 0, 'outstandingShares': 0}
     if is_hk_stock(ticker):
-        if _is_web_mode():
-            from .akshare_hk_data import fetch_akshare_hk_company_profile
-            return fetch_akshare_hk_company_profile(ticker)
-        else:
-            from .yfinance_data import fetch_yfinance_hk_company_profile
-            return fetch_yfinance_hk_company_profile(ticker)
+        try:
+            if _is_web_mode():
+                from .akshare_hk_data import fetch_akshare_hk_company_profile
+                return fetch_akshare_hk_company_profile(ticker)
+            else:
+                from .yfinance_data import fetch_yfinance_hk_company_profile
+                return fetch_yfinance_hk_company_profile(ticker)
+        except Exception as e:
+            print(S.warning(f"⚠ HK company profile failed ({type(e).__name__}: {e}). Using minimal profile."))
+            return {'companyName': ticker, 'marketCap': 0, 'beta': 1.0,
+                    'country': 'China', 'currency': 'HKD', 'exchange': 'HKSE',
+                    'price': 0, 'outstandingShares': 0}
     url = f'https://financialmodelingprep.com/api/v3/profile/{ticker}?apikey={apikey}'
     data = get_jsonparsed_data(url)
     if not data:
@@ -337,16 +350,22 @@ def fetch_akshare_company_profile(ticker):
         print(S.muted(f"  ⓘ stock_individual_info_em failed ({type(e).__name__}), building profile from alternative sources..."))
 
     # --- Fallback: lightweight APIs (same strategy as HK company profile) ---
+    # Use default beta directly to avoid additional slow API calls on Cloud.
+    # Beta can be refined later if needed.
     profile = {
         'companyName': ticker,
         'marketCap': 0,
-        'beta': _calculate_beta_akshare(ticker),
+        'beta': CHINA_DEFAULT_BETA,
         'country': 'China',
         'currency': 'CNY',
         'exchange': exchange,
         'price': 0,
         'outstandingShares': 0,
     }
+
+    # Try beta calculation only if not in web mode (fast locally, slow/unreliable on Cloud)
+    if not _is_web_mode():
+        profile['beta'] = _calculate_beta_akshare(ticker)
 
     # Price: daily history API (different endpoint from stock_individual_info_em)
     try:

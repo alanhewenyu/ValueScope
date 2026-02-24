@@ -1433,7 +1433,12 @@ def _fetch_data(ticker_raw, apikey_val):
         st.error(t('err_fetch_failed'))
         return False
 
-    company_profile = fetch_company_profile(ticker, apikey_val)
+    try:
+        company_profile = fetch_company_profile(ticker, apikey_val)
+    except Exception:
+        company_profile = {'companyName': ticker, 'marketCap': 0, 'beta': 1.0,
+                           'country': 'US', 'currency': 'USD', 'exchange': '',
+                           'price': 0, 'outstandingShares': 0}
     company_profile = _fill_profile_from_financial_data(company_profile, financial_data)
     company_info = get_company_share_float(ticker, apikey_val, company_profile=company_profile)
 
