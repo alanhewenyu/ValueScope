@@ -320,13 +320,17 @@ def main(args):
         args.t = ticker
         args.period = 'annual'
 
-        # ── Fetch annual financial data ──
-        financial_data = get_historical_financials(args.t, 'annual', args.apikey, HISTORICAL_DATA_PERIODS_ANNUAL)
+        # ── Fetch annual financial data + company profile (parallel) ──
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=2) as _pool:
+            _f_data = _pool.submit(get_historical_financials, args.t, 'annual', args.apikey, HISTORICAL_DATA_PERIODS_ANNUAL)
+            _f_prof = _pool.submit(fetch_company_profile, args.t, args.apikey)
+            financial_data = _f_data.result()
+            company_profile = _f_prof.result()
         if financial_data is None:
             print(S.error("Error: Failed to fetch financial data. Please check your API key and ticker symbol."))
             continue
         summary_df = financial_data['summary']
-        company_profile = fetch_company_profile(args.t, args.apikey)
         company_profile = _fill_profile_from_financial_data(company_profile, financial_data)
         company_info = get_company_share_float(args.t, args.apikey, company_profile=company_profile)
         company_name = company_profile.get('companyName', 'N/A')

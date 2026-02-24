@@ -322,26 +322,31 @@ def fetch_akshare_company_profile(ticker):
     bare_code = _ticker_to_bare_code(ticker)
     exchange = 'Shanghai Stock Exchange' if ticker.upper().endswith('.SS') else 'Shenzhen Stock Exchange'
 
-    # --- Primary: stock_individual_info_em (works locally, blocked on Cloud) ---
-    try:
-        print(S.info(f"Fetching company profile from akshare for {bare_code}..."))
-        info_df = _get_ak().stock_individual_info_em(symbol=bare_code)
-        info_dict = dict(zip(info_df['item'], info_df['value']))
-        beta = _calculate_beta_akshare(ticker)
-        return {
-            'companyName': str(info_dict.get('股票简称', ticker)),
-            'marketCap': float(info_dict.get('总市值', 0)),
-            'beta': beta,
-            'country': 'China',
-            'currency': 'CNY',
-            'exchange': exchange,
-            'price': float(info_dict.get('最新', 0)),
-            'outstandingShares': float(info_dict.get('总股本', 0)),
-        }
-    except Exception as e:
-        print(S.muted(f"  ⓘ stock_individual_info_em failed ({type(e).__name__}), building profile from alternative sources..."))
+    _web = _is_web_mode()
 
-    # --- Fallback: lightweight APIs (same strategy as HK company profile) ---
+    # --- Primary: stock_individual_info_em (works locally, blocked on Cloud) ---
+    # Skip on Cloud to avoid ~15-30s timeout from a guaranteed-to-fail connection.
+    if not _web:
+        try:
+            print(S.info(f"Fetching company profile from akshare for {bare_code}..."))
+            info_df = _get_ak().stock_individual_info_em(symbol=bare_code)
+            info_dict = dict(zip(info_df['item'], info_df['value']))
+            beta = _calculate_beta_akshare(ticker)
+            return {
+                'companyName': str(info_dict.get('股票简称', ticker)),
+                'marketCap': float(info_dict.get('总市值', 0)),
+                'beta': beta,
+                'country': 'China',
+                'currency': 'CNY',
+                'exchange': exchange,
+                'price': float(info_dict.get('最新', 0)),
+                'outstandingShares': float(info_dict.get('总股本', 0)),
+            }
+        except Exception as e:
+            print(S.muted(f"  ⓘ stock_individual_info_em failed ({type(e).__name__}), building profile from alternative sources..."))
+
+    # --- Cloud / fallback path ---
+    print(S.info(f"Fetching company profile for {bare_code} (lightweight mode)..."))
     profile = {
         'companyName': ticker,
         'marketCap': 0,
@@ -353,18 +358,21 @@ def fetch_akshare_company_profile(ticker):
         'outstandingShares': 0,
     }
 
-    # --- Price + shares: try multiple endpoints (different backends) ---
+    # --- Price + shares ---
+    # On Cloud, skip eastmoney push2 endpoints (blocked); go straight to Sina.
+    # Locally (fallback), try eastmoney first, then Sina.
 
-    # 1) eastmoney historical (push2his.eastmoney.com)
-    try:
-        hist_df = _get_ak().stock_zh_a_hist(symbol=bare_code, period='daily', adjust='qfq')
-        if hist_df is not None and not hist_df.empty:
-            profile['price'] = float(hist_df.iloc[-1]['收盘'])
-            print(S.muted(f"  ✓ Price from eastmoney daily: {profile['price']}"))
-    except Exception as e1:
-        print(S.muted(f"  ⓘ stock_zh_a_hist failed ({type(e1).__name__})"))
+    if not _web:
+        # eastmoney historical (push2his.eastmoney.com) — only try locally
+        try:
+            hist_df = _get_ak().stock_zh_a_hist(symbol=bare_code, period='daily', adjust='qfq')
+            if hist_df is not None and not hist_df.empty:
+                profile['price'] = float(hist_df.iloc[-1]['收盘'])
+                print(S.muted(f"  ✓ Price from eastmoney daily: {profile['price']}"))
+        except Exception as e1:
+            print(S.muted(f"  ⓘ stock_zh_a_hist failed ({type(e1).__name__})"))
 
-    # 2) Sina Finance fallback (finance.sina.com.cn — different backend)
+    # Sina Finance (finance.sina.com.cn — works on Cloud)
     if profile['price'] <= 0:
         try:
             _sina_prefix = 'sh' if ticker.upper().endswith('.SS') else 'sz'
@@ -372,7 +380,6 @@ def fetch_akshare_company_profile(ticker):
             if _sina_df is not None and not _sina_df.empty:
                 _last = _sina_df.iloc[-1]
                 profile['price'] = float(_last['close'])
-                # Bonus: Sina provides outstanding_share
                 _sina_shares = float(_last.get('outstanding_share', 0) or 0)
                 if _sina_shares > 0 and not profile.get('outstandingShares'):
                     profile['outstandingShares'] = _sina_shares

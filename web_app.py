@@ -1428,17 +1428,24 @@ def _fetch_data(ticker_raw, apikey_val):
         return False
 
     ticker = _normalize_ticker(ticker_raw)
-    financial_data = get_historical_financials(ticker, 'annual', apikey_val, HISTORICAL_DATA_PERIODS_ANNUAL)
+
+    # Fetch financial data and company profile in parallel
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=2) as _pool:
+        _f_data = _pool.submit(get_historical_financials, ticker, 'annual', apikey_val, HISTORICAL_DATA_PERIODS_ANNUAL)
+        _f_prof = _pool.submit(fetch_company_profile, ticker, apikey_val)
+        financial_data = _f_data.result()
+        try:
+            company_profile = _f_prof.result()
+        except Exception:
+            company_profile = {'companyName': ticker, 'marketCap': 0, 'beta': 1.0,
+                               'country': 'US', 'currency': 'USD', 'exchange': '',
+                               'price': 0, 'outstandingShares': 0}
+
     if financial_data is None:
         st.error(t('err_fetch_failed'))
         return False
 
-    try:
-        company_profile = fetch_company_profile(ticker, apikey_val)
-    except Exception:
-        company_profile = {'companyName': ticker, 'marketCap': 0, 'beta': 1.0,
-                           'country': 'US', 'currency': 'USD', 'exchange': '',
-                           'price': 0, 'outstandingShares': 0}
     company_profile = _fill_profile_from_financial_data(company_profile, financial_data)
     company_info = get_company_share_float(ticker, apikey_val, company_profile=company_profile)
 
