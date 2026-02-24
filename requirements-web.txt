@@ -1,2 +1,7 @@
-streamlit
+pandas
+openpyxl
+akshare
+yfinance
+markdown
+streamlit>=1.42.0
 plotly

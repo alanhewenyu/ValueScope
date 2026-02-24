@@ -1,5 +1,5 @@
 import pandas as pd
-from .data import fetch_market_risk_premium, fetch_company_profile, fetch_forex_data
+from .data import fetch_market_risk_premium, fetch_forex_data
 from .constants import MARGINAL_TAX_RATE, TERMINAL_RISK_PREMIUM, RISK_FREE_RATE_US, RISK_FREE_RATE_CHINA, RISK_FREE_RATE_INTERNATIONAL, CHINA_MARKET_RISK_PREMIUM, HK_MARKET_RISK_PREMIUM
 from . import style as S
 

@@ -260,64 +260,11 @@ def _ticker_to_ak_symbol(ticker):
     return None
 
 
-def _ticker_to_ak_indicator_symbol(ticker):
-    """Convert to akshare financial-indicator format: 600519.SS -> 600519.SH"""
-    t = ticker.upper()
-    if t.endswith('.SS'):
-        return t.replace('.SS', '.SH')
-    elif t.endswith('.SZ'):
-        return t
-    return None
-
 
 def _ticker_to_bare_code(ticker):
     """Convert to bare stock code: 600519.SS -> 600519"""
     return ticker.split('.')[0]
 
-
-def _calculate_beta_akshare(ticker, years=3):
-    """Calculate beta for an A-share stock against CSI 300 index using daily returns.
-
-    Uses `years` years of daily data. Returns CHINA_DEFAULT_BETA on failure.
-    """
-    from datetime import datetime, timedelta
-
-    bare_code = _ticker_to_bare_code(ticker)
-    end_date = datetime.now().strftime('%Y%m%d')
-    start_date = (datetime.now() - timedelta(days=years * 365)).strftime('%Y%m%d')
-
-    try:
-        print(S.info(f"Calculating beta for {bare_code} vs CSI 300 ({years}Y daily)..."), end="")
-
-        stock_df = _get_ak().stock_zh_a_hist(symbol=bare_code, period="daily",
-                                       start_date=start_date, end_date=end_date, adjust="qfq")
-        index_df = _get_ak().stock_zh_index_daily(symbol="sh000300")
-
-        stock_df['date'] = pd.to_datetime(stock_df['日期'])
-        stock_df['stock_return'] = stock_df['收盘'].pct_change()
-
-        index_df['date'] = pd.to_datetime(index_df['date'])
-        index_df = index_df[index_df['date'] >= start_date]
-        index_df['index_return'] = index_df['close'].pct_change()
-
-        merged = pd.merge(stock_df[['date', 'stock_return']],
-                          index_df[['date', 'index_return']], on='date').dropna()
-
-        if len(merged) < 60:
-            print(S.warning(f"Insufficient data for beta calculation ({len(merged)} days). Using default."))
-            return CHINA_DEFAULT_BETA
-
-        cov = merged['stock_return'].cov(merged['index_return'])
-        var = merged['index_return'].var()
-        beta = cov / var if var != 0 else CHINA_DEFAULT_BETA
-
-        beta = round(beta, 2)
-        print(f" done.")
-        return beta
-
-    except Exception as e:
-        print(S.warning(f"Beta calculation failed: {e}. Using default {CHINA_DEFAULT_BETA}."))
-        return CHINA_DEFAULT_BETA
 
 
 def fetch_akshare_company_profile(ticker):
