@@ -271,45 +271,75 @@ def _calculate_beta_akshare(ticker, years=3):
 
     Uses `years` years of daily data. Returns CHINA_DEFAULT_BETA on failure.
     Only called in local mode (terminal + local Streamlit); skipped on Cloud.
+
+    Both stock and index data use **Sina Finance** (finance.sina.com.cn) to avoid
+    Eastmoney push2his rate-limiting after parallel financial statement fetches.
+    Financial statements use datacenter-web.eastmoney.com (different host, no conflict).
     """
+    import time
     from datetime import datetime, timedelta
 
     bare_code = _ticker_to_bare_code(ticker)
-    end_date = datetime.now().strftime('%Y%m%d')
-    start_date = (datetime.now() - timedelta(days=years * 365)).strftime('%Y%m%d')
+    market_prefix = 'sh' if ticker.upper().endswith('.SS') else 'sz'
+    sina_symbol = f'{market_prefix}{bare_code}'
+    start_dt = datetime.now() - timedelta(days=years * 365)
 
-    try:
-        print(S.info(f"Calculating beta for {bare_code} vs CSI 300 ({years}Y daily)..."), end="")
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            if attempt == 0:
+                print(S.info(f"Calculating beta for {bare_code} vs CSI 300 ({years}Y daily)..."), end="")
+                time.sleep(0.5)
+            else:
+                delay = attempt * 2
+                print(S.info(f"  Retrying beta (attempt {attempt + 1}/{max_retries}, wait {delay}s)..."), end="")
+                time.sleep(delay)
 
-        stock_df = _get_ak().stock_zh_a_hist(symbol=bare_code, period="daily",
-                                       start_date=start_date, end_date=end_date, adjust="qfq")
-        index_df = _get_ak().stock_zh_index_daily(symbol="sh000300")
+            ak = _get_ak()
+            # Both APIs use Sina Finance — no conflict with Eastmoney rate limits
+            stock_df = ak.stock_zh_a_daily(symbol=sina_symbol, adjust='qfq')
+            index_df = ak.stock_zh_index_daily(symbol='sh000300')
 
-        stock_df['date'] = pd.to_datetime(stock_df['日期'])
-        stock_df['stock_return'] = stock_df['收盘'].pct_change()
+            # Both return English column names: date, open, high, low, close, volume
+            stock_df['date'] = pd.to_datetime(stock_df['date'])
+            stock_df = stock_df[stock_df['date'] >= pd.Timestamp(start_dt)]
+            stock_df['stock_return'] = stock_df['close'].pct_change()
 
-        index_df['date'] = pd.to_datetime(index_df['date'])
-        index_df = index_df[index_df['date'] >= start_date]
-        index_df['index_return'] = index_df['close'].pct_change()
+            index_df['date'] = pd.to_datetime(index_df['date'])
+            index_df = index_df[index_df['date'] >= pd.Timestamp(start_dt)]
+            index_df['index_return'] = index_df['close'].pct_change()
 
-        merged = pd.merge(stock_df[['date', 'stock_return']],
-                          index_df[['date', 'index_return']], on='date').dropna()
+            merged = pd.merge(stock_df[['date', 'stock_return']],
+                              index_df[['date', 'index_return']], on='date').dropna()
 
-        if len(merged) < 60:
-            print(S.warning(f"Insufficient data for beta calculation ({len(merged)} days). Using default."))
+            if len(merged) < 60:
+                print(S.warning(f"Insufficient data for beta calculation ({len(merged)} days). Using default."))
+                return CHINA_DEFAULT_BETA
+
+            cov = merged['stock_return'].cov(merged['index_return'])
+            var = merged['index_return'].var()
+            beta = cov / var if var != 0 else CHINA_DEFAULT_BETA
+
+            beta = round(beta, 2)
+            print(f" done. β = {beta}")
+            return beta
+
+        except Exception as e:
+            err_str = str(e).lower()
+            is_conn_err = any(kw in err_str for kw in [
+                'connection', 'remote', 'disconnected', 'reset', 'aborted',
+                'timeout', 'refused', 'broken pipe',
+            ]) or isinstance(e, (ConnectionError, ConnectionResetError, ConnectionAbortedError, OSError))
+            if is_conn_err and attempt < max_retries - 1:
+                print(f" connection error, will retry.")
+                continue
+            if is_conn_err:
+                print(S.warning(f"Beta failed after {max_retries} attempts: {e}. Using default {CHINA_DEFAULT_BETA}."))
+            else:
+                print(S.warning(f"Beta calculation failed: {e}. Using default {CHINA_DEFAULT_BETA}."))
             return CHINA_DEFAULT_BETA
 
-        cov = merged['stock_return'].cov(merged['index_return'])
-        var = merged['index_return'].var()
-        beta = cov / var if var != 0 else CHINA_DEFAULT_BETA
-
-        beta = round(beta, 2)
-        print(f" done.")
-        return beta
-
-    except Exception as e:
-        print(S.warning(f"Beta calculation failed: {e}. Using default {CHINA_DEFAULT_BETA}."))
-        return CHINA_DEFAULT_BETA
+    return CHINA_DEFAULT_BETA
 
 
 def fetch_akshare_company_profile(ticker):
