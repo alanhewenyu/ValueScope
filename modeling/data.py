@@ -335,11 +335,10 @@ def fetch_akshare_company_profile(ticker):
         print(S.info(f"Fetching company profile from akshare for {bare_code}..."))
         info_df = _get_ak().stock_individual_info_em(symbol=bare_code)
         info_dict = dict(zip(info_df['item'], info_df['value']))
-        beta = _calculate_beta_akshare(ticker)
         return {
             'companyName': str(info_dict.get('股票简称', ticker)),
             'marketCap': float(info_dict.get('总市值', 0)),
-            'beta': beta,
+            'beta': CHINA_DEFAULT_BETA,
             'country': 'China',
             'currency': 'CNY',
             'exchange': exchange,
@@ -350,8 +349,6 @@ def fetch_akshare_company_profile(ticker):
         print(S.muted(f"  ⓘ stock_individual_info_em failed ({type(e).__name__}), building profile from alternative sources..."))
 
     # --- Fallback: lightweight APIs (same strategy as HK company profile) ---
-    # Use default beta directly to avoid additional slow API calls on Cloud.
-    # Beta can be refined later if needed.
     profile = {
         'companyName': ticker,
         'marketCap': 0,
@@ -362,10 +359,6 @@ def fetch_akshare_company_profile(ticker):
         'price': 0,
         'outstandingShares': 0,
     }
-
-    # Try beta calculation only if not in web mode (fast locally, slow/unreliable on Cloud)
-    if not _is_web_mode():
-        profile['beta'] = _calculate_beta_akshare(ticker)
 
     # Price: daily history API (different endpoint from stock_individual_info_em)
     try:
@@ -650,39 +643,39 @@ def fetch_akshare_cashflow(ticker, period='annual', historical_periods=5):
 
 
 def fetch_akshare_key_metrics(ticker, balance_sheets, income_statements, period='annual', historical_periods=5):
-    """Compute key metrics for A-shares, returning FMP-compatible dicts."""
-    indicator_symbol = _ticker_to_ak_indicator_symbol(ticker)
-    print(S.info(f"Fetching key metrics from akshare for {indicator_symbol}..."))
+    """Compute key metrics for A-shares from already-fetched data.
 
-    # Fetch financial indicators from akshare
-    indicator_df = pd.DataFrame()
-    try:
-        indicator_df = _get_ak().stock_financial_analysis_indicator_em(
-            symbol=indicator_symbol, indicator="按报告期"
-        )
-        indicator_df = indicator_df.sort_values('REPORT_DATE', ascending=False)
-        if period == 'annual':
-            months = pd.to_datetime(indicator_df['REPORT_DATE']).dt.month
-            indicator_df = indicator_df[months == 12]
-        indicator_df = indicator_df.head(historical_periods).reset_index(drop=True)
-    except Exception as e:
-        print(S.warning(f"Failed to fetch financial indicators: {e}"))
-
+    No additional API call needed — computed from BS and IS data.
+    Same approach as HK version (fetch_akshare_hk_key_metrics).
+    """
     result = []
     for i in range(len(balance_sheets)):
         bs = balance_sheets[i]
 
         total_assets = bs.get('totalAssets', 0) or 1
         total_debt = bs.get('totalDebt', 0) or 0
+        total_equity = bs.get('totalEquity', 0) or 0
         debt_to_assets = total_debt / total_assets if total_assets != 0 else 0
 
-        # ROIC and ROE from indicator_df (values are percentages, e.g. 25.5 for 25.5%)
+        # ROIC and ROE computed from IS + BS (same as HK version)
         roic_val = 0
         roe_val = 0
-        if not indicator_df.empty and i < len(indicator_df):
-            row = indicator_df.iloc[i]
-            roic_val = _safe_numeric(row.get('ROIC', 0)) / 100
-            roe_val = _safe_numeric(row.get('ROEJQ', 0)) / 100
+        if i < len(income_statements):
+            inc = income_statements[i]
+            ebit = inc.get('operatingIncome', 0) or 0
+            ebt = inc.get('incomeBeforeTax', 0) or 0
+            tax = inc.get('incomeTaxExpense', 0) or 0
+            tax_rate = tax / ebt if ebt else 0
+
+            cash = bs.get('cashAndCashEquivalents', 0) or 0
+            investments = bs.get('totalInvestments', 0) or 0
+            invested_capital = total_debt + total_equity - cash - investments
+            if invested_capital > 0:
+                roic_val = ebit * (1 - tax_rate) / invested_capital
+
+            net_income = ebt - tax
+            if total_equity > 0:
+                roe_val = net_income / total_equity
 
         result.append({
             'debtToAssets': debt_to_assets,
@@ -979,11 +972,16 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
 
     try:
         if is_a_share(ticker):
-            # --- A-share path: all data from akshare ---
+            # --- A-share path: all data from akshare (parallel fetching) ---
             print(S.info("检测到A股，使用 akshare 数据源..."))
-            income_statement, raw_income_df, _full_income_df = fetch_akshare_income_statement(ticker, period, historical_periods)
-            balance_sheet, raw_balance_df, _full_bs_df = fetch_akshare_balance_sheet(ticker, period, historical_periods)
-            cashflow_statement, raw_cashflow_df, _full_cf_df = fetch_akshare_cashflow(ticker, period, historical_periods)
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                _f_inc = executor.submit(fetch_akshare_income_statement, ticker, period, historical_periods)
+                _f_bs  = executor.submit(fetch_akshare_balance_sheet, ticker, period, historical_periods)
+                _f_cf  = executor.submit(fetch_akshare_cashflow, ticker, period, historical_periods)
+            income_statement, raw_income_df, _full_income_df = _f_inc.result()
+            balance_sheet, raw_balance_df, _full_bs_df = _f_bs.result()
+            cashflow_statement, raw_cashflow_df, _full_cf_df = _f_cf.result()
+            # Key metrics computed from already-fetched data (no API call)
             key_metrics = fetch_akshare_key_metrics(ticker, balance_sheet, income_statement, period, historical_periods)
         elif is_hk_stock(ticker):
             _hk_use_akshare = _is_web_mode()
@@ -996,9 +994,13 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                     fetch_akshare_hk_key_metrics,
                 )
                 print(S.info("检测到港股（网页版），使用 akshare (东方财富) 数据源..."))
-                income_statement, raw_income_df, _full_income_df = fetch_akshare_hk_income_statement(ticker, period, historical_periods)
-                balance_sheet, raw_balance_df, _full_bs_df = fetch_akshare_hk_balance_sheet(ticker, period, historical_periods)
-                cashflow_statement, raw_cashflow_df, _full_cf_df = fetch_akshare_hk_cashflow(ticker, period, historical_periods)
+                with ThreadPoolExecutor(max_workers=3) as executor:
+                    _f_inc = executor.submit(fetch_akshare_hk_income_statement, ticker, period, historical_periods)
+                    _f_bs  = executor.submit(fetch_akshare_hk_balance_sheet, ticker, period, historical_periods)
+                    _f_cf  = executor.submit(fetch_akshare_hk_cashflow, ticker, period, historical_periods)
+                income_statement, raw_income_df, _full_income_df = _f_inc.result()
+                balance_sheet, raw_balance_df, _full_bs_df = _f_bs.result()
+                cashflow_statement, raw_cashflow_df, _full_cf_df = _f_cf.result()
                 key_metrics = fetch_akshare_hk_key_metrics(ticker, balance_sheet, income_statement, period, historical_periods)
             else:
                 # --- HK terminal path: yfinance (richer Morningstar data) ---
