@@ -86,21 +86,25 @@ ValuX 是一个基于**标准化 DCF 引擎**的 AI 股票估值工具 — 10 �
 
 ![敏感性分析](assets/demo-4-sensitivity.png)
 
+**5. 本地网页版 — 滑块调参 + 实时估值**
+
+![网页版](assets/web-valuation.png)
+
 ---
 
 ## 数据源
 
 ValuX 根据不同市场使用不同数据源，兼顾数据质量和使用成本：
 
-| 市场 | 数据源 | API Key |
-|------|-------|---------|
-| **A 股** | [akshare](https://github.com/akfamily/akshare)（东方财富） | **不需要**（免费） |
-| **港股** | 终端/本地网页：[yfinance](https://github.com/ranaroussi/yfinance)（年度）+ [FMP](https://financialmodelingprep.com/)（季度）；在线版：[akshare](https://github.com/akfamily/akshare) | 年度：**免费**；季度：需 FMP Key |
-| **美股及其他** | [FMP](https://financialmodelingprep.com/) | 需要 FMP Key |
+| 市场 | 年度数据 | 季度数据 | API Key |
+|------|---------|---------|---------|
+| **A 股** | [akshare](https://github.com/akfamily/akshare) | akshare | **不需要**（免费） |
+| **港股** | [yfinance](https://github.com/ranaroussi/yfinance) | [FMP](https://financialmodelingprep.com/) | 年度：**免费**；季度：需要 FMP Key |
+| **美股及其他** | [FMP](https://financialmodelingprep.com/) | FMP | 需要 FMP Key |
 
 **为什么使用多个数据源？**
-- **akshare** — 免费，无需 API Key。A 股历史财务数据为原始报表数据，质量可靠，方便准确计算估值所需财务指标。在线版港股也使用 akshare 作为主数据源。
-- **yfinance** — 免费，无需 API Key。港股年度及 TTM 财务数据较全，质量可靠。在终端和本地网页版中使用。
+- **akshare** — 免费，无需 API Key。A 股历史财务数据为原始报表数据，质量可靠，方便准确计算估值所需财务指标。
+- **yfinance** — 免费，无需 API Key。港股年度及 TTM 财务数据较全，质量可靠（但不提供季度和半年度数据）。
 - **FMP** — 付费，需要 API Key。美股和国际股票的主要数据源，提供财务报表、市场数据、公司信息和风险溢价等。此外，港股季度财务数据也由 FMP 提供。
 
 > **没有 FMP API Key？** 你仍然可以免费查询 A 股和港股年度数据。使用 `--manual` 模式（终端）或本地/在线网页版手动输入估值参数，即可获得完全免费的估值方案。

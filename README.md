@@ -86,21 +86,25 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 
 ![Sensitivity](assets/demo-4-sensitivity.png)
 
+**5. Local Web GUI — Interactive Sliders with Real-Time Valuation**
+
+![Web GUI](assets/web-valuation.png)
+
 ---
 
 ## Data Sources
 
 ValuX uses different data sources depending on the market, optimizing for data quality and cost:
 
-| Market | Data Source | API Key |
-|--------|-----------|---------|
-| **China A-shares** | [akshare](https://github.com/akfamily/akshare) (东方财富) | **Not required** (free) |
-| **Hong Kong** | Terminal/local: [yfinance](https://github.com/ranaroussi/yfinance) (annual) + [FMP](https://financialmodelingprep.com/) (quarterly); Cloud: [akshare](https://github.com/akfamily/akshare) | Annual: **free**; Quarterly: FMP key required |
-| **US & Others** | [FMP](https://financialmodelingprep.com/) | FMP key required |
+| Market | Annual Data | Quarterly Data | API Key |
+|--------|------------|----------------|---------|
+| **China A-shares** | [akshare](https://github.com/akfamily/akshare) | akshare | **Not required** (free) |
+| **Hong Kong** | [yfinance](https://github.com/ranaroussi/yfinance) | [FMP](https://financialmodelingprep.com/) | Annual: **free**; Quarterly: FMP key required |
+| **US & Others** | [FMP](https://financialmodelingprep.com/) | FMP | FMP key required |
 
 **Why multiple data sources?**
-- **akshare** — Free, no API key needed. Provides original A-share financial statements with reliable data quality for accurate calculation of valuation metrics. Also serves as the primary HK data source on the cloud version.
-- **yfinance** — Free, no API key needed. Provides comprehensive HK annual and TTM financial data with reliable quality. Used in terminal and local web mode.
+- **akshare** — Free, no API key needed. Provides original A-share financial statements with reliable data quality for accurate calculation of valuation metrics.
+- **yfinance** — Free, no API key needed. Provides comprehensive HK annual and TTM financial data with reliable quality (quarterly and semi-annual data not available).
 - **FMP** — Paid, API key required. Primary data source for US and international stocks, providing financial statements, market data, company profiles, and risk premiums. Also provides HK quarterly financial data.
 
 > **No FMP API key?** You can still query A-shares and HK annual data for free. Use `--manual` mode (terminal) or the local/cloud web app to input valuation parameters yourself — a fully free workflow.
