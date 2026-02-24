@@ -999,8 +999,10 @@ with st.sidebar:
                                 help=t('sidebar_manual_help'), key='manual_btn',
                                 type="secondary")
     else:
-        # Web version: no button — Enter on ticker triggers valuation
-        manual_btn = False
+        # Web version: explicit Go button (Enter detection kept as bonus)
+        st.markdown('<div style="margin-top:8px;"></div>', unsafe_allow_html=True)
+        manual_btn = st.button(t('sidebar_go_btn'), use_container_width=True,
+                                key='go_btn', type="primary")
 
     if _has_ai:
         st.markdown(
