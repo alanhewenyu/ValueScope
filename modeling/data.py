@@ -41,6 +41,30 @@ def is_hk_stock(ticker):
     return t.endswith('.HK')
 
 
+def _is_web_mode():
+    """Check if running inside Streamlit web app (vs terminal CLI).
+
+    Used to select HK data source:
+    - Terminal → yfinance (richer Morningstar data)
+    - Web → akshare (东方财富, works on Streamlit Cloud where yfinance can't reach Yahoo)
+    """
+    try:
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            from streamlit.runtime.scriptrunner import get_script_run_ctx
+            import logging
+            _st_logger = logging.getLogger('streamlit.runtime.scriptrunner_utils.script_run_context')
+            _prev_level = _st_logger.level
+            _st_logger.setLevel(logging.ERROR)
+            try:
+                return get_script_run_ctx() is not None
+            finally:
+                _st_logger.setLevel(_prev_level)
+    except Exception:
+        return False
+
+
 def validate_ticker(ticker):
     """Validate stock ticker format. Returns (is_valid, error_message).
 
@@ -114,8 +138,14 @@ def get_company_share_float(ticker, apikey='', company_profile=None):
         # For HK stocks, reuse outstandingShares from company_profile (same pattern as A-shares)
         if company_profile and 'outstandingShares' in company_profile:
             return {'outstandingShares': company_profile['outstandingShares'], 'symbol': ticker}
-        from .yfinance_data import fetch_yfinance_hk_share_float
-        return fetch_yfinance_hk_share_float(ticker)
+        # Fallback: fetch company profile
+        if _is_web_mode():
+            from .akshare_hk_data import fetch_akshare_hk_company_profile
+            profile = fetch_akshare_hk_company_profile(ticker)
+        else:
+            from .yfinance_data import fetch_yfinance_hk_company_profile
+            profile = fetch_yfinance_hk_company_profile(ticker)
+        return {'outstandingShares': profile.get('outstandingShares', 0), 'symbol': ticker}
     url = f'https://financialmodelingprep.com/api/v4/shares_float?symbol={ticker}&apikey={apikey}'
     company_info = get_jsonparsed_data(url)
     if not company_info:
@@ -126,8 +156,12 @@ def fetch_company_profile(ticker, apikey=''):
     if is_a_share(ticker):
         return fetch_akshare_company_profile(ticker)
     if is_hk_stock(ticker):
-        from .yfinance_data import fetch_yfinance_hk_company_profile
-        return fetch_yfinance_hk_company_profile(ticker)
+        if _is_web_mode():
+            from .akshare_hk_data import fetch_akshare_hk_company_profile
+            return fetch_akshare_hk_company_profile(ticker)
+        else:
+            from .yfinance_data import fetch_yfinance_hk_company_profile
+            return fetch_yfinance_hk_company_profile(ticker)
     url = f'https://financialmodelingprep.com/api/v3/profile/{ticker}?apikey={apikey}'
     data = get_jsonparsed_data(url)
     if not data:
@@ -274,28 +308,101 @@ def _calculate_beta_akshare(ticker, years=3):
 
 
 def fetch_akshare_company_profile(ticker):
-    """Fetch company profile + share float from akshare for A-shares (single API call).
-    Returns dict with same keys as fetch_company_profile (FMP version),
-    plus 'outstandingShares' to avoid a second API call."""
+    """Fetch company profile + share float from akshare for A-shares.
+
+    Primary source: ``stock_individual_info_em`` (works locally).
+    Fallback: ``stock_zh_a_spot_em`` real-time quotes (works on Streamlit Cloud
+    where the individual-info endpoint may be blocked).
+    """
     bare_code = _ticker_to_bare_code(ticker)
-    print(S.info(f"Fetching company profile from akshare for {bare_code}..."))
-
-    info_df = _get_ak().stock_individual_info_em(symbol=bare_code)
-    info_dict = dict(zip(info_df['item'], info_df['value']))
-
     exchange = 'Shanghai Stock Exchange' if ticker.upper().endswith('.SS') else 'Shenzhen Stock Exchange'
 
-    beta = _calculate_beta_akshare(ticker)
+    # --- Primary: stock_individual_info_em ---
+    try:
+        print(S.info(f"Fetching company profile from akshare for {bare_code}..."))
+        info_df = _get_ak().stock_individual_info_em(symbol=bare_code)
+        info_dict = dict(zip(info_df['item'], info_df['value']))
+        beta = _calculate_beta_akshare(ticker)
+        return {
+            'companyName': str(info_dict.get('股票简称', ticker)),
+            'marketCap': float(info_dict.get('总市值', 0)),
+            'beta': beta,
+            'country': 'China',
+            'currency': 'CNY',
+            'exchange': exchange,
+            'price': float(info_dict.get('最新', 0)),
+            'outstandingShares': float(info_dict.get('总股本', 0)),
+        }
+    except Exception as e:
+        print(S.muted(f"  ⓘ stock_individual_info_em failed ({type(e).__name__}), trying fallback..."))
 
+    # --- Fallback: stock_zh_a_spot_em (real-time spot data for all A-shares) ---
+    try:
+        spot_df = _get_ak().stock_zh_a_spot_em()
+        row = spot_df[spot_df['代码'] == bare_code]
+        if not row.empty:
+            r = row.iloc[0]
+            name = str(r.get('名称', ticker))
+            price = float(r.get('最新价', 0) or 0)
+            market_cap = float(r.get('总市值', 0) or 0)
+            outstanding = float(r.get('总股本', 0) or 0)
+            # spot_em 总股本 is in "shares", 总市值 is in yuan
+            # Some versions return 总股本 in 万股 — detect and correct
+            if outstanding > 0 and market_cap > 0 and price > 0:
+                implied_shares = market_cap / price
+                if abs(outstanding - implied_shares) / implied_shares > 5:
+                    outstanding = implied_shares  # use implied value
+            beta = _calculate_beta_akshare(ticker)
+            print(S.info(f"  ✓ Company profile from real-time spot data: {name}"))
+            return {
+                'companyName': name,
+                'marketCap': market_cap,
+                'beta': beta,
+                'country': 'China',
+                'currency': 'CNY',
+                'exchange': exchange,
+                'price': price,
+                'outstandingShares': outstanding,
+            }
+    except Exception as e2:
+        print(S.muted(f"  ⓘ spot_em fallback also failed ({type(e2).__name__})"))
+
+    # --- Last resort: yfinance ---
+    try:
+        from .yfinance_data import _get_yf
+        yf = _get_yf()
+        t_obj = yf.Ticker(ticker)
+        info = t_obj.info or {}
+        price = info.get('regularMarketPrice') or info.get('currentPrice') or info.get('previousClose', 0) or 0
+        shares = info.get('sharesOutstanding', 0) or 0
+        mkt_cap = info.get('marketCap', 0) or 0
+        beta = info.get('beta', 1.0) or 1.0
+        name = info.get('shortName') or info.get('longName') or ticker
+        print(S.info(f"  ✓ Company profile from yfinance: {name}"))
+        return {
+            'companyName': name,
+            'marketCap': float(mkt_cap),
+            'beta': float(beta),
+            'country': 'China',
+            'currency': 'CNY',
+            'exchange': exchange,
+            'price': float(price),
+            'outstandingShares': float(shares),
+        }
+    except Exception:
+        pass
+
+    # --- Absolute fallback: minimal data ---
+    print(S.warning(f"  ⚠ Could not fetch company profile for {ticker}. Using minimal defaults."))
     return {
-        'companyName': str(info_dict.get('股票简称', ticker)),
-        'marketCap': float(info_dict.get('总市值', 0)),
-        'beta': beta,
+        'companyName': ticker,
+        'marketCap': 0,
+        'beta': 1.0,
         'country': 'China',
         'currency': 'CNY',
         'exchange': exchange,
-        'price': float(info_dict.get('最新', 0)),
-        'outstandingShares': float(info_dict.get('总股本', 0)),
+        'price': 0,
+        'outstandingShares': 0,
     }
 
 
@@ -303,14 +410,28 @@ def fetch_akshare_share_float(ticker):
     """Fetch outstanding shares from akshare for A-shares.
     Note: For A-shares, prefer using fetch_akshare_company_profile() which
     includes outstandingShares and avoids a duplicate API call."""
-    bare_code = _ticker_to_bare_code(ticker)
-    info_df = _get_ak().stock_individual_info_em(symbol=bare_code)
-    info_dict = dict(zip(info_df['item'], info_df['value']))
-
-    return {
-        'outstandingShares': float(info_dict.get('总股本', 0)),
-        'symbol': ticker,
-    }
+    try:
+        bare_code = _ticker_to_bare_code(ticker)
+        info_df = _get_ak().stock_individual_info_em(symbol=bare_code)
+        info_dict = dict(zip(info_df['item'], info_df['value']))
+        return {
+            'outstandingShares': float(info_dict.get('总股本', 0)),
+            'symbol': ticker,
+        }
+    except Exception:
+        # Fallback: try spot_em
+        try:
+            bare_code = _ticker_to_bare_code(ticker)
+            spot_df = _get_ak().stock_zh_a_spot_em()
+            row = spot_df[spot_df['代码'] == bare_code]
+            if not row.empty:
+                return {
+                    'outstandingShares': float(row.iloc[0].get('总股本', 0) or 0),
+                    'symbol': ticker,
+                }
+        except Exception:
+            pass
+        return {'outstandingShares': 0, 'symbol': ticker}
 
 
 def fetch_akshare_income_statement(ticker, period='annual', historical_periods=5):
@@ -838,8 +959,22 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
             cashflow_statement, raw_cashflow_df, _full_cf_df = fetch_akshare_cashflow(ticker, period, historical_periods)
             key_metrics = fetch_akshare_key_metrics(ticker, balance_sheet, income_statement, period, historical_periods)
         elif is_hk_stock(ticker):
-            if period == 'annual':
-                # --- HK annual path: all data from yfinance ---
+            _hk_use_akshare = _is_web_mode()
+            if _hk_use_akshare:
+                # --- HK web path: akshare (东方财富, works on Streamlit Cloud) ---
+                from .akshare_hk_data import (
+                    fetch_akshare_hk_income_statement,
+                    fetch_akshare_hk_balance_sheet,
+                    fetch_akshare_hk_cashflow,
+                    fetch_akshare_hk_key_metrics,
+                )
+                print(S.info("检测到港股（网页版），使用 akshare (东方财富) 数据源..."))
+                income_statement, raw_income_df, _full_income_df = fetch_akshare_hk_income_statement(ticker, period, historical_periods)
+                balance_sheet, raw_balance_df, _full_bs_df = fetch_akshare_hk_balance_sheet(ticker, period, historical_periods)
+                cashflow_statement, raw_cashflow_df, _full_cf_df = fetch_akshare_hk_cashflow(ticker, period, historical_periods)
+                key_metrics = fetch_akshare_hk_key_metrics(ticker, balance_sheet, income_statement, period, historical_periods)
+            else:
+                # --- HK terminal path: yfinance (richer Morningstar data) ---
                 from .yfinance_data import (
                     fetch_yfinance_hk_income_statement,
                     fetch_yfinance_hk_balance_sheet,
@@ -851,29 +986,9 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                 balance_sheet, raw_balance_df = fetch_yfinance_hk_balance_sheet(ticker, period, historical_periods)
                 cashflow_statement, raw_cashflow_df = fetch_yfinance_hk_cashflow(ticker, period, historical_periods)
                 key_metrics = fetch_yfinance_hk_key_metrics(ticker, balance_sheet, income_statement, period, historical_periods)
-            else:
-                # --- HK quarter path: use FMP (yfinance lacks proper quarterly data) ---
-                print(S.info("检测到港股季度查询，使用 FMP 数据源..."))
-                urls = {
-                    'income': get_api_url('income-statement', ticker, period, apikey),
-                    'balance': get_api_url('balance-sheet-statement', ticker, period, apikey),
-                    'cashflow': get_api_url('cash-flow-statement', ticker, period, apikey),
-                    'metrics': get_api_url('key-metrics', ticker, period, apikey),
-                }
-                with ThreadPoolExecutor(max_workers=4) as executor:
-                    futures = {k: executor.submit(get_jsonparsed_data, v) for k, v in urls.items()}
-                income_statement = futures['income'].result()[:historical_periods]
-                balance_sheet = futures['balance'].result()[:historical_periods]
-                cashflow_statement = futures['cashflow'].result()[:historical_periods]
-                key_metrics = futures['metrics'].result()[:historical_periods]
-
-                cashflow_statement = _decumulate_quarterly_cf_if_needed(cashflow_statement)
-
-                bs_by_date = {d.get('date'): d for d in reversed(balance_sheet)}
-                cf_by_date = {d.get('date'): d for d in reversed(cashflow_statement)}
-                km_by_date = {d.get('date'): d for d in reversed(key_metrics)}
-                _empty_cf = {'depreciationAndAmortization': 0, 'investmentsInPropertyPlantAndEquipment': 0, 'changeInWorkingCapital': 0}
-                _empty_km = {'debtToAssets': 0, 'roic': 0, 'roe': 0, 'dividendYield': 0, 'payoutRatio': 0}
+                _full_income_df = None  # yfinance TTM uses pre-computed data, not cumulative DFs
+                _full_bs_df = None
+                _full_cf_df = None
         else:
             # --- Non-A-share path: all data from FMP (parallel requests) ---
             urls = {
@@ -903,11 +1018,8 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
             _empty_cf = {'depreciationAndAmortization': 0, 'investmentsInPropertyPlantAndEquipment': 0, 'changeInWorkingCapital': 0}
             _empty_km = {'debtToAssets': 0, 'roic': 0, 'roe': 0, 'dividendYield': 0, 'payoutRatio': 0}
 
-        # HK annual mode: build date-based lookups (yfinance lists may differ in length)
-        if is_hk_stock(ticker) and period == 'annual':
-            _hk_bs_by_date = {d.get('date'): d for d in reversed(balance_sheet)}
-            _hk_cf_by_date = {d.get('date'): d for d in reversed(cashflow_statement)}
-            _hk_km_by_date = {d.get('date'): d for d in reversed(key_metrics)}
+        # HK akshare: lists aligned by index (same as A-shares), no date lookup needed
+        if is_hk_stock(ticker):
             _empty_cf = {'depreciationAndAmortization': 0, 'investmentsInPropertyPlantAndEquipment': 0, 'changeInWorkingCapital': 0}
             _empty_km = {'debtToAssets': 0, 'roic': 0, 'roe': 0, 'dividendYield': 0, 'payoutRatio': 0}
 
@@ -918,16 +1030,11 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
             inc = income_statement[i]
             inc_date = inc.get('date', '')
 
-            if is_a_share(ticker):
-                # A-shares: lists always aligned by index
-                bs = balance_sheet[i]
-                cf = cashflow_statement[i]
-                km = key_metrics[i]
-            elif is_hk_stock(ticker) and period == 'annual':
-                # HK annual: date-based matching (yfinance lists may differ in length)
-                bs = _hk_bs_by_date.get(inc_date) or (balance_sheet[i] if i < len(balance_sheet) else {})
-                cf = _hk_cf_by_date.get(inc_date) or _empty_cf
-                km = _hk_km_by_date.get(inc_date) or (key_metrics[i] if i < len(key_metrics) else _empty_km)
+            if is_a_share(ticker) or is_hk_stock(ticker):
+                # A-shares & HK (akshare): lists always aligned by index
+                bs = balance_sheet[i] if i < len(balance_sheet) else {}
+                cf = cashflow_statement[i] if i < len(cashflow_statement) else _empty_cf
+                km = key_metrics[i] if i < len(key_metrics) else _empty_km
             else:
                 bs = bs_by_date.get(inc_date) or (balance_sheet[i] if i < len(balance_sheet) else {})
                 cf = cf_by_date.get(inc_date) or _empty_cf
@@ -954,11 +1061,8 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
             # For prev_total_debt, look up the previous income_statement date
             if i > 0:
                 prev_inc_date = income_statement[i - 1].get('date', '')
-                if is_a_share(ticker):
+                if is_a_share(ticker) or is_hk_stock(ticker):
                     prev_total_debt = balance_sheet[i - 1].get('totalDebt', 0) or 0 if i - 1 < len(balance_sheet) else total_debt
-                elif is_hk_stock(ticker) and period == 'annual':
-                    prev_bs = _hk_bs_by_date.get(prev_inc_date)
-                    prev_total_debt = (prev_bs.get('totalDebt', 0) or 0) if prev_bs else total_debt
                 else:
                     prev_bs = bs_by_date.get(prev_inc_date)
                     prev_total_debt = (prev_bs.get('totalDebt', 0) or 0) if prev_bs else total_debt
@@ -1185,61 +1289,57 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                                 break
 
             elif is_hk_stock(ticker):
-                # --- HK stock TTM: use yfinance built-in TTM APIs ---
-                # yfinance ttm_income_stmt / ttm_cash_flow provide pre-computed TTM
-                # data that may include Q1/Q3 data not exposed in quarterly_income_stmt
-                # for semi-annual reporters (e.g. Tencent, Xiaomi).
-                from .yfinance_data import (
-                    fetch_yfinance_hk_ttm as _yf_ttm,
-                    fetch_yfinance_hk_balance_sheet as _yf_bs,
-                )
-                _hk_ttm_data = None
-                if period == 'annual':
-                    print(S.info(f"Fetching TTM data from yfinance for {ticker}..."))
-                    _hk_ttm_data = _yf_ttm(ticker)
-                    if _hk_ttm_data and _hk_ttm_data.get('has_ttm_income'):
-                        _hk_ttm_quarter = _hk_ttm_data['ttm_quarter']
-                        # Skip TTM if:
-                        # - Q4/FY: latest annual data is sufficient
-                        # - Q1: too early for meaningful TTM, use annual data as base
-                        if _hk_ttm_quarter in ('Q4', 'Q1'):
-                            if _hk_ttm_quarter == 'Q1':
-                                print(S.muted(f"  ⓘ 最新季度为 Q1，数据不足以计算有意义的 TTM，使用最近年度数据作为估值基础。"))
-                            _hk_ttm_data = None  # skip TTM
-                        else:
-                            # Fetch latest quarterly BS for capital structure
-                            q_bs_list, _ = _yf_bs(ticker, 'quarter', 4)
-                            q_bs_by_date = {d.get('date'): d for d in reversed(q_bs_list)} if q_bs_list else {}
-                    else:
-                        _hk_ttm_data = None
+                # Set q_inc = None so shared TTM block (FMP path) doesn't run
+                q_inc = None
 
-                    # Set q_inc = None so shared TTM block (FMP path) doesn't run
-                    q_inc = None
+                if _hk_use_akshare:
+                    # --- HK web TTM: akshare YTD cumulative method (same as A-shares) ---
+                    from .akshare_hk_data import (
+                        _compute_hk_ttm_income,
+                        _compute_hk_ttm_cashflow,
+                        _pivot_report as _hk_pivot,
+                        _parse_hk_bs as _parse_hk_bs_items,
+                    )
+                    ttm_income = None
+                    ttm_cf = None
+                    if period == 'annual' and _full_income_df is not None:
+                        print(S.info(f"Computing TTM from akshare for {ticker}..."))
+                        ttm_income = _compute_hk_ttm_income(ticker, _full_income_df)
+                        ttm_cf = _compute_hk_ttm_cashflow(ticker, _full_cf_df)
 
-                    if _hk_ttm_data:
-                        _ttm_q_date = _hk_ttm_data['ttm_end_date']
-                        _ttm_latest_quarter = _hk_ttm_data['ttm_quarter']
-                        _ttm_end_date = _ttm_q_date
-                        _ttm_label_year = str(int(_latest_fy_cal_year) + 1) if _latest_fy_cal_year.isdigit() else (_ttm_q_date[:4] if _ttm_q_date else '')
+                        # Check if TTM skipped due to insufficient data (not because latest IS FY)
+                        if ttm_income is None and _full_income_df is not None:
+                            from .akshare_hk_data import _get_fy_dates as _hk_get_fy_dates
+                            _hk_grouped, _hk_dates = _hk_pivot(_full_income_df)
+                            if _hk_dates:
+                                _hk_fy_set = _hk_get_fy_dates(_full_income_df)
+                                _hk_latest = _hk_dates[0]
+                                if _hk_latest not in _hk_fy_set:
+                                    print(S.muted(f"  ⓘ 最新报告期 ({_hk_latest}) 数据不足以计算 TTM，使用最近年度数据作为估值基础。"))
 
-                        ttm_revenue = _hk_ttm_data['revenue'] / 1_000_000
-                        ttm_ebit = _hk_ttm_data['operatingIncome'] / 1_000_000
+                    if ttm_income:
+                        _ttm_latest_date = ttm_income.get('_latest_date', '')
+                        _ttm_latest_quarter = ttm_income.get('_latest_quarter', '')
+                        _ttm_end_date = _ttm_latest_date
+                        _ttm_label_year = str(int(_latest_fy_cal_year) + 1) if _latest_fy_cal_year.isdigit() else (_ttm_latest_date[:4] if _ttm_latest_date else '')
 
-                        ttm_pbt = _hk_ttm_data['incomeBeforeTax']
-                        ttm_tax_exp = _hk_ttm_data['incomeTaxExpense']
+                        ttm_revenue = ttm_income['revenue'] / 1_000_000
+                        ttm_ebit = ttm_income['operatingIncome'] / 1_000_000
+
+                        ttm_pbt = ttm_income['incomeBeforeTax']
+                        ttm_tax_exp = ttm_income['incomeTaxExpense']
                         ttm_tax_rate = (ttm_tax_exp / ttm_pbt * 100) if ttm_pbt != 0 else summary_data[0]['Tax Rate (%)']
                         _ttm_net_income_m = (ttm_pbt - ttm_tax_exp) / 1_000_000
 
-                        # Growth: TTM vs prior FY
                         prev_revenue = summary_data[0]['Revenue']
                         prev_ebit = summary_data[0]['EBIT']
 
                         _ttm_period_label = f'{_ttm_label_year}{_ttm_latest_quarter}(TTM)' if _ttm_latest_quarter else 'TTM'
                         ttm_data = {
                             'Calendar Year': _ttm_label_year,
-                            'Date': _ttm_q_date,
+                            'Date': _ttm_latest_date,
                             'Period': _ttm_period_label,
-                            'Reported Currency': _hk_ttm_data.get('reportedCurrency', summary_data[0]['Reported Currency']),
+                            'Reported Currency': summary_data[0]['Reported Currency'],
                             '▸ Profitability': '',
                             'Revenue': ttm_revenue,
                             'EBIT': ttm_ebit,
@@ -1249,36 +1349,110 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                             'Tax Rate (%)': ttm_tax_rate,
                         }
 
-                        # Reinvestment: use TTM CF data; fall back to FY for missing items
+                        # Reinvestment from TTM CF
                         ttm_data['▸ Reinvestment'] = ''
-                        _cf_capex = _hk_ttm_data.get('investmentsInPropertyPlantAndEquipment')
-                        _cf_da = _hk_ttm_data.get('depreciationAndAmortization')
-                        _cf_wc = _hk_ttm_data.get('changeInWorkingCapital')
+                        if ttm_cf:
+                            capex_ttm = -ttm_cf['investmentsInPropertyPlantAndEquipment'] / 1_000_000
+                            da_ttm = ttm_cf['depreciationAndAmortization'] / 1_000_000
+                            wc_ttm = -ttm_cf['changeInWorkingCapital'] / 1_000_000
+                            ttm_note = ''
+                        else:
+                            capex_ttm = summary_data[0]['(+) Capital Expenditure']
+                            da_ttm = summary_data[0]['(-) D&A']
+                            wc_ttm = summary_data[0]['(+) ΔWorking Capital']
+                            _fy_year = summary_data[0].get('Calendar Year', '?')
+                            ttm_note = f'Capex/D&A/WC use FY{_fy_year} annual data (quarterly CF unavailable)'
 
-                        _note_parts = []
-                        _fy_year_str = summary_data[0].get('Calendar Year', '?')
-                        ttm_capex = -_cf_capex / 1_000_000 if _cf_capex is not None else summary_data[0]['(+) Capital Expenditure']
-                        if _cf_capex is None:
-                            _note_parts.append('Capex')
-                        ttm_da = _cf_da / 1_000_000 if _cf_da is not None else summary_data[0]['(-) D&A']
-                        if _cf_da is None:
-                            _note_parts.append('D&A')
-                        ttm_wc = -_cf_wc / 1_000_000 if _cf_wc is not None else summary_data[0]['(+) ΔWorking Capital']
-                        if _cf_wc is None:
-                            _note_parts.append('WC')
+                        ttm_data['(+) Capital Expenditure'] = capex_ttm
+                        ttm_data['(-) D&A'] = da_ttm
+                        ttm_data['(+) ΔWorking Capital'] = wc_ttm
+                        ttm_data['Total Reinvestment'] = capex_ttm - da_ttm + wc_ttm
 
-                        ttm_data['(+) Capital Expenditure'] = ttm_capex
-                        ttm_data['(-) D&A'] = ttm_da
-                        ttm_data['(+) ΔWorking Capital'] = ttm_wc
-                        ttm_data['Total Reinvestment'] = ttm_capex - ttm_da + ttm_wc
-                        if _note_parts:
-                            ttm_note = f'{"/".join(_note_parts)} use FY{_fy_year_str} data (TTM quarterly CF unavailable)'
-
-                        # BS: use latest quarterly BS if available
-                        latest_q_bs = q_bs_by_date.get(_ttm_q_date) or (q_bs_list[0] if q_bs_list else {})
+                        # BS: look up latest quarterly BS from full_bs_df
+                        _akshare_latest_q_bs = {}
+                        if _full_bs_df is not None and _ttm_latest_date:
+                            _hk_bs_grouped, _hk_bs_dates = _hk_pivot(_full_bs_df)
+                            for _bd in _hk_bs_dates:
+                                if _bd <= _ttm_latest_date:
+                                    _akshare_latest_q_bs = _parse_hk_bs_items(_hk_bs_grouped[_bd])
+                                    break
                     else:
                         if period == 'annual':
-                            print(S.muted(f"  ⓘ No TTM data from yfinance for {ticker}; TTM skipped."))
+                            print(S.muted(f"  ⓘ No TTM data available for {ticker}; TTM skipped."))
+
+                else:
+                    # --- HK terminal TTM: yfinance pre-computed TTM ---
+                    if period == 'annual':
+                        from .yfinance_data import fetch_yfinance_hk_ttm
+                        print(S.info(f"Fetching TTM data from yfinance for {ticker}..."))
+                        yf_ttm = fetch_yfinance_hk_ttm(ticker)
+
+                        if yf_ttm and yf_ttm.get('has_ttm_income'):
+                            _ttm_latest_date = yf_ttm['ttm_end_date']
+                            _ttm_latest_quarter = yf_ttm['ttm_quarter']
+                            _ttm_end_date = _ttm_latest_date
+                            _ttm_label_year = str(int(_latest_fy_cal_year) + 1) if _latest_fy_cal_year.isdigit() else (_ttm_latest_date[:4] if _ttm_latest_date else '')
+
+                            ttm_revenue = yf_ttm['revenue'] / 1_000_000
+                            ttm_ebit = yf_ttm['operatingIncome'] / 1_000_000
+
+                            ttm_pbt = yf_ttm['incomeBeforeTax']
+                            ttm_tax_exp = yf_ttm['incomeTaxExpense']
+                            ttm_tax_rate = (ttm_tax_exp / ttm_pbt * 100) if ttm_pbt != 0 else summary_data[0]['Tax Rate (%)']
+                            _ttm_net_income_m = (ttm_pbt - ttm_tax_exp) / 1_000_000
+
+                            prev_revenue = summary_data[0]['Revenue']
+                            prev_ebit = summary_data[0]['EBIT']
+
+                            _ttm_period_label = f'{_ttm_label_year}{_ttm_latest_quarter}(TTM)' if _ttm_latest_quarter else 'TTM'
+                            ttm_data = {
+                                'Calendar Year': _ttm_label_year,
+                                'Date': _ttm_latest_date,
+                                'Period': _ttm_period_label,
+                                'Reported Currency': summary_data[0]['Reported Currency'],
+                                '▸ Profitability': '',
+                                'Revenue': ttm_revenue,
+                                'EBIT': ttm_ebit,
+                                'Revenue Growth (%)': ((ttm_revenue - prev_revenue) / prev_revenue * 100) if prev_revenue != 0 else 0,
+                                'EBIT Growth (%)': ((ttm_ebit - prev_ebit) / prev_ebit * 100) if prev_ebit != 0 else 0,
+                                'EBIT Margin (%)': (ttm_ebit / ttm_revenue * 100) if ttm_revenue != 0 else 0,
+                                'Tax Rate (%)': ttm_tax_rate,
+                            }
+
+                            # Reinvestment from TTM CF
+                            ttm_data['▸ Reinvestment'] = ''
+                            if yf_ttm.get('has_ttm_cashflow') and yf_ttm.get('depreciationAndAmortization') is not None:
+                                capex_raw = yf_ttm['investmentsInPropertyPlantAndEquipment'] or 0
+                                capex_ttm = -capex_raw / 1_000_000  # yfinance capex is negative
+                                da_ttm = (yf_ttm['depreciationAndAmortization'] or 0) / 1_000_000
+                                wc_raw = yf_ttm['changeInWorkingCapital'] or 0
+                                wc_ttm = -wc_raw / 1_000_000
+                                ttm_note = ''
+                            else:
+                                capex_ttm = summary_data[0]['(+) Capital Expenditure']
+                                da_ttm = summary_data[0]['(-) D&A']
+                                wc_ttm = summary_data[0]['(+) ΔWorking Capital']
+                                _fy_year = summary_data[0].get('Calendar Year', '?')
+                                ttm_note = f'Capex/D&A/WC use FY{_fy_year} annual data (quarterly CF unavailable)'
+
+                            ttm_data['(+) Capital Expenditure'] = capex_ttm
+                            ttm_data['(-) D&A'] = da_ttm
+                            ttm_data['(+) ΔWorking Capital'] = wc_ttm
+                            ttm_data['Total Reinvestment'] = capex_ttm - da_ttm + wc_ttm
+
+                            # BS: fetch latest quarterly BS from yfinance
+                            _akshare_latest_q_bs = {}
+                            try:
+                                from .yfinance_data import _extract_yf_bs_row, _get_yf
+                                _yf_mod = _get_yf()
+                                _yf_t = _yf_mod.Ticker(ticker)
+                                _qbs_df = _yf_t.quarterly_balance_sheet
+                                if _qbs_df is not None and not _qbs_df.empty:
+                                    _akshare_latest_q_bs = _extract_yf_bs_row(_qbs_df, _qbs_df.columns[0])
+                            except Exception:
+                                pass  # Fallback to annual BS in shared finalize block
+                        else:
+                            print(S.muted(f"  ⓘ No TTM data available for {ticker}; TTM skipped."))
 
             else:
                 # --- FMP TTM: fetch quarterly data and sum 4 quarters ---
@@ -1516,14 +1690,14 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                 #   A-shares (annual mode): _akshare_latest_q_bs from unfiltered akshare DataFrame
                 #   Quarter mode: from existing quarterly data (already handled above)
                 _use_quarterly_bs = False
-                if is_a_share(ticker) and period == 'annual':
+                if (is_a_share(ticker) or is_hk_stock(ticker)) and period == 'annual':
                     _lbs = _akshare_latest_q_bs if _akshare_latest_q_bs else {}
                     _use_quarterly_bs = bool(_lbs)
-                    _q_scale = 1_000_000  # akshare returns raw values in yuan
-                elif not is_a_share(ticker) and period == 'annual':
+                    _q_scale = 1_000_000  # akshare returns raw values in currency units
+                elif period == 'annual':
                     _lbs = latest_q_bs
                     _use_quarterly_bs = bool(_lbs)
-                    _q_scale = 1_000_000  # FMP/yfinance returns raw values in reporting currency
+                    _q_scale = 1_000_000  # FMP returns raw values in reporting currency
 
                 if _use_quarterly_bs:
                     ttm_data['(+) Total Debt'] = (_lbs.get('totalDebt', 0) or 0) / _q_scale
@@ -1604,8 +1778,8 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
             'ttm_end_date': _ttm_end_date,
         }
 
-        # For A-shares and HK annual (yfinance), include complete raw financial statements for Excel export
-        if is_a_share(ticker) or (is_hk_stock(ticker) and period == 'annual'):
+        # For A-shares and HK stocks, include complete raw financial statements for Excel export
+        if is_a_share(ticker) or is_hk_stock(ticker):
             result['raw_income_statement'] = raw_income_df
             result['raw_balance_sheet'] = raw_balance_df
             result['raw_cashflow_statement'] = raw_cashflow_df

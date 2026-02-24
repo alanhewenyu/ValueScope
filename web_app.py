@@ -1169,7 +1169,7 @@ with st.sidebar:
     st.markdown('<hr style="margin:4px 0; border:none; border-top:1px solid var(--vx-border, #d0d7de);">', unsafe_allow_html=True)
     st.markdown("""
     <div style="text-align:center; font-size:0.72rem; color:#555; line-height:1.7; padding:4px 0;">
-        <div>© 2026 Alan He · <a href="https://opensource.org/licenses/MIT" target="_blank" style="color:#58a6ff;text-decoration:none;">MIT License</a></div>
+        <div>© 2026 见山笔记 (Alan He) · <a href="https://opensource.org/licenses/MIT" target="_blank" style="color:#58a6ff;text-decoration:none;">MIT License</a></div>
         <div><a href="https://github.com/alanhewenyu/ValuX" target="_blank" style="color:#58a6ff;text-decoration:none;">GitHub</a>
         · <a href="mailto:alanhe@icloud.com" style="color:#58a6ff;text-decoration:none;">alanhe@icloud.com</a></div>
     </div>
@@ -2473,8 +2473,11 @@ with _hdr_container:
     _fin_btn_label = t('btn_collapse_fin') if _fin_currently_shown else t('btn_view_fin')
 
     if _has_results:
-        # Post-DCF: company name (plain) + Financials + Gap + Excel
-        _hcols = st.columns([3.5, 1, 1, 1])
+        # Post-DCF: company name + Financials + [Gap (AI only)] + Excel
+        if _has_ai:
+            _hcols = st.columns([3.5, 1, 1, 1])
+        else:
+            _hcols = st.columns([4.5, 1, 1])
         with _hcols[0]:
             st.markdown(
                 f'<div class="company-header-bar">'
@@ -2483,12 +2486,16 @@ with _hdr_container:
         with _hcols[1]:
             _fin_toggled = st.button(_fin_btn_label, use_container_width=True,
                                       key="fin_data_toggle")
-        with _hcols[2]:
-            current_price = ss.company_profile.get('price', 0)
-            if current_price and current_price > 0:
-                gap_btn = st.button(t('btn_gap_analysis'), use_container_width=True,
-                                     disabled=_btns_disabled)
-        with _hcols[3]:
+        if _has_ai:
+            with _hcols[2]:
+                current_price = ss.company_profile.get('price', 0)
+                if current_price and current_price > 0:
+                    gap_btn = st.button(t('btn_gap_analysis'), use_container_width=True,
+                                         disabled=_btns_disabled)
+            _excel_col = _hcols[3]
+        else:
+            _excel_col = _hcols[2]
+        with _excel_col:
             if _excel_buf is not None:
                 st.download_button(
                     label=t('btn_download'),
@@ -2814,6 +2821,13 @@ _em_ref = _hist_refs.get('ebit_margin', {})
 _rg_default = round(_rg_ref.get('avg', 10.0), 1)
 _em_default = round(_em_ref.get('avg', 20.0), 1)
 
+# ── Dynamic slider ranges: adapt to historical data so actual values always fit ──
+import math as _math
+_rg1_max = max(60.0, _math.ceil((_rg_ref.get('max', 30.0)) * 1.5 / 5) * 5)   # round up to nearest 5
+_rg2_max = max(40.0, _math.ceil((_rg_ref.get('max', 20.0)) * 1.3 / 5) * 5)
+_em_max  = max(60.0, _math.ceil((_em_ref.get('max', 30.0)) * 1.2 / 5) * 5)
+_em_min  = min(-10.0, _math.floor((_em_ref.get('min', 0.0)) * 1.2 / 5) * 5) if _em_ref.get('min', 0) < -10 else -10.0
+
 # ── Dynamic year labels for slider parameters ──
 _fy1 = ss.forecast_year_1  # e.g. 2026
 if ss.is_ttm:
@@ -2844,17 +2858,17 @@ with col1:
     st.markdown(t('param_growth_margins'))
     revenue_growth_1 = _param_slider(
         _lbl_rg1, 'revenue_growth_1', 0.5, "%.1f", "p_rg1",
-        min_val=-30.0, max_val=60.0, default_val=round(_rg_ref.get('latest', _rg_default), 1),
+        min_val=-30.0, max_val=_rg1_max, default_val=round(_rg_ref.get('latest', _rg_default), 1),
         help_text=_help_rg1,
         hist_key='rev_growth')
     revenue_growth_2 = _param_slider(
         _lbl_rg2, 'revenue_growth_2', 0.5, "%.1f", "p_rg2",
-        min_val=-20.0, max_val=40.0, default_val=_rg_default,
+        min_val=-20.0, max_val=_rg2_max, default_val=_rg_default,
         help_text=_help_rg2,
         hist_key='rev_growth')
     ebit_margin = _param_slider(
         t('param_ebit_margin'), 'ebit_margin', 0.5, "%.1f", "p_em",
-        min_val=-10.0, max_val=60.0, default_val=_em_default,
+        min_val=_em_min, max_val=_em_max, default_val=_em_default,
         help_text=t('help_ebit_margin'),
         hist_key='ebit_margin')
     convergence = _param_slider(
