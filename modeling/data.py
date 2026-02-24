@@ -266,6 +266,51 @@ def _ticker_to_bare_code(ticker):
     return ticker.split('.')[0]
 
 
+def _calculate_beta_akshare(ticker, years=3):
+    """Calculate beta for an A-share stock against CSI 300 index using daily returns.
+
+    Uses `years` years of daily data. Returns CHINA_DEFAULT_BETA on failure.
+    Only called in local mode (terminal + local Streamlit); skipped on Cloud.
+    """
+    from datetime import datetime, timedelta
+
+    bare_code = _ticker_to_bare_code(ticker)
+    end_date = datetime.now().strftime('%Y%m%d')
+    start_date = (datetime.now() - timedelta(days=years * 365)).strftime('%Y%m%d')
+
+    try:
+        print(S.info(f"Calculating beta for {bare_code} vs CSI 300 ({years}Y daily)..."), end="")
+
+        stock_df = _get_ak().stock_zh_a_hist(symbol=bare_code, period="daily",
+                                       start_date=start_date, end_date=end_date, adjust="qfq")
+        index_df = _get_ak().stock_zh_index_daily(symbol="sh000300")
+
+        stock_df['date'] = pd.to_datetime(stock_df['日期'])
+        stock_df['stock_return'] = stock_df['收盘'].pct_change()
+
+        index_df['date'] = pd.to_datetime(index_df['date'])
+        index_df = index_df[index_df['date'] >= start_date]
+        index_df['index_return'] = index_df['close'].pct_change()
+
+        merged = pd.merge(stock_df[['date', 'stock_return']],
+                          index_df[['date', 'index_return']], on='date').dropna()
+
+        if len(merged) < 60:
+            print(S.warning(f"Insufficient data for beta calculation ({len(merged)} days). Using default."))
+            return CHINA_DEFAULT_BETA
+
+        cov = merged['stock_return'].cov(merged['index_return'])
+        var = merged['index_return'].var()
+        beta = cov / var if var != 0 else CHINA_DEFAULT_BETA
+
+        beta = round(beta, 2)
+        print(f" done.")
+        return beta
+
+    except Exception as e:
+        print(S.warning(f"Beta calculation failed: {e}. Using default {CHINA_DEFAULT_BETA}."))
+        return CHINA_DEFAULT_BETA
+
 
 def fetch_akshare_company_profile(ticker):
     """Fetch company profile + share float from akshare for A-shares.
@@ -277,15 +322,16 @@ def fetch_akshare_company_profile(ticker):
     bare_code = _ticker_to_bare_code(ticker)
     exchange = 'Shanghai Stock Exchange' if ticker.upper().endswith('.SS') else 'Shenzhen Stock Exchange'
 
-    # --- Primary: stock_individual_info_em (fast, all-in-one) ---
+    # --- Primary: stock_individual_info_em (works locally, blocked on Cloud) ---
     try:
         print(S.info(f"Fetching company profile from akshare for {bare_code}..."))
         info_df = _get_ak().stock_individual_info_em(symbol=bare_code)
         info_dict = dict(zip(info_df['item'], info_df['value']))
+        beta = _calculate_beta_akshare(ticker)
         return {
             'companyName': str(info_dict.get('股票简称', ticker)),
             'marketCap': float(info_dict.get('总市值', 0)),
-            'beta': CHINA_DEFAULT_BETA,
+            'beta': beta,
             'country': 'China',
             'currency': 'CNY',
             'exchange': exchange,
