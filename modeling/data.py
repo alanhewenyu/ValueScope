@@ -46,7 +46,7 @@ def _is_web_mode():
 
     Used to select HK data source:
     - Terminal → yfinance (richer Morningstar data)
-    - Web → akshare (东方财富, works on Streamlit Cloud where yfinance can't reach Yahoo)
+    - Web (local + Cloud) → akshare (东方财富)
     """
     try:
         import warnings
@@ -63,6 +63,19 @@ def _is_web_mode():
                 _st_logger.setLevel(_prev_level)
     except Exception:
         return False
+
+
+def _is_cloud_mode():
+    """Check if running on Streamlit Community Cloud (vs local Streamlit or terminal).
+
+    Cloud has restricted network: push2.eastmoney.com, push2his.eastmoney.com,
+    stock_individual_info_em, and yfinance are all blocked.
+    Local Streamlit and terminal have full network access.
+
+    Detection: Cloud runs as ``/home/appuser`` with source mounted at ``/mount/src``.
+    """
+    import os
+    return os.environ.get('HOME') == '/home/appuser' or os.path.exists('/mount/src')
 
 
 def validate_ticker(ticker):
@@ -353,13 +366,13 @@ def fetch_akshare_company_profile(ticker):
     bare_code = _ticker_to_bare_code(ticker)
     exchange = 'Shanghai Stock Exchange' if ticker.upper().endswith('.SS') else 'Shenzhen Stock Exchange'
 
-    _web = _is_web_mode()
+    _cloud = _is_cloud_mode()
 
     # --- Primary: stock_individual_info_em (works locally, blocked on Cloud) ---
     # Skip on Cloud to avoid ~15-30s timeout from a guaranteed-to-fail connection.
     # Note: beta is NOT calculated here — it runs after parallel fetch completes
     # to avoid concurrent connection contention with financial data APIs.
-    if not _web:
+    if not _cloud:
         try:
             print(S.info(f"Fetching company profile from akshare for {bare_code}..."))
             info_df = _get_ak().stock_individual_info_em(symbol=bare_code)
@@ -394,7 +407,7 @@ def fetch_akshare_company_profile(ticker):
     # On Cloud, skip eastmoney push2 endpoints (blocked); go straight to Sina.
     # Locally (fallback), try eastmoney first, then Sina.
 
-    if not _web:
+    if not _cloud:
         # eastmoney historical (push2his.eastmoney.com) — only try locally
         try:
             hist_df = _get_ak().stock_zh_a_hist(symbol=bare_code, period='daily', adjust='qfq')
