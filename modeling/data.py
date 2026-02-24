@@ -136,6 +136,35 @@ def fetch_forex_data(apikey):
     data = get_jsonparsed_data(url)
     return {item['name']: item['price'] for item in data}
 
+
+def fetch_forex_akshare(from_currency, to_currency):
+    """Fetch CNY↔HKD exchange rate from Shanghai Stock Exchange (沪港通结算汇率).
+
+    Uses ``stock_sgt_settlement_exchange_rate_sse`` — official SSE data,
+    no API key required, works on Streamlit Cloud (query.sse.com.cn).
+
+    Returns float rate (1 from_currency = ? to_currency) or None on failure.
+    Only supports CNY↔HKD; returns None for other currency pairs.
+    """
+    pair = frozenset([from_currency.upper(), to_currency.upper()])
+    if pair != frozenset(['CNY', 'HKD']):
+        return None
+    try:
+        df = _get_ak().stock_sgt_settlement_exchange_rate_sse()
+        if df is None or df.empty:
+            return None
+        latest = df.iloc[-1]
+        buy = float(latest['买入结算汇兑比率'])
+        sell = float(latest['卖出结算汇兑比率'])
+        cny_per_hkd = (buy + sell) / 2  # 1 HKD = ? CNY
+        if from_currency.upper() == 'CNY':
+            return round(1.0 / cny_per_hkd, 4)   # 1 CNY = ? HKD
+        else:
+            return round(cny_per_hkd, 4)           # 1 HKD = ? CNY
+    except Exception:
+        return None
+
+
 def fetch_market_risk_premium(apikey):
     url = f'https://financialmodelingprep.com/api/v4/market_risk_premium?apikey={apikey}'
     data = get_jsonparsed_data(url)

@@ -1,5 +1,5 @@
 import pandas as pd
-from .data import fetch_market_risk_premium, fetch_forex_data
+from .data import fetch_market_risk_premium, fetch_forex_data, fetch_forex_akshare
 from .constants import MARGINAL_TAX_RATE, TERMINAL_RISK_PREMIUM, RISK_FREE_RATE_US, RISK_FREE_RATE_CHINA, RISK_FREE_RATE_INTERNATIONAL, CHINA_MARKET_RISK_PREMIUM, HK_MARKET_RISK_PREMIUM
 from . import style as S
 
@@ -46,7 +46,10 @@ def calculate_wacc(base_year_data, company_profile, apikey, verbose=True):
 
     if company_currency != reporting_currency:
         forex_key = f"{company_currency}/{reporting_currency}"
-        exchange_rate = forex_data.get(forex_key, 1.0)
+        exchange_rate = forex_data.get(forex_key)
+        if not exchange_rate:
+            # Fallback: SSE 沪港通汇率 (CNY↔HKD, no API key needed)
+            exchange_rate = fetch_forex_akshare(company_currency, reporting_currency) or 1.0
         market_cap = market_cap * exchange_rate
 
     beta = float(company_profile.get('beta', 1.0))

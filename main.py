@@ -219,10 +219,15 @@ def _compute_forex_rate(results, company_profile, apikey):
                 if reverse_rate and reverse_rate != 0:
                     forex_rate = reverse_rate
 
-        # Fallback: use yfinance for forex (useful for HK stocks without FMP API key)
+        # Fallback 1: yfinance (useful for HK stocks without FMP API key)
         if forex_rate is None:
             from modeling.yfinance_data import fetch_forex_yfinance
             forex_rate = fetch_forex_yfinance(reported_currency, stock_currency)
+
+        # Fallback 2: SSE 沪港通结算汇率 (CNY↔HKD only, no API key needed)
+        if forex_rate is None:
+            from modeling.data import fetch_forex_akshare
+            forex_rate = fetch_forex_akshare(reported_currency, stock_currency)
 
         if forex_rate:
             print(S.muted(f"\n  ⓘ 汇率换算: 1 {reported_currency} = {forex_rate:.4f} {stock_currency}"))

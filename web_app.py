@@ -1234,6 +1234,9 @@ def _compute_forex_rate_web(results, company_profile, apikey_val):
         if forex_rate is None:
             from modeling.yfinance_data import fetch_forex_yfinance
             forex_rate = fetch_forex_yfinance(reported_currency, stock_currency)
+        if forex_rate is None:
+            from modeling.data import fetch_forex_akshare
+            forex_rate = fetch_forex_akshare(reported_currency, stock_currency)
         if forex_rate:
             msg = f"Exchange rate: 1 {reported_currency} = {forex_rate:.4f} {stock_currency}"
         else:
