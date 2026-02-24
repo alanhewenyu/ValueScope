@@ -384,40 +384,26 @@ def _fill_profile_from_financial_data(profile, financial_data):
     """Fill missing company profile fields from already-fetched financial data.
 
     Called after get_historical_financials() succeeds — avoids duplicate API calls.
-    Fills: companyName (from raw DataFrame), outstandingShares (from SHARE_CAPITAL
-    in balance sheet), and marketCap (price × shares).
+    Uses pre-extracted values (_company_name_from_data, _shares_from_data) stored
+    in financial_data by get_historical_financials().
     """
     if profile is None or financial_data is None:
         return profile
 
-    # Company name from raw income statement DataFrame
-    # Fill if name is missing, or looks like a raw ticker symbol (e.g. "600519.SS")
+    # Company name: fill if missing or looks like a raw ticker symbol
     _name = profile.get('companyName', '')
     _looks_like_ticker = (not _name
-                          or _name == profile.get('_ticker', '')
-                          or _name == profile.get('symbol', '')
                           or re.match(r'^\d{5,6}\.\w{1,2}$', _name))  # e.g. 600519.SS / 00700.HK
     if _looks_like_ticker:
-        raw_inc = financial_data.get('raw_income_statement')
-        if raw_inc is not None and not raw_inc.empty:
-            # raw DataFrame from akshare has SECURITY_NAME_ABBR column
-            for col in ['SECURITY_NAME_ABBR']:
-                if col in raw_inc.columns:
-                    name = str(raw_inc[col].dropna().iloc[0]) if not raw_inc[col].dropna().empty else ''
-                    if name:
-                        profile['companyName'] = name
-                        break
+        data_name = financial_data.get('_company_name_from_data')
+        if data_name:
+            profile['companyName'] = data_name
 
-    # Outstanding shares from raw balance sheet (SHARE_CAPITAL = 实收资本/股本)
+    # Outstanding shares: fill if missing or zero
     if not profile.get('outstandingShares'):
-        raw_bs = financial_data.get('raw_balance_sheet')
-        if raw_bs is not None and not raw_bs.empty:
-            if 'SHARE_CAPITAL' in raw_bs.columns:
-                sc_vals = raw_bs['SHARE_CAPITAL'].dropna()
-                if not sc_vals.empty:
-                    shares = float(sc_vals.iloc[0])
-                    if shares > 0:
-                        profile['outstandingShares'] = shares
+        data_shares = financial_data.get('_shares_from_data')
+        if data_shares and data_shares > 0:
+            profile['outstandingShares'] = data_shares
 
     # Market cap = price × shares
     if not profile.get('marketCap') and profile.get('price', 0) > 0 and profile.get('outstandingShares', 0) > 0:
@@ -1812,6 +1798,23 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
             result['raw_income_statement'] = raw_income_df
             result['raw_balance_sheet'] = raw_balance_df
             result['raw_cashflow_statement'] = raw_cashflow_df
+
+            # Extract company name and outstanding shares from ORIGINAL (un-transposed)
+            # full DataFrames.  These are used by _fill_profile_from_financial_data()
+            # to enrich the company profile when APIs fail on Streamlit Cloud.
+            try:
+                if _full_income_df is not None and not _full_income_df.empty:
+                    if 'SECURITY_NAME_ABBR' in _full_income_df.columns:
+                        _names = _full_income_df['SECURITY_NAME_ABBR'].dropna()
+                        if not _names.empty:
+                            result['_company_name_from_data'] = str(_names.iloc[0])
+                if _full_bs_df is not None and not _full_bs_df.empty:
+                    if 'SHARE_CAPITAL' in _full_bs_df.columns:
+                        _sc = _full_bs_df.sort_values('REPORT_DATE', ascending=False)['SHARE_CAPITAL'].dropna()
+                        if not _sc.empty:
+                            result['_shares_from_data'] = float(_sc.iloc[0])
+            except Exception:
+                pass  # Non-critical; profile will use defaults
 
         return result
     except Exception as e:
