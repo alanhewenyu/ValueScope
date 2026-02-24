@@ -68,25 +68,29 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 
 ## Demo
 
-> Valuing Kweichow Moutai (600519.SS) with AI Copilot — from data to intrinsic value in minutes.
+> Valuing Kweichow Moutai (600519.SS) — from data to intrinsic value in minutes.
 
-**1. Historical Financial Data**
+### Terminal CLI
+
+**Historical Financial Data**
 
 ![Historical Data](assets/demo-1-historical.png)
 
-**2. AI Copilot — Parameter Suggestions**
+**AI Copilot — Parameter Suggestions**
 
 ![AI Analysis](assets/demo-2-ai-params.png)
 
-**3. DCF Valuation Result**
+**DCF Valuation Result**
 
 ![DCF Result](assets/demo-3-dcf-result.png)
 
-**4. Sensitivity Analysis**
+**Sensitivity Analysis**
 
 ![Sensitivity](assets/demo-4-sensitivity.png)
 
-**5. Local Web GUI — Interactive Sliders with Real-Time Valuation**
+### Local Web GUI
+
+**Interactive Sliders with Real-Time Valuation**
 
 ![Web GUI](assets/web-valuation.png)
 

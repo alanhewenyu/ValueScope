@@ -68,25 +68,29 @@ ValuX 是一个基于**标准化 DCF 引擎**的 AI 股票估值工具 — 10 �
 
 ## 演示
 
-> 使用 AI Copilot 对贵州茅台（600519.SS）进行 DCF 估值 — 从数据到内在价值，几分钟完成。
+> 以贵州茅台（600519.SS）为例 — 从数据到内在价值，几分钟完成。
 
-**1. 历史财务数据**
+### 终端 CLI
+
+**历史财务数据**
 
 ![历史数据](assets/demo-1-historical.png)
 
-**2. AI Copilot — 参数建议**
+**AI Copilot — 参数建议**
 
 ![AI 分析](assets/demo-2-ai-params.png)
 
-**3. DCF 估值结果**
+**DCF 估值结果**
 
 ![DCF 结果](assets/demo-3-dcf-result.png)
 
-**4. 敏感性分析**
+**敏感性分析**
 
 ![敏感性分析](assets/demo-4-sensitivity.png)
 
-**5. 本地网页版 — 滑块调参 + 实时估值**
+### 本地网页版
+
+**滑块调参 + 实时估值**
 
 ![网页版](assets/web-valuation.png)
 
