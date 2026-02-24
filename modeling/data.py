@@ -137,18 +137,25 @@ def fetch_forex_data(apikey):
     return {item['name']: item['price'] for item in data}
 
 
+_forex_akshare_cache = {}   # module-level cache: frozenset → rate
+
 def fetch_forex_akshare(from_currency, to_currency):
     """Fetch CNY↔HKD exchange rate from Shanghai Stock Exchange (沪港通结算汇率).
 
     Uses ``stock_sgt_settlement_exchange_rate_sse`` — official SSE data,
     no API key required, works on Streamlit Cloud (query.sse.com.cn).
+    Result is cached per session to avoid repeated ~2-3s API calls.
 
     Returns float rate (1 from_currency = ? to_currency) or None on failure.
     Only supports CNY↔HKD; returns None for other currency pairs.
     """
-    pair = frozenset([from_currency.upper(), to_currency.upper()])
+    from_c, to_c = from_currency.upper(), to_currency.upper()
+    pair = frozenset([from_c, to_c])
     if pair != frozenset(['CNY', 'HKD']):
         return None
+    cache_key = (from_c, to_c)
+    if cache_key in _forex_akshare_cache:
+        return _forex_akshare_cache[cache_key]
     try:
         df = _get_ak().stock_sgt_settlement_exchange_rate_sse()
         if df is None or df.empty:
@@ -157,10 +164,10 @@ def fetch_forex_akshare(from_currency, to_currency):
         buy = float(latest['买入结算汇兑比率'])
         sell = float(latest['卖出结算汇兑比率'])
         cny_per_hkd = (buy + sell) / 2  # 1 HKD = ? CNY
-        if from_currency.upper() == 'CNY':
-            return round(1.0 / cny_per_hkd, 4)   # 1 CNY = ? HKD
-        else:
-            return round(cny_per_hkd, 4)           # 1 HKD = ? CNY
+        # Cache both directions
+        _forex_akshare_cache[('CNY', 'HKD')] = round(1.0 / cny_per_hkd, 4)
+        _forex_akshare_cache[('HKD', 'CNY')] = round(cny_per_hkd, 4)
+        return _forex_akshare_cache[cache_key]
     except Exception:
         return None
 

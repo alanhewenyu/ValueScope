@@ -16,7 +16,15 @@ def get_risk_free_rate(country):
     else:
         return RISK_FREE_RATE_INTERNATIONAL
 
-def calculate_wacc(base_year_data, company_profile, apikey, verbose=True):
+def calculate_wacc(base_year_data, company_profile, apikey, verbose=True, forex_rate=None):
+    """Calculate WACC.
+
+    Parameters
+    ----------
+    forex_rate : float, optional
+        Pre-fetched exchange rate from company_currency to reporting_currency.
+        If provided, skips all forex API calls (avoids redundant network requests).
+    """
     country_mapping = {'CN': 'China', 'US': 'United States', 'HK': 'Hong Kong'}
     country = company_profile.get('country', 'United States')
     mapped_country = country_mapping.get(country, country)
@@ -30,7 +38,7 @@ def calculate_wacc(base_year_data, company_profile, apikey, verbose=True):
         # Forex: some HK-listed companies report in different currency (e.g. CNY)
         reporting_currency = base_year_data.get('Reported Currency', 'HKD')
         company_currency = company_profile.get('currency', 'HKD')
-        if company_currency != reporting_currency and apikey:
+        if not forex_rate and company_currency != reporting_currency and apikey:
             forex_data = fetch_forex_data(apikey)
         else:
             forex_data = {}
@@ -45,11 +53,15 @@ def calculate_wacc(base_year_data, company_profile, apikey, verbose=True):
     company_currency = company_profile.get('currency', 'USD')
 
     if company_currency != reporting_currency:
-        forex_key = f"{company_currency}/{reporting_currency}"
-        exchange_rate = forex_data.get(forex_key)
-        if not exchange_rate:
-            # Fallback: SSE 沪港通汇率 (CNY↔HKD, no API key needed)
-            exchange_rate = fetch_forex_akshare(company_currency, reporting_currency) or 1.0
+        if forex_rate:
+            # Use pre-fetched rate: forex_rate = 1 reporting_currency → ? company_currency
+            # WACC needs company_currency → reporting_currency (inverse direction)
+            exchange_rate = 1.0 / forex_rate
+        else:
+            forex_key = f"{company_currency}/{reporting_currency}"
+            exchange_rate = forex_data.get(forex_key)
+            if not exchange_rate:
+                exchange_rate = fetch_forex_akshare(company_currency, reporting_currency) or 1.0
         market_cap = market_cap * exchange_rate
 
     beta = float(company_profile.get('beta', 1.0))

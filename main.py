@@ -403,10 +403,16 @@ def main(args):
         else:
             print(f"\n{S.info(f'The base year used for cashflow forecast is {base_year}.')}")
 
+        # ── Forex rate (fetch once, reuse for WACC + display + sensitivity + gap) ──
+        forex_rate = _compute_forex_rate(
+            {'reported_currency': base_year_data.get('Reported Currency', '')},
+            company_profile, args.apikey)
+
         # ── WACC ──
         average_tax_rate = base_year_data['Average Tax Rate']
         risk_free_rate = get_risk_free_rate(company_profile.get('country', 'United States'))
-        wacc, total_equity_risk_premium, wacc_details = calculate_wacc(base_year_data, company_profile, args.apikey, verbose=False)
+        wacc, total_equity_risk_premium, wacc_details = calculate_wacc(
+            base_year_data, company_profile, args.apikey, verbose=False, forex_rate=forex_rate)
 
         # ── Collect valuation parameters (AI or manual) ──
         use_ai = not args.manual
@@ -454,9 +460,6 @@ def main(args):
 
         # ── DCF calculation & output ──
         results = calculate_dcf(base_year_data, valuation_params, financial_data, company_info, company_profile)
-
-        # ── Compute forex rate early (needed for both DCF display and gap analysis) ──
-        forex_rate = _compute_forex_rate(results, company_profile, args.apikey)
         stock_currency = company_profile.get('currency', 'USD')
 
         print_dcf_results(results, company_name, ttm_label=valuation_params.get('ttm_label', ''),

@@ -13,10 +13,20 @@ Each report date has multiple rows (one per financial item).
 Quarterly data is cumulative (YTD), same as A-shares.
 """
 
+import requests
 import pandas as pd
 
 # Lazy akshare import — reuse the global instance from data.py
 ak = None
+
+# Cache: stock code → ISO currency code (e.g. '00700' → 'CNY')
+_currency_cache = {}
+
+# Map eastmoney CURRENCY values to ISO codes
+_CURRENCY_MAP = {
+    '人民币': 'CNY', '港元': 'HKD', '美元': 'USD',
+    '欧元': 'EUR', '英镑': 'GBP', '日元': 'JPY',
+}
 
 
 def _get_ak():
@@ -25,6 +35,39 @@ def _get_ak():
         import akshare as _ak
         ak = _ak
     return ak
+
+
+def _detect_hk_currency(stock):
+    """Detect reporting currency for an HK stock from eastmoney API.
+
+    Calls the same datacenter.eastmoney.com endpoint that akshare uses,
+    but reads the CURRENCY field from the report summary.
+    Returns ISO code ('CNY', 'HKD', 'USD') or 'HKD' as fallback.
+    Result is cached per stock code.
+    """
+    if stock in _currency_cache:
+        return _currency_cache[stock]
+    try:
+        url = 'https://datacenter.eastmoney.com/securities/api/data/v1/get'
+        params = {
+            'reportName': 'RPT_CUSTOM_HKSK_APPFN_CASHFLOW_SUMMARY',
+            'columns': 'SECUCODE,CURRENCY,REPORT_TYPE',
+            'filter': f'(SECUCODE="{stock}.HK")',
+            'source': 'F10',
+            'client': 'PC',
+        }
+        r = requests.get(url, params=params, timeout=10)
+        data = r.json()
+        rl = data.get('result', {}).get('data', [{}])[0].get('REPORT_LIST', [])
+        if rl:
+            raw = rl[0].get('CURRENCY', '港元')
+            code = _CURRENCY_MAP.get(raw, 'HKD')
+            _currency_cache[stock] = code
+            return code
+    except Exception:
+        pass
+    _currency_cache[stock] = 'HKD'
+    return 'HKD'
 
 
 def _safe(val):
@@ -155,7 +198,7 @@ def fetch_akshare_hk_income_statement(ticker, period='annual', historical_period
             'calendarYear': year,
             'date': date_str,
             'period': period_name,
-            'reportedCurrency': 'HKD',  # default; may be CNY for some stocks
+            'reportedCurrency': _detect_hk_currency(stock),
             'revenue':          items.get(_IS_CODES['revenue'], 0),
             'operatingIncome':  items.get(_IS_CODES['operating'], 0),
             'interestExpense':  items.get(_IS_CODES['fin_cost'], 0),
@@ -564,7 +607,7 @@ def _compute_hk_ttm_income(ticker, full_cumulative_df=None):
         'calendarYear': str(latest_year),
         'date': latest_date,
         'period': 'TTM',
-        'reportedCurrency': 'HKD',
+        'reportedCurrency': _detect_hk_currency(_ticker_hk_to_ak(ticker)),
         'revenue':          ttm_val(_IS_CODES['revenue']),
         'operatingIncome':  ttm_val(_IS_CODES['operating']),
         'interestExpense':  ttm_val(_IS_CODES['fin_cost']),

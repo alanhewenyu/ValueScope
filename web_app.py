@@ -1232,8 +1232,10 @@ def _compute_forex_rate_web(results, company_profile, apikey_val):
                 if reverse_rate and reverse_rate != 0:
                     forex_rate = reverse_rate
         if forex_rate is None:
-            from modeling.yfinance_data import fetch_forex_yfinance
-            forex_rate = fetch_forex_yfinance(reported_currency, stock_currency)
+            from modeling.data import _is_cloud_mode
+            if not _is_cloud_mode():
+                from modeling.yfinance_data import fetch_forex_yfinance
+                forex_rate = fetch_forex_yfinance(reported_currency, stock_currency)
         if forex_rate is None:
             from modeling.data import fetch_forex_akshare
             forex_rate = fetch_forex_akshare(reported_currency, stock_currency)
@@ -1485,11 +1487,18 @@ def _fetch_data(ticker_raw, apikey_val):
     base_year_data['Revenue Growth (%)'] = summary_df.iloc[summary_df.index.get_loc('Revenue Growth (%)'), 0]
     base_year_data['Total Reinvestment'] = summary_df.iloc[summary_df.index.get_loc('Total Reinvestment'), 0]
 
+    # Pre-fetch forex rate once (used by WACC, display, sensitivity, etc.)
+    _pre_forex, _pre_forex_msg = _compute_forex_rate_web(
+        {'reported_currency': base_year_data.get('Reported Currency', '')},
+        company_profile, apikey_val)
+
     wacc, total_equity_risk_premium, wacc_details = calculate_wacc(
-        base_year_data, company_profile, apikey_val, verbose=False)
+        base_year_data, company_profile, apikey_val, verbose=False,
+        forex_rate=_pre_forex)
     risk_free_rate = get_risk_free_rate(company_profile.get('country', 'United States'))
 
     s = st.session_state
+    s.forex_rate = _pre_forex   # cache for display/sensitivity/hero bar
     s.ticker = ticker
     # Language is manually controlled via the sidebar toggle; no auto-detection.
     s.financial_data = financial_data
