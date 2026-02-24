@@ -3001,27 +3001,19 @@ def _run_dcf_calc():
     ss._last_dcf_input_snapshot = _current_raw_snapshot
     return results
 
-# First-time run: auto-run on web, explicit button on local
+# First-time run: show warning + explicit Run DCF button
 if not _has_results:
-    if not _has_ai:
-        # Web: auto-run DCF with defaults for immediate results
+    st.markdown(
+        f'<div class="slider-hint">'
+        f'<span class="hint-title">{t("defaults_warning_title")}</span>'
+        f'<span class="hint-body">{t("defaults_warning_body")}</span>'
+        f'</div>',
+        unsafe_allow_html=True)
+    if st.button(t('btn_run_dcf'), type="primary", use_container_width=True):
         _run_dcf_calc()
         _has_results = True
         ss._scroll_to_results = True
         st.rerun()
-    else:
-        # Local: show default-values warning + explicit Run DCF button
-        st.markdown(
-            f'<div class="slider-hint">'
-            f'<span class="hint-title">{t("defaults_warning_title")}</span>'
-            f'<span class="hint-body">{t("defaults_warning_body")}</span>'
-            f'</div>',
-            unsafe_allow_html=True)
-        if st.button(t('btn_run_dcf'), type="primary", use_container_width=True):
-            _run_dcf_calc()
-            _has_results = True
-            ss._scroll_to_results = True
-            st.rerun()
 
 # Auto-recalculate: triggered when sliders change after first run
 if _should_recalc:
