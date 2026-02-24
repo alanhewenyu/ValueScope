@@ -333,7 +333,12 @@ def main(args):
             financial_data = _f_data.result()
             company_profile = _f_prof.result()
         if financial_data is None:
-            print(S.error("Error: Failed to fetch financial data. Please check your API key and ticker symbol."))
+            if is_hk_stock(args.t):
+                print(S.error("Error: Failed to fetch HK stock data. yfinance may be rate-limited — please wait a moment and try again."))
+            elif is_a_share(args.t):
+                print(S.error("Error: Failed to fetch A-share data. akshare data source may be temporarily unavailable — please try again later."))
+            else:
+                print(S.error("Error: Failed to fetch financial data. Please check your FMP API key and ticker symbol."))
             continue
         summary_df = financial_data['summary']
         company_profile = _fill_profile_from_financial_data(company_profile, financial_data)

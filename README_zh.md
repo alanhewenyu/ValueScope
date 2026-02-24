@@ -8,14 +8,7 @@
 
 **AI 驱动的交互式 DCF 股票估值工具 — 标准化模型、实时调参、可复现结果。A 股、港股免费使用，无需 API Key。**
 
-### 在线体验
-
-> **无需安装！** 直接在浏览器中使用 ValuX：
->
-> **[valux-dcf.streamlit.app](https://valux-dcf.streamlit.app)**
-
-[![Web App](https://img.shields.io/badge/🌐_在线体验-valux-dcf.streamlit.app-FF4B4B?style=for-the-badge)](https://valux-dcf.streamlit.app)
-[![Demo](https://img.shields.io/badge/▶_观看演示-blue?style=for-the-badge)](#demo)
+[![Demo](https://img.shields.io/badge/▶_观看演示-blue?style=for-the-badge)](#演示)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
 
@@ -29,7 +22,8 @@ ValuX 是一个基于**标准化 DCF 引擎**的 AI 股票估值工具 — 10 �
 
 - 🔧 **标准化 DCF 引擎** — 固定的估值框架（10 年 FCFF、WACC、终值），确保每次估值可复现、跨公司可比较。不用再猜 AI 这次用了什么方法。
 - 📊 **结构化数据管道** — 自动拉取历史财务数据，计算 TTM、WACC、历史参考区间。A 股和港股数据完全免费，人人可用。
-- 🎚️ **交互式调参 + 即时重算** — 拖动滑块，估值实时更新。这种探索假设的即时反馈，是 AI 对话做不到的。
+- 🖥️ **终端 + 本地网页双模式** — 两种本地运行方式：功能完整的**终端 CLI**（含 AI Copilot），或**本地网页可视化界面**（`streamlit run web_app.py`），通过滑块调参、实时图表，在浏览器中打开 `http://localhost:8501` 即可使用。两者共享同一套估值引擎和数据管道。
+- 🌐 **在线网页版** — 不想安装？直接在浏览器中访问 [valux-dcf.streamlit.app](https://valux-dcf.streamlit.app) — 无需安装、无需 API Key，支持 A 股和港股手动模式估值。（在线版不含 AI 功能。）
 
 你可以把它想象成一位坐在身边的股权研究分析师：AI 帮你搜索业绩指引、分析师一致预期和行业数据，然后给出估值参数建议 — 而底层模型始终是严谨、透明、由你掌控的。
 
@@ -44,7 +38,7 @@ ValuX 是一个基于**标准化 DCF 引擎**的 AI 股票估值工具 — 10 �
 - **敏感性分析** — 生成收入增长率 × EBIT 利润率、WACC 两组敏感性分析表，展示每股价值的可能范围。
 - **Excel 导出** — 将估值结果、历史数据、财务报表和 AI 差异分析导出为格式化的 Excel 工作簿。
 - **全球覆盖** — 支持 A 股、港股、美股、日股等全球市场，根据不同国家的无风险利率和股权风险溢价自动计算 WACC。
-- **A 股和港股免费使用** — A 股（akshare）和港股年度数据（yfinance）无需 API Key。配合手动模式，可实现完全免费的估值计算。
+- **A 股和港股免费使用** — A 股和港股使用免费数据源（akshare / yfinance），无需 API Key。配合手动模式，可实现完全免费的估值计算。
 
 ---
 
@@ -98,18 +92,18 @@ ValuX 是一个基于**标准化 DCF 引擎**的 AI 股票估值工具 — 10 �
 
 ValuX 根据不同市场使用不同数据源，兼顾数据质量和使用成本：
 
-| 市场 | 年度数据 | 季度数据 | API Key |
-|------|---------|---------|---------|
-| **A 股** | [akshare](https://github.com/akfamily/akshare) | akshare | **不需要**（免费） |
-| **港股** | [yfinance](https://github.com/ranaroussi/yfinance) | [FMP](https://financialmodelingprep.com/) | 年度：**免费**；季度：需要 FMP Key |
-| **美股及其他** | [FMP](https://financialmodelingprep.com/) | FMP | 需要 FMP Key |
+| 市场 | 数据源 | API Key |
+|------|-------|---------|
+| **A 股** | [akshare](https://github.com/akfamily/akshare)（东方财富） | **不需要**（免费） |
+| **港股** | 终端/本地网页：[yfinance](https://github.com/ranaroussi/yfinance)（年度）+ [FMP](https://financialmodelingprep.com/)（季度）；在线版：[akshare](https://github.com/akfamily/akshare) | 年度：**免费**；季度：需 FMP Key |
+| **美股及其他** | [FMP](https://financialmodelingprep.com/) | 需要 FMP Key |
 
 **为什么使用多个数据源？**
-- **akshare** — 免费，无需 API Key。A 股历史财务数据为原始报表数据，质量可靠，方便准确计算估值所需财务指标。
-- **yfinance** — 免费，无需 API Key。港股年度及 TTM 财务数据较全，质量可靠（但不提供季度和半年度数据）。
+- **akshare** — 免费，无需 API Key。A 股历史财务数据为原始报表数据，质量可靠，方便准确计算估值所需财务指标。在线版港股也使用 akshare 作为主数据源。
+- **yfinance** — 免费，无需 API Key。港股年度及 TTM 财务数据较全，质量可靠。在终端和本地网页版中使用。
 - **FMP** — 付费，需要 API Key。美股和国际股票的主要数据源，提供财务报表、市场数据、公司信息和风险溢价等。此外，港股季度财务数据也由 FMP 提供。
 
-> **没有 FMP API Key？** 你仍然可以免费查询 A 股和港股年度数据。使用 `--manual` 模式手动输入估值参数，即可获得完全免费的估值方案。
+> **没有 FMP API Key？** 你仍然可以免费查询 A 股和港股年度数据。使用 `--manual` 模式（终端）或本地/在线网页版手动输入估值参数，即可获得完全免费的估值方案。
 
 ---
 
@@ -187,12 +181,22 @@ npm install -g @anthropic-ai/qwen-code
 
 ### 5. 运行
 
+**终端 CLI** — 功能完整，支持 AI Copilot：
+
 ```bash
 python main.py                      # AI copilot 模式（默认）
 python main.py --manual             # 手动输入模式
 python main.py --auto               # 全自动模式
 python main.py --engine gemini      # 强制使用 Gemini 引擎
 ```
+
+**本地网页版** — 可视化交互界面：
+
+```bash
+streamlit run web_app.py
+```
+
+运行后自动在浏览器中打开 `http://localhost:8501`。支持滑块调参、实时图表、敏感性分析等可视化交互。如果本地已安装 AI 引擎，网页版同样支持 AI Copilot。
 
 ---
 

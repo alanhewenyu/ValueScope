@@ -41,30 +41,6 @@ def is_hk_stock(ticker):
     return t.endswith('.HK')
 
 
-def _is_web_mode():
-    """Check if running inside Streamlit web app (vs terminal CLI).
-
-    Used to select HK data source:
-    - Terminal → yfinance (richer Morningstar data)
-    - Web (local + Cloud) → akshare (东方财富)
-    """
-    try:
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            from streamlit.runtime.scriptrunner import get_script_run_ctx
-            import logging
-            _st_logger = logging.getLogger('streamlit.runtime.scriptrunner_utils.script_run_context')
-            _prev_level = _st_logger.level
-            _st_logger.setLevel(logging.ERROR)
-            try:
-                return get_script_run_ctx() is not None
-            finally:
-                _st_logger.setLevel(_prev_level)
-    except Exception:
-        return False
-
-
 def _is_cloud_mode():
     """Check if running on Streamlit Community Cloud (vs local Streamlit or terminal).
 
@@ -119,12 +95,12 @@ def get_api_url(requested_data, ticker, period, apikey):
     base_url = f'https://financialmodelingprep.com/api/v3/{requested_data}/{ticker}?apikey={apikey}'
     return base_url if period == 'annual' else f'{base_url}&period=quarter'
 
-def get_jsonparsed_data(url):
+def get_jsonparsed_data(url, timeout=15):
     try:
-        response = urlopen(url)
+        response = urlopen(url, timeout=timeout)
         data = response.read().decode('utf-8')
         json_data = json.loads(data)
-        if "Error Message" in json_data:
+        if isinstance(json_data, dict) and "Error Message" in json_data:
             raise ValueError(f"Error while requesting data from '{url}'. Error Message: '{json_data['Error Message']}'.")
         return json_data
     except Exception as e:
@@ -133,8 +109,14 @@ def get_jsonparsed_data(url):
 
 def fetch_forex_data(apikey):
     url = f'https://financialmodelingprep.com/api/v3/quotes/forex?apikey={apikey}'
-    data = get_jsonparsed_data(url)
-    return {item['name']: item['price'] for item in data}
+    try:
+        data = get_jsonparsed_data(url)
+        if not data or not isinstance(data, list):
+            return {}
+        return {item['name']: item['price'] for item in data if 'name' in item and 'price' in item}
+    except Exception as e:
+        print(S.warning(f"⚠ fetch_forex_data failed: {e}"))
+        return {}
 
 
 _forex_akshare_cache = {}   # module-level cache: frozenset → rate
@@ -222,7 +204,7 @@ def fetch_company_profile(ticker, apikey=''):
         except Exception as e:
             print(S.warning(f"⚠ HK company profile failed ({type(e).__name__}: {e}). Using minimal profile."))
             return {'companyName': ticker, 'marketCap': 0, 'beta': 1.0,
-                    'country': 'China', 'currency': 'HKD', 'exchange': 'HKSE',
+                    'country': 'Hong Kong', 'currency': 'HKD', 'exchange': 'HKSE',
                     'price': 0, 'outstandingShares': 0}
     url = f'https://financialmodelingprep.com/api/v3/profile/{ticker}?apikey={apikey}'
     data = get_jsonparsed_data(url)

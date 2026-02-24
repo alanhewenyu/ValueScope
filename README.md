@@ -8,13 +8,6 @@
 
 **AI-powered interactive DCF valuation for global stocks — standardized model, real-time parameter tuning, reproducible results. A-shares & HK stocks free, no API key needed.**
 
-### Try the Web App
-
-> **No installation needed!** Try ValuX directly in your browser:
->
-> **[valux-dcf.streamlit.app](https://valux-dcf.streamlit.app)**
-
-[![Web App](https://img.shields.io/badge/🌐_Web_App-valux-dcf.streamlit.app-FF4B4B?style=for-the-badge)](https://valux-dcf.streamlit.app)
 [![Demo](https://img.shields.io/badge/▶_Watch_Demo-blue?style=for-the-badge)](#demo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
@@ -29,7 +22,8 @@ ValuX is an AI-powered stock valuation tool built on a **standardized DCF engine
 
 - 🔧 **Standardized DCF Engine** — A fixed valuation framework (10-year FCFF, WACC, terminal value) ensures every valuation is reproducible and comparable across companies and time periods. No more guessing which method the AI used this time.
 - 📊 **Structured Data Pipeline** — Automatically fetches historical financials, calculates TTM metrics, WACC, and historical reference ranges. A-shares and HK stock data are free for everyone.
-- 🎚️ **Interactive Parameter Tuning** — Drag a slider, see the valuation update instantly. This real-time feedback loop for exploring assumptions is something AI chat simply cannot offer.
+- 🖥️ **Terminal + Local Web GUI** — Two ways to run locally: a feature-rich **terminal CLI** with AI copilot, or a **local web dashboard** (`streamlit run web_app.py`) for visual, interactive parameter tuning with sliders and real-time charts — accessible at `http://localhost:8501` in your browser. Both share the same valuation engine and data pipeline.
+- 🌐 **Cloud Web App** — Don't want to install anything? Try the lightweight cloud version at [valux-dcf.streamlit.app](https://valux-dcf.streamlit.app) — no installation, no API key needed. Supports A-shares and HK stocks in manual mode. (AI features are not available in the cloud version.)
 
 Think of it as having an equity research analyst sitting next to you: AI searches for earnings guidance, analyst consensus, and industry benchmarks, then suggests valuation parameters — but the underlying model is always rigorous, transparent, and under your control.
 
@@ -44,7 +38,7 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 - **Sensitivity Analysis** — Generates sensitivity tables for Revenue Growth vs EBIT Margin and WACC, showing the range of possible per-share valuations.
 - **Excel Export** — Exports valuation results, historical data, financial statements, and AI gap analysis to a formatted Excel workbook.
 - **Global Coverage** — Supports China A-shares, Hong Kong, US, Japan, and other global markets, with automatic WACC calculation based on country-specific risk-free rates and equity risk premiums.
-- **Free Tier for A-shares & HK Stocks** — A-shares (via akshare) and HK annual data (via yfinance) require no API key. Combined with manual mode, you get a fully free valuation workflow.
+- **Free Tier for A-shares & HK Stocks** — A-shares and HK stocks use free data sources (akshare / yfinance), no API key required. Combined with manual mode, you get a fully free valuation workflow.
 
 ---
 
@@ -98,18 +92,18 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 
 ValuX uses different data sources depending on the market, optimizing for data quality and cost:
 
-| Market | Annual Data | Quarterly Data | API Key |
-|--------|------------|----------------|---------|
-| **China A-shares** | [akshare](https://github.com/akfamily/akshare) | akshare | **Not required** (free) |
-| **Hong Kong** | [yfinance](https://github.com/ranaroussi/yfinance) | [FMP](https://financialmodelingprep.com/) | Annual: **free**; Quarterly: FMP key required |
-| **US & Others** | [FMP](https://financialmodelingprep.com/) | FMP | FMP key required |
+| Market | Data Source | API Key |
+|--------|-----------|---------|
+| **China A-shares** | [akshare](https://github.com/akfamily/akshare) (东方财富) | **Not required** (free) |
+| **Hong Kong** | Terminal/local: [yfinance](https://github.com/ranaroussi/yfinance) (annual) + [FMP](https://financialmodelingprep.com/) (quarterly); Cloud: [akshare](https://github.com/akfamily/akshare) | Annual: **free**; Quarterly: FMP key required |
+| **US & Others** | [FMP](https://financialmodelingprep.com/) | FMP key required |
 
 **Why multiple data sources?**
-- **akshare** — Free, no API key needed. Provides original A-share financial statements with reliable data quality for accurate calculation of valuation metrics.
-- **yfinance** — Free, no API key needed. Provides comprehensive HK annual and TTM financial data with reliable quality (quarterly and semi-annual data not available).
+- **akshare** — Free, no API key needed. Provides original A-share financial statements with reliable data quality for accurate calculation of valuation metrics. Also serves as the primary HK data source on the cloud version.
+- **yfinance** — Free, no API key needed. Provides comprehensive HK annual and TTM financial data with reliable quality. Used in terminal and local web mode.
 - **FMP** — Paid, API key required. Primary data source for US and international stocks, providing financial statements, market data, company profiles, and risk premiums. Also provides HK quarterly financial data.
 
-> **No FMP API key?** You can still query A-shares and HK annual data for free. Use `--manual` mode to input valuation parameters yourself — a fully free workflow.
+> **No FMP API key?** You can still query A-shares and HK annual data for free. Use `--manual` mode (terminal) or the local/cloud web app to input valuation parameters yourself — a fully free workflow.
 
 ---
 
@@ -187,12 +181,22 @@ If no AI engine is available, ValuX falls back to manual mode automatically.
 
 ### 5. Run
 
+**Terminal CLI** — full-featured with AI copilot:
+
 ```bash
 python main.py                      # AI copilot mode (default)
 python main.py --manual             # Manual input mode
 python main.py --auto               # Full auto mode
 python main.py --engine gemini      # Force Gemini engine
 ```
+
+**Local Web GUI** — visual interactive dashboard:
+
+```bash
+streamlit run web_app.py
+```
+
+Opens automatically in your browser at `http://localhost:8501`. Features interactive sliders for parameter tuning, real-time valuation charts, and side-by-side sensitivity analysis. If an AI engine is installed locally, AI copilot is also available in the web GUI.
 
 ---
 

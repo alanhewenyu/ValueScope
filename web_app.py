@@ -1451,7 +1451,12 @@ def _fetch_data(ticker_raw, apikey_val):
                                'price': 0, 'outstandingShares': 0}
 
     if financial_data is None:
-        st.error(t('err_fetch_failed'))
+        if is_hk_stock(ticker):
+            st.error(t('err_fetch_failed_hk'))
+        elif is_a_share(ticker):
+            st.error(t('err_fetch_failed_a'))
+        else:
+            st.error(t('err_fetch_failed'))
         return False
 
     company_profile = _fill_profile_from_financial_data(company_profile, financial_data)

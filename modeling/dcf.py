@@ -1,18 +1,17 @@
 import pandas as pd
 from .data import fetch_market_risk_premium, fetch_forex_data, fetch_forex_akshare
-from .constants import MARGINAL_TAX_RATE, TERMINAL_RISK_PREMIUM, RISK_FREE_RATE_US, RISK_FREE_RATE_CHINA, RISK_FREE_RATE_INTERNATIONAL, CHINA_MARKET_RISK_PREMIUM, HK_MARKET_RISK_PREMIUM
+from .constants import MARGINAL_TAX_RATE, TERMINAL_RISK_PREMIUM, RISK_FREE_RATE_US, RISK_FREE_RATE_CHINA, RISK_FREE_RATE_INTERNATIONAL, CHINA_MARKET_RISK_PREMIUM
 from . import style as S
 
 def get_risk_free_rate(country):
     """
     根据国家返回无风险利率。
+    港股归入中国体系，使用中国无风险利率。
     """
     if country in ['United States', 'US']:
         return RISK_FREE_RATE_US
-    elif country in ['China', 'CN']:
+    elif country in ['China', 'CN', 'Hong Kong', 'HK']:
         return RISK_FREE_RATE_CHINA
-    elif country in ['Hong Kong', 'HK']:
-        return RISK_FREE_RATE_INTERNATIONAL
     else:
         return RISK_FREE_RATE_INTERNATIONAL
 
@@ -30,20 +29,22 @@ def calculate_wacc(base_year_data, company_profile, apikey, verbose=True, forex_
     mapped_country = country_mapping.get(country, country)
 
     # For A-shares (China) and HK stocks, skip FMP API calls for market risk premium
-    if mapped_country == 'China':
-        forex_data = {}
+    # HK归入中国体系：同一风险溢价，同一无风险利率，仅多汇率处理
+    if mapped_country in ('China', 'Hong Kong'):
         total_equity_risk_premium = CHINA_MARKET_RISK_PREMIUM
-    elif mapped_country == 'Hong Kong':
-        total_equity_risk_premium = HK_MARKET_RISK_PREMIUM
-        # Forex: some HK-listed companies report in different currency (e.g. CNY)
-        reporting_currency = base_year_data.get('Reported Currency', 'HKD')
-        company_currency = company_profile.get('currency', 'HKD')
-        if not forex_rate and company_currency != reporting_currency and apikey:
-            forex_data = fetch_forex_data(apikey)
+        # HK stocks may need forex (e.g. CNY reporting + HKD trading)
+        if mapped_country == 'Hong Kong':
+            reporting_currency = base_year_data.get('Reported Currency', 'HKD')
+            company_currency = company_profile.get('currency', 'HKD')
+            if not forex_rate and company_currency != reporting_currency and apikey:
+                forex_data = fetch_forex_data(apikey)
+            else:
+                forex_data = {}
         else:
             forex_data = {}
     else:
-        forex_data = fetch_forex_data(apikey)
+        # Only fetch forex if no pre-fetched rate and currencies might differ
+        forex_data = {} if forex_rate else fetch_forex_data(apikey)
         market_risk_premium_data = fetch_market_risk_premium(apikey)
         total_equity_risk_premium = market_risk_premium_data.get(mapped_country, 5.0) / 100
 

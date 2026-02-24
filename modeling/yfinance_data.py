@@ -389,15 +389,6 @@ def _yf_col_to_quarter(col):
     return f'Q{(month - 1) // 3 + 1}'
 
 
-def _yf_col_to_half(col):
-    """Derive half-year label ('H1' or 'H2') from a yfinance Timestamp column."""
-    if hasattr(col, 'month'):
-        month = col.month
-    else:
-        month = int(str(col)[5:7])
-    return 'H1' if month <= 6 else 'H2'
-
-
 def _yf_total_investments(bs_df, col):
     """Compute totalInvestments by summing yfinance balance-sheet components.
 
@@ -448,17 +439,6 @@ def fetch_yfinance_hk_company_profile(ticker):
         'exchange': info.get('exchange', 'HKG'),
         'price': info.get('currentPrice') or info.get('regularMarketPrice', 0) or 0,
         'outstandingShares': info.get('sharesOutstanding', 0) or 0,
-    }
-
-
-def fetch_yfinance_hk_share_float(ticker):
-    """Fetch outstanding shares from yfinance for HK stocks."""
-    yf = _get_yf()
-    t = yf.Ticker(ticker)
-    info = t.info or {}
-    return {
-        'outstandingShares': info.get('sharesOutstanding', 0) or 0,
-        'symbol': ticker,
     }
 
 

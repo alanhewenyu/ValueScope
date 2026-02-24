@@ -239,7 +239,9 @@ _STRINGS = {
         'gap_no_price': 'Cannot get current stock price \u2014 skipping gap analysis.',
 
         # ── Error / warning messages ──
-        'err_fetch_failed': 'Failed to fetch financial data. Check your API key and ticker symbol.',
+        'err_fetch_failed': 'Failed to fetch financial data. Please check your FMP API key and ticker symbol.',
+        'err_fetch_failed_hk': 'Failed to fetch HK stock data. yfinance may be rate-limited — please wait a moment and try again.',
+        'err_fetch_failed_a': 'Failed to fetch A-share data. Data source temporarily unavailable — please try again later.',
         'err_ai_parse': 'AI Analysis succeeded but failed to parse parameters. The model might have returned an invalid format.',
         'err_ai_failed': 'AI Analysis failed: {msg}',
         'err_gap_failed': 'Gap analysis failed: {msg}',
@@ -514,7 +516,9 @@ _STRINGS = {
         'gap_no_price': '\u65e0\u6cd5\u83b7\u53d6\u5f53\u524d\u80a1\u4ef7\u2014\u2014\u8df3\u8fc7\u5dee\u5f02\u5206\u6790\u3002',
 
         # ── Error / warning messages ──
-        'err_fetch_failed': '\u83b7\u53d6\u8d22\u52a1\u6570\u636e\u5931\u8d25\u3002\u8bf7\u68c0\u67e5 API \u5bc6\u94a5\u548c\u80a1\u7968\u4ee3\u7801\u3002',
+        'err_fetch_failed': '获取财务数据失败。请检查 FMP API 密钥和股票代码。',
+        'err_fetch_failed_hk': '获取港股数据失败。yfinance 可能被限流，请稍等片刻后重试。',
+        'err_fetch_failed_a': '获取 A 股数据失败。数据源暂时不可用，请稍后重试。',
         'err_ai_parse': 'AI \u5206\u6790\u6210\u529f\u4f46\u53c2\u6570\u89e3\u6790\u5931\u8d25\u3002\u6a21\u578b\u53ef\u80fd\u8fd4\u56de\u4e86\u65e0\u6548\u683c\u5f0f\u3002',
         'err_ai_failed': 'AI \u5206\u6790\u5931\u8d25\uff1a{msg}',
         'err_gap_failed': '\u5dee\u5f02\u5206\u6790\u5931\u8d25\uff1a{msg}',
