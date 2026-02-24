@@ -326,16 +326,17 @@ def fetch_akshare_company_profile(ticker):
 
     # --- Primary: stock_individual_info_em (works locally, blocked on Cloud) ---
     # Skip on Cloud to avoid ~15-30s timeout from a guaranteed-to-fail connection.
+    # Note: beta is NOT calculated here — it runs after parallel fetch completes
+    # to avoid concurrent connection contention with financial data APIs.
     if not _web:
         try:
             print(S.info(f"Fetching company profile from akshare for {bare_code}..."))
             info_df = _get_ak().stock_individual_info_em(symbol=bare_code)
             info_dict = dict(zip(info_df['item'], info_df['value']))
-            beta = _calculate_beta_akshare(ticker)
             return {
                 'companyName': str(info_dict.get('股票简称', ticker)),
                 'marketCap': float(info_dict.get('总市值', 0)),
-                'beta': beta,
+                'beta': CHINA_DEFAULT_BETA,
                 'country': 'China',
                 'currency': 'CNY',
                 'exchange': exchange,

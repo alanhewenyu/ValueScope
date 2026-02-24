@@ -59,6 +59,7 @@ from modeling.data import (
     validate_ticker,
     _normalize_ticker,
     _fill_profile_from_financial_data,
+    _calculate_beta_akshare,
 )
 from modeling.dcf import (
     calculate_dcf,
@@ -1447,6 +1448,13 @@ def _fetch_data(ticker_raw, apikey_val):
         return False
 
     company_profile = _fill_profile_from_financial_data(company_profile, financial_data)
+
+    # Beta: calculate AFTER parallel fetch to avoid concurrent connection contention.
+    # Only for local A-shares; Cloud uses CHINA_DEFAULT_BETA.
+    if is_a_share(ticker) and company_profile.get('beta', 0) <= 1.0:
+        from modeling.data import _is_web_mode
+        if not _is_web_mode():
+            company_profile['beta'] = _calculate_beta_akshare(ticker)
     company_info = get_company_share_float(ticker, apikey_val, company_profile=company_profile)
 
     summary_df = financial_data['summary']

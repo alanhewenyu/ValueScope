@@ -5,7 +5,7 @@ import os
 import re
 import sys
 from datetime import date
-from modeling.data import get_historical_financials, get_company_share_float, fetch_company_profile, fetch_forex_data, format_summary_df, validate_ticker, _normalize_ticker, is_a_share, is_hk_stock, _fill_profile_from_financial_data
+from modeling.data import get_historical_financials, get_company_share_float, fetch_company_profile, fetch_forex_data, format_summary_df, validate_ticker, _normalize_ticker, is_a_share, is_hk_stock, _fill_profile_from_financial_data, _calculate_beta_akshare
 from modeling.dcf import calculate_dcf, print_dcf_results, sensitivity_analysis, print_sensitivity_table, wacc_sensitivity_analysis, print_wacc_sensitivity, calculate_wacc, print_wacc_details, get_risk_free_rate
 from modeling.constants import HISTORICAL_DATA_PERIODS_ANNUAL, HISTORICAL_DATA_PERIODS_QUARTER, TERMINAL_RISK_PREMIUM, TERMINAL_RONIC_PREMIUM
 from modeling.ai_analyst import analyze_company, interactive_review, analyze_valuation_gap, _AI_ENGINE, set_ai_engine, _ai_engine_display_name
@@ -332,6 +332,9 @@ def main(args):
             continue
         summary_df = financial_data['summary']
         company_profile = _fill_profile_from_financial_data(company_profile, financial_data)
+        # Beta: calculate AFTER parallel fetch to avoid concurrent connection contention
+        if is_a_share(args.t):
+            company_profile['beta'] = _calculate_beta_akshare(args.t)
         company_info = get_company_share_float(args.t, args.apikey, company_profile=company_profile)
         company_name = company_profile.get('companyName', 'N/A')
 
