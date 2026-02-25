@@ -1059,6 +1059,83 @@ def _render_bold(text):
     return re.sub(r'\*\*(.+?)\*\*', f'{S.BOLD}\\1{S.RESET}', text)
 
 
+def _render_table(table_lines, indent='    '):
+    """Render markdown table lines as a box-drawn terminal table.
+
+    Parses ``| col | col |`` rows, computes column widths using
+    display-width-aware measurement, and outputs with box-drawing
+    characters (─ │ ┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼).
+    """
+    # Parse rows into cells, skipping separator lines (|---|---|)
+    rows = []
+    for line in table_lines:
+        stripped = line.strip().strip('|')
+        if re.match(r'^[\s:|-]+$', stripped):
+            continue  # skip separator rows like |---|---|
+        cells = [c.strip() for c in stripped.split('|')]
+        rows.append(cells)
+
+    if not rows:
+        return
+
+    # Normalise column count
+    n_cols = max(len(r) for r in rows)
+    for r in rows:
+        while len(r) < n_cols:
+            r.append('')
+
+    # Strip markdown bold markers for width calculation, render bold for display
+    display_rows = []
+    for r in rows:
+        display_rows.append([_render_bold(c) for c in r])
+
+    # Compute column widths (use plain text width, not ANSI-decorated)
+    col_widths = [0] * n_cols
+    for r in rows:
+        for i, cell in enumerate(r):
+            w = _display_width(cell)
+            if w > col_widths[i]:
+                col_widths[i] = w
+
+    # Cap very wide columns to keep table from overflowing
+    term_w = shutil.get_terminal_size((80, 24)).columns
+    indent_w = _display_width(indent)
+    # Each column adds 3 chars overhead: " cell " + border "│"
+    table_overhead = indent_w + 1 + sum(w + 2 for w in col_widths) + n_cols
+    if table_overhead > term_w:
+        # Shrink widest columns proportionally
+        budget = term_w - indent_w - 1 - n_cols * 3
+        if budget > n_cols * 4:
+            total_w = sum(col_widths)
+            col_widths = [max(4, int(w / total_w * budget)) for w in col_widths]
+
+    def _pad_cell(text, plain_text, target_w):
+        """Pad *text* (which may contain ANSI codes) to *target_w* display columns."""
+        current_w = _display_width(plain_text)
+        return text + ' ' * max(0, target_w - current_w)
+
+    def _hline(left, mid, right, fill='─'):
+        segs = [fill * (w + 2) for w in col_widths]
+        return f'{indent}{left}{mid.join(segs)}{right}'
+
+    # Print top border
+    print(_hline('┌', '┬', '┐'))
+
+    for row_idx, (raw_cells, disp_cells) in enumerate(zip(rows, display_rows)):
+        parts = []
+        for i, (raw_c, disp_c) in enumerate(zip(raw_cells, disp_cells)):
+            padded = _pad_cell(disp_c, raw_c, col_widths[i])
+            parts.append(f' {padded} ')
+        print(f'{indent}│{"│".join(parts)}│')
+
+        # After header row (first row), print a separator
+        if row_idx == 0:
+            print(_hline('├', '┼', '┤'))
+
+    # Print bottom border
+    print(_hline('└', '┴', '┘'))
+
+
 def _format_ai_text(text, indent='    ', width=None):
     """Pretty-print AI-generated markdown text to the terminal.
 
@@ -1066,7 +1143,7 @@ def _format_ai_text(text, indent='    ', width=None):
       - ``## headers``  → coloured with S.ai_label()
       - ``**bold**``    → ANSI bold
       - numbered / bullet lists → preserved with hanging indent
-      - ``| tables |``  → passed through untouched
+      - ``| tables |``  → box-drawn tables with aligned columns
       - long paragraphs → auto-wrapped at terminal width
       - blank lines     → kept as paragraph separators
     """
@@ -1077,17 +1154,33 @@ def _format_ai_text(text, indent='    ', width=None):
 
     lines = text.split('\n')
     prev_blank = False
+    table_buf = []  # accumulate consecutive table rows
+
+    def _flush_table():
+        """Render accumulated table rows and clear the buffer."""
+        if table_buf:
+            _render_table(table_buf, indent=indent)
+            table_buf.clear()
 
     for raw_line in lines:
         line = raw_line.rstrip()
 
         # --- blank line → paragraph break (max one) ---
         if not line.strip():
+            _flush_table()
             if not prev_blank:
                 print()
                 prev_blank = True
             continue
         prev_blank = False
+
+        # --- table row (starts with |) → collect into buffer ---
+        if line.lstrip().startswith('|'):
+            table_buf.append(line)
+            continue
+
+        # Flush any pending table before processing other line types
+        _flush_table()
 
         # --- markdown header ---
         hdr_match = re.match(r'^(#{1,4})\s+(.*)', line)
@@ -1095,11 +1188,6 @@ def _format_ai_text(text, indent='    ', width=None):
             title = hdr_match.group(2).strip()
             title = title.replace('**', '')  # strip bold markers in headers
             print(f"\n{indent}{S.ai_label(title)}")
-            continue
-
-        # --- table row (starts with |) ---
-        if line.lstrip().startswith('|'):
-            print(f'{indent}{line.strip()}')
             continue
 
         # --- divider line (--- or ===) ---
@@ -1115,11 +1203,7 @@ def _format_ai_text(text, indent='    ', width=None):
             first_indent = f'{indent}{pre_indent}{marker}'
             cont_indent = f'{indent}{pre_indent}{" " * len(marker)}'
             wrapped = _wrap_line(content, width, cont_indent)
-            # First line uses the marker
             if wrapped:
-                wrapped[0] = f'{first_indent}{content[:len(wrapped[0]) - len(cont_indent)]}'
-                # Re-wrap first line properly
-                wrapped = _wrap_line(content, width, cont_indent)
                 wrapped[0] = first_indent + wrapped[0][len(cont_indent):]
             for wl in wrapped:
                 print(wl)
@@ -1144,6 +1228,9 @@ def _format_ai_text(text, indent='    ', width=None):
         content = _render_bold(line.strip())
         for wl in _wrap_line(content, width, indent):
             print(wl)
+
+    # Flush any trailing table at end of text
+    _flush_table()
 
 
 def _warn_if_out_of_range(key, value):
