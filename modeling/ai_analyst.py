@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
 from contextlib import contextmanager
 from . import style as S
 
@@ -682,7 +683,7 @@ def interactive_review(ai_result, calculated_wacc, calculated_tax_rate, company_
         # Show AI reasoning for THIS parameter only
         if reasoning:
             print(f"\n  {S.ai_label('AI 分析:')}")
-            _print_wrapped(reasoning, indent="    ", width=70)
+            _format_ai_text(reasoning)
 
         # For WACC: show the model calculation details
         if key == "wacc" and wacc_details:
@@ -723,7 +724,7 @@ def interactive_review(ai_result, calculated_wacc, calculated_tax_rate, company_
 
     if ronic_reasoning:
         print(f"\n  {S.ai_label('AI 分析:')}")
-        _print_wrapped(ronic_reasoning, indent="    ", width=70)
+        _format_ai_text(ronic_reasoning)
 
     if ronic_match:
         print(f"\n  {S.label('AI 建议:')} {S.value('ROIC 在终值期回归 WACC（保守假设）')}")
@@ -974,7 +975,7 @@ def analyze_valuation_gap(ticker, company_profile, results, valuation_params, su
         # Display analysis (strip the ADJUSTED_PRICE line from display)
         display_text = re.sub(r'\n?\s*ADJUSTED_PRICE:.*$', '', analysis_text).strip()
         print(f"\n{S.divider()}")
-        print(display_text)
+        _format_ai_text(display_text, indent='  ')
         print(S.divider())
 
         if adjusted_price is not None:
@@ -1001,22 +1002,148 @@ def analyze_valuation_gap(ticker, company_profile, results, valuation_params, su
         return None
 
 
-def _print_wrapped(text, indent="    ", width=70):
-    """Print text with word wrapping and indent."""
+def _display_width(s):
+    """Return the visual display width of *s* in a terminal.
+
+    CJK / full-width characters count as 2 columns; all others as 1.
+    ANSI escape sequences are excluded from the count.
+    """
+    # Strip ANSI escape codes before measuring
+    plain = re.sub(r'\033\[[0-9;]*m', '', s)
+    w = 0
+    for ch in plain:
+        eaw = unicodedata.east_asian_width(ch)
+        w += 2 if eaw in ('F', 'W') else 1
+    return w
+
+
+def _wrap_line(text, width, indent=''):
+    """Wrap a single line of text to *width* display columns.
+
+    Handles mixed CJK / Latin text correctly.  Returns a list of
+    indented output lines (strings).
+    """
+    if not text:
+        return [indent]
+
+    indent_w = _display_width(indent)
+    avail = width - indent_w
+    if avail < 20:
+        avail = 20  # safety floor
+
+    result = []
+    buf = ''
+    buf_w = 0
+
+    for ch in text:
+        ch_w = 2 if unicodedata.east_asian_width(ch) in ('F', 'W') else 1
+        if buf_w + ch_w > avail:
+            result.append(f'{indent}{buf}')
+            buf = ''
+            buf_w = 0
+            if ch == ' ':
+                continue  # skip leading space on new line
+        buf += ch
+        buf_w += ch_w
+
+    if buf:
+        result.append(f'{indent}{buf}')
+
+    return result or [indent]
+
+
+def _render_bold(text):
+    """Convert markdown **bold** to ANSI bold."""
+    if not S._COLOR:
+        return text.replace('**', '')
+    return re.sub(r'\*\*(.+?)\*\*', f'{S.BOLD}\\1{S.RESET}', text)
+
+
+def _format_ai_text(text, indent='    ', width=None):
+    """Pretty-print AI-generated markdown text to the terminal.
+
+    Handles:
+      - ``## headers``  → coloured with S.ai_label()
+      - ``**bold**``    → ANSI bold
+      - numbered / bullet lists → preserved with hanging indent
+      - ``| tables |``  → passed through untouched
+      - long paragraphs → auto-wrapped at terminal width
+      - blank lines     → kept as paragraph separators
+    """
+    if width is None:
+        width = shutil.get_terminal_size((80, 24)).columns - 2  # small margin
+    if width < 40:
+        width = 40
+
     lines = text.split('\n')
-    for line in lines:
-        line = line.strip()
-        if not line:
+    prev_blank = False
+
+    for raw_line in lines:
+        line = raw_line.rstrip()
+
+        # --- blank line → paragraph break (max one) ---
+        if not line.strip():
+            if not prev_blank:
+                print()
+                prev_blank = True
             continue
-        while len(line) > width:
-            # Find a good break point
-            break_at = line.rfind(' ', 0, width)
-            if break_at == -1:
-                break_at = width
-            print(f"{indent}{line[:break_at]}")
-            line = line[break_at:].lstrip()
-        if line:
-            print(f"{indent}{line}")
+        prev_blank = False
+
+        # --- markdown header ---
+        hdr_match = re.match(r'^(#{1,4})\s+(.*)', line)
+        if hdr_match:
+            title = hdr_match.group(2).strip()
+            title = title.replace('**', '')  # strip bold markers in headers
+            print(f"\n{indent}{S.ai_label(title)}")
+            continue
+
+        # --- table row (starts with |) ---
+        if line.lstrip().startswith('|'):
+            print(f'{indent}{line.strip()}')
+            continue
+
+        # --- divider line (--- or ===) ---
+        if re.match(r'^[-=]{3,}\s*$', line.strip()):
+            continue  # skip markdown horizontal rules
+
+        # --- numbered list item (e.g. "1. xxx", "  2. xxx") ---
+        num_match = re.match(r'^(\s*)(\d+\.\s+)(.*)', line)
+        if num_match:
+            pre_indent = num_match.group(1)
+            marker = num_match.group(2)
+            content = _render_bold(num_match.group(3))
+            first_indent = f'{indent}{pre_indent}{marker}'
+            cont_indent = f'{indent}{pre_indent}{" " * len(marker)}'
+            wrapped = _wrap_line(content, width, cont_indent)
+            # First line uses the marker
+            if wrapped:
+                wrapped[0] = f'{first_indent}{content[:len(wrapped[0]) - len(cont_indent)]}'
+                # Re-wrap first line properly
+                wrapped = _wrap_line(content, width, cont_indent)
+                wrapped[0] = first_indent + wrapped[0][len(cont_indent):]
+            for wl in wrapped:
+                print(wl)
+            continue
+
+        # --- bullet list item (- or *) ---
+        bullet_match = re.match(r'^(\s*)([-*]\s+)(.*)', line)
+        if bullet_match:
+            pre_indent = bullet_match.group(1)
+            marker = bullet_match.group(2)
+            content = _render_bold(bullet_match.group(3))
+            first_indent = f'{indent}{pre_indent}{marker}'
+            cont_indent = f'{indent}{pre_indent}{" " * len(marker)}'
+            wrapped = _wrap_line(content, width, cont_indent)
+            if wrapped:
+                wrapped[0] = first_indent + wrapped[0][len(cont_indent):]
+            for wl in wrapped:
+                print(wl)
+            continue
+
+        # --- regular paragraph line ---
+        content = _render_bold(line.strip())
+        for wl in _wrap_line(content, width, indent):
+            print(wl)
 
 
 def _warn_if_out_of_range(key, value):
