@@ -269,7 +269,7 @@ def _run_engine(engine, prompt):
         _print_progress_safe(f"  {S.error(f'未知引擎: {engine}')}")
         return None
 
-    _timeout = 600  # 10 minutes for search + analysis
+    _timeout = 360  # 6 minutes for search + analysis
     # Build a clean env without CLAUDE* markers to avoid
     # "nested session" error when launched from Claude Code.
     clean_env = {k: v for k, v in os.environ.items()
