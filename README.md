@@ -185,6 +185,12 @@ If no AI engine is available, ValuX falls back to manual mode automatically.
 
 ### 5. Run
 
+Make sure you're in the ValuX directory first:
+
+```bash
+cd ValuX
+```
+
 **Terminal CLI** — full-featured with AI copilot:
 
 ```bash

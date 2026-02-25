@@ -185,6 +185,12 @@ npm install -g @anthropic-ai/qwen-code
 
 ### 5. 运行
 
+确保当前在 ValuX 项目目录下：
+
+```bash
+cd ValuX
+```
+
 **终端 CLI** — 功能完整，支持 AI Copilot：
 
 ```bash
