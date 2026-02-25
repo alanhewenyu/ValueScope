@@ -25,6 +25,7 @@ _ENGINE_LABELS = {'claude': 'Claude CLI', 'gemini': 'Gemini CLI', 'qwen': 'Qwen 
 # ---------------------------------------------------------------------------
 
 _SPINNER_CHARS = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+_CLEAR_EOL = '\033[K'
 
 _PROGRESS_MESSAGES = [
     '正在初始化 AI 引擎...',
@@ -38,23 +39,51 @@ _PROGRESS_MESSAGES = [
     '正在将所有数据综合为估值参数...',
 ]
 
+# Shared mutable state so _call_ai_cli can update engine label / reset
+# timer on fallback while the progress thread is running.
+_progress_state = {
+    'engine_label': '',
+    'start_time': 0.0,
+    'active': False,   # True while a progress spinner is running
+    'paused': False,    # True while a message is being printed over the spinner
+}
 
-def _progress_display(stop_event, engine_label, failed):
+
+def _print_progress_safe(msg):
+    """Print a message without garbling the progress spinner.
+
+    If the spinner is active, temporarily pause it, clear its line,
+    print the message, then resume.
+    """
+    if _progress_state['active']:
+        _progress_state['paused'] = True
+        sys.stdout.write(f'\r{_CLEAR_EOL}')
+        sys.stdout.flush()
+        print(msg)
+        _progress_state['paused'] = False
+    else:
+        print(msg)
+
+
+def _progress_display(stop_event, failed):
     """Show a live spinner + elapsed time + rotating status message.
 
     Runs in a background daemon thread. Uses \\r to update in place.
+    Reads engine_label and start_time from _progress_state so they
+    can be updated on engine fallback.
     """
     if not hasattr(sys.stdout, 'isatty') or not sys.stdout.isatty():
         return  # skip when output is piped
 
-    start = time.monotonic()
     idx = 0
-    # \033[K = ANSI "Erase in Line" (clear from cursor to end of line)
-    _CLEAR_EOL = '\033[K'
 
     try:
         while not stop_event.is_set():
-            elapsed = time.monotonic() - start
+            if _progress_state['paused']:
+                stop_event.wait(0.1)
+                continue
+            engine_label = _progress_state['engine_label']
+            elapsed = time.monotonic() - _progress_state['start_time']
             msg_idx = min(int(elapsed / 12), len(_PROGRESS_MESSAGES) - 1)
             spinner = _SPINNER_CHARS[idx % len(_SPINNER_CHARS)]
             elapsed_str = f'{int(elapsed)}s'
@@ -65,7 +94,8 @@ def _progress_display(stop_event, engine_label, failed):
             stop_event.wait(0.1)
 
         # Clean up: clear line then print final message
-        elapsed = time.monotonic() - start
+        engine_label = _progress_state['engine_label']
+        elapsed = time.monotonic() - _progress_state['start_time']
         elapsed_str = f'{int(elapsed)}s'
         sys.stdout.write(f'\r{_CLEAR_EOL}')
         sys.stdout.flush()
@@ -78,10 +108,15 @@ def _progress_display(stop_event, engine_label, failed):
 @contextmanager
 def _with_progress(engine_label):
     """Context manager that shows a live progress spinner during AI calls."""
+    _progress_state['engine_label'] = engine_label
+    _progress_state['start_time'] = time.monotonic()
+    _progress_state['active'] = True
+    _progress_state['paused'] = False
+
     stop_event = threading.Event()
     failed = [False]
     t = threading.Thread(target=_progress_display,
-                         args=(stop_event, engine_label, failed),
+                         args=(stop_event, failed),
                          daemon=True)
     t.start()
     try:
@@ -92,6 +127,7 @@ def _with_progress(engine_label):
     finally:
         stop_event.set()
         t.join(timeout=2.0)
+        _progress_state['active'] = False
 
 
 # Claude model ID → human-friendly display name
@@ -230,7 +266,7 @@ def _run_engine(engine, prompt):
     elif engine == 'qwen':
         cmd = ['qwen', '-p', prompt, '--output-format', 'json']
     else:
-        print(f"  {S.error(f'未知引擎: {engine}')}")
+        _print_progress_safe(f"  {S.error(f'未知引擎: {engine}')}")
         return None
 
     _timeout = 600  # 10 minutes for search + analysis
@@ -246,17 +282,17 @@ def _run_engine(engine, prompt):
         result = subprocess.run(cmd, capture_output=True, text=True,
                                 timeout=_timeout, env=clean_env)
     except subprocess.TimeoutExpired:
-        print(f"  {S.warning(f'{engine_label} 调用超时 ({_timeout}s)')}")
+        _print_progress_safe(f"  {S.warning(f'{engine_label} 调用超时 ({_timeout}s)')}")
         return None
 
     if result.returncode != 0:
         error_msg = _extract_error_message(result.stderr.strip() or result.stdout.strip() or "Unknown error")
-        print(f"  {S.warning(f'{engine_label} 调用失败: {error_msg}')}")
+        _print_progress_safe(f"  {S.warning(f'{engine_label} 调用失败: {error_msg}')}")
         return None
 
     raw = result.stdout.strip()
     if not raw:
-        print(f"  {S.warning(f'{engine_label} 返回空内容')}")
+        _print_progress_safe(f"  {S.warning(f'{engine_label} 返回空内容')}")
         return None
 
     # Claude CLI may return exit code 0 but with is_error:true in JSON
@@ -266,7 +302,7 @@ def _run_engine(engine, prompt):
             _parsed = json.loads(raw)
             if isinstance(_parsed, dict) and _parsed.get('is_error'):
                 error_msg = _parsed.get('result', '') or 'Unknown error'
-                print(f"  {S.warning(f'{engine_label} 调用失败: {error_msg}')}")
+                _print_progress_safe(f"  {S.warning(f'{engine_label} 调用失败: {error_msg}')}")
                 return None
         except (json.JSONDecodeError, KeyError):
             pass  # not JSON or unexpected structure — continue normally
@@ -315,11 +351,14 @@ def _call_ai_cli(prompt):
             if not shutil.which(cmd_name):
                 continue  # not installed
             fallback_label = _ENGINE_LABELS.get(fallback, fallback)
-            print(f"  {S.info(f'自动切换到 {fallback_label} 继续分析...')}")
+            _print_progress_safe(f"  {S.info(f'自动切换到 {fallback_label} 继续分析...')}")
             if fallback == 'gemini':
                 _ensure_gemini_preview()
             _AI_ENGINE = fallback
             _detected_model_name = None
+            # Reset progress display for the new engine
+            _progress_state['engine_label'] = _ENGINE_LABELS.get(fallback, fallback)
+            _progress_state['start_time'] = time.monotonic()
             result = _run_engine(fallback, prompt)
             if result is not None:
                 break  # success
