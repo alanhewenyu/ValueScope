@@ -5,6 +5,10 @@ import os
 import re
 import shutil
 import subprocess
+import sys
+import threading
+import time
+from contextlib import contextmanager
 from . import style as S
 
 # ---------------------------------------------------------------------------
@@ -14,6 +18,81 @@ from . import style as S
 
 # Supported engines: 'claude', 'gemini', 'qwen'
 _ENGINE_LABELS = {'claude': 'Claude CLI', 'gemini': 'Gemini CLI', 'qwen': 'Qwen Code CLI'}
+
+# ---------------------------------------------------------------------------
+# Terminal progress display during AI calls
+# ---------------------------------------------------------------------------
+
+_SPINNER_CHARS = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+
+_PROGRESS_MESSAGES = [
+    '正在初始化 AI 引擎...',
+    '正在搜索最新业绩指引和分析师共识...',
+    '正在分析营收增长趋势和行业基准...',
+    '正在评估 EBIT 利润率潜力和经营杠杆...',
+    '正在评估资本效率和再投资需求...',
+    '正在交叉对比多来源 WACC 估算...',
+    '正在审查税务结构和有效税率...',
+    '正在确定终值假设...',
+    '正在将所有数据综合为估值参数...',
+]
+
+
+def _progress_display(stop_event, engine_label, failed):
+    """Show a live spinner + elapsed time + rotating status message.
+
+    Runs in a background daemon thread. Uses \\r to update in place.
+    """
+    if not hasattr(sys.stdout, 'isatty') or not sys.stdout.isatty():
+        return  # skip when output is piped
+
+    start = time.monotonic()
+    idx = 0
+    cols = shutil.get_terminal_size((80, 24)).columns
+
+    try:
+        while not stop_event.is_set():
+            elapsed = time.monotonic() - start
+            msg_idx = min(int(elapsed / 12), len(_PROGRESS_MESSAGES) - 1)
+            spinner = _SPINNER_CHARS[idx % len(_SPINNER_CHARS)]
+            elapsed_str = f'{int(elapsed)}s'
+            line = f'\r  {spinner} {_PROGRESS_MESSAGES[msg_idx]}  ({engine_label} · {elapsed_str})'
+            # pad to overwrite previous content
+            line = line.ljust(cols)
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            idx += 1
+            stop_event.wait(0.1)
+
+        # Clean up: clear line then print final message
+        elapsed = time.monotonic() - start
+        elapsed_str = f'{int(elapsed)}s'
+        sys.stdout.write('\r' + ' ' * cols + '\r')
+        sys.stdout.flush()
+        if not failed[0]:
+            print(f"  {S.success('✓')} {S.ai_label('AI 分析完成')}  {S.muted(f'({engine_label} · {elapsed_str})')}")
+    except (IOError, OSError):
+        pass  # stdout closed unexpectedly
+
+
+@contextmanager
+def _with_progress(engine_label):
+    """Context manager that shows a live progress spinner during AI calls."""
+    stop_event = threading.Event()
+    failed = [False]
+    t = threading.Thread(target=_progress_display,
+                         args=(stop_event, engine_label, failed),
+                         daemon=True)
+    t.start()
+    try:
+        yield
+    except Exception:
+        failed[0] = True
+        raise
+    finally:
+        stop_event.set()
+        t.join(timeout=2.0)
+
 
 # Claude model ID → human-friendly display name
 _CLAUDE_MODEL_DISPLAY = {
@@ -507,9 +586,9 @@ def analyze_company(ticker, summary_df, base_year_data, company_profile, calcula
 
     engine_name = _ai_engine_display_name()
     print(f"\n{S.ai_label(f'正在使用 AI 分析 {company_name} ({ticker})...')}  {S.muted(f'({engine_name})')}")
-    print(S.info("（AI 正在搜索最新市场数据和分析师预期，请稍候...）\n"))
 
-    all_text = _call_ai_cli(prompt)
+    with _with_progress(engine_name):
+        all_text = _call_ai_cli(prompt)
 
     # Show actual model name if detected during the call
     if _detected_model_name and _detected_model_name != engine_name:
@@ -880,7 +959,9 @@ def analyze_valuation_gap(ticker, company_profile, results, valuation_params, su
     try:
         engine_name = _ai_engine_display_name()
         print(f"\n{S.ai_label('正在使用 AI 分析估值差异原因...')}  {S.muted(f'({engine_name})')}")
-        analysis_text = _call_ai_cli(prompt)
+
+        with _with_progress(engine_name):
+            analysis_text = _call_ai_cli(prompt)
 
         # Parse adjusted price from the last line
         adjusted_price = None
