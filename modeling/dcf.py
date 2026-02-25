@@ -385,6 +385,9 @@ def print_dcf_results(results, company_name, ttm_quarter='', ttm_label='', forex
         base_label = 'Base Year'
     formatted_dcf_table.index = [base_label] + list(range(1, 11)) + ['Terminal Year']
 
+    # Rename for display: EBIT → Operating Profit (EBIT)
+    formatted_dcf_table = formatted_dcf_table.rename(columns={'EBIT': 'Operating Profit (EBIT)'})
+
     print(formatted_dcf_table.T.to_string())
 
     print(f"\n{S.subheader('Valuation Calculation - in millions')}")

@@ -1926,4 +1926,8 @@ def format_summary_df(summary_df):
         elif index in SECTION_HEADERS:
             df.loc[index] = [''] * len(df.columns)
 
+    # Rename for display: EBIT → Operating Profit (EBIT)
+    _DISPLAY_RENAME = {'EBIT': 'Operating Profit (EBIT)'}
+    df.index = [_DISPLAY_RENAME.get(idx, idx) for idx in df.index]
+
     return df
