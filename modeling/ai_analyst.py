@@ -48,7 +48,8 @@ def _progress_display(stop_event, engine_label, failed):
 
     start = time.monotonic()
     idx = 0
-    cols = shutil.get_terminal_size((80, 24)).columns
+    # \033[K = ANSI "Erase in Line" (clear from cursor to end of line)
+    _CLEAR_EOL = '\033[K'
 
     try:
         while not stop_event.is_set():
@@ -56,9 +57,7 @@ def _progress_display(stop_event, engine_label, failed):
             msg_idx = min(int(elapsed / 12), len(_PROGRESS_MESSAGES) - 1)
             spinner = _SPINNER_CHARS[idx % len(_SPINNER_CHARS)]
             elapsed_str = f'{int(elapsed)}s'
-            line = f'\r  {spinner} {_PROGRESS_MESSAGES[msg_idx]}  ({engine_label} · {elapsed_str})'
-            # pad to overwrite previous content
-            line = line.ljust(cols)
+            line = f'\r  {spinner} {_PROGRESS_MESSAGES[msg_idx]}  ({engine_label} · {elapsed_str}){_CLEAR_EOL}'
             sys.stdout.write(line)
             sys.stdout.flush()
             idx += 1
@@ -67,7 +66,7 @@ def _progress_display(stop_event, engine_label, failed):
         # Clean up: clear line then print final message
         elapsed = time.monotonic() - start
         elapsed_str = f'{int(elapsed)}s'
-        sys.stdout.write('\r' + ' ' * cols + '\r')
+        sys.stdout.write(f'\r{_CLEAR_EOL}')
         sys.stdout.flush()
         if not failed[0]:
             print(f"  {S.success('✓')} {S.ai_label('AI 分析完成')}  {S.muted(f'({engine_label} · {elapsed_str})')}")
