@@ -1063,8 +1063,8 @@ def _render_table(table_lines, indent='    '):
     """Render markdown table lines as a box-drawn terminal table.
 
     Parses ``| col | col |`` rows, computes column widths using
-    display-width-aware measurement, and outputs with box-drawing
-    characters (─ │ ┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼).
+    display-width-aware measurement, wraps long cell content, and
+    outputs with box-drawing characters (─ │ ┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼).
     """
     # Parse rows into cells, skipping separator lines (|---|---|)
     rows = []
@@ -1072,7 +1072,8 @@ def _render_table(table_lines, indent='    '):
         stripped = line.strip().strip('|')
         if re.match(r'^[\s:|-]+$', stripped):
             continue  # skip separator rows like |---|---|
-        cells = [c.strip() for c in stripped.split('|')]
+        # Strip **bold** markers — bold is handled via header styling
+        cells = [c.strip().replace('**', '') for c in stripped.split('|')]
         rows.append(cells)
 
     if not rows:
@@ -1084,51 +1085,96 @@ def _render_table(table_lines, indent='    '):
         while len(r) < n_cols:
             r.append('')
 
-    # Strip markdown bold markers for width calculation, render bold for display
-    display_rows = []
-    for r in rows:
-        display_rows.append([_render_bold(c) for c in r])
-
-    # Compute column widths (use plain text width, not ANSI-decorated)
-    col_widths = [0] * n_cols
+    # Compute natural column widths
+    nat_widths = [0] * n_cols
     for r in rows:
         for i, cell in enumerate(r):
             w = _display_width(cell)
-            if w > col_widths[i]:
-                col_widths[i] = w
+            if w > nat_widths[i]:
+                nat_widths[i] = w
 
-    # Cap very wide columns to keep table from overflowing
+    # Fit table to terminal width — shrink columns if needed
     term_w = shutil.get_terminal_size((80, 24)).columns
     indent_w = _display_width(indent)
-    # Each column adds 3 chars overhead: " cell " + border "│"
-    table_overhead = indent_w + 1 + sum(w + 2 for w in col_widths) + n_cols
-    if table_overhead > term_w:
-        # Shrink widest columns proportionally
-        budget = term_w - indent_w - 1 - n_cols * 3
-        if budget > n_cols * 4:
-            total_w = sum(col_widths)
-            col_widths = [max(4, int(w / total_w * budget)) for w in col_widths]
+    # border overhead: indent + outer │ + per-column " cell │"
+    border_overhead = indent_w + 1 + n_cols * 3
+    avail = term_w - border_overhead
+    total_nat = sum(nat_widths)
 
-    def _pad_cell(text, plain_text, target_w):
-        """Pad *text* (which may contain ANSI codes) to *target_w* display columns."""
-        current_w = _display_width(plain_text)
-        return text + ' ' * max(0, target_w - current_w)
+    if total_nat <= avail:
+        col_widths = nat_widths
+    else:
+        # Smart shrink: keep narrow columns at natural width,
+        # only shrink columns wider than the fair share.
+        col_widths = list(nat_widths)
+        fair_share = avail // n_cols
+        locked = 0       # total width of narrow columns (not shrunk)
+        shrinkable = 0   # total natural width of wide columns
+        for i, w in enumerate(nat_widths):
+            if w <= fair_share:
+                locked += w
+            else:
+                shrinkable += w
+        remaining = avail - locked
+        if remaining > 0 and shrinkable > 0:
+            for i, w in enumerate(nat_widths):
+                if w <= fair_share:
+                    col_widths[i] = w  # keep natural
+                else:
+                    col_widths[i] = max(6, int(w / shrinkable * remaining))
 
-    def _hline(left, mid, right, fill='─'):
-        segs = [fill * (w + 2) for w in col_widths]
+    # ── helpers ──
+
+    def _wrap_cell(text, max_w):
+        """Wrap cell text to fit within *max_w* display columns."""
+        if _display_width(text) <= max_w:
+            return [text]
+        lines = []
+        buf = ''
+        buf_w = 0
+        for ch in text:
+            ch_w = 2 if unicodedata.east_asian_width(ch) in ('F', 'W') else 1
+            if buf_w + ch_w > max_w:
+                lines.append(buf)
+                buf = ''
+                buf_w = 0
+                if ch == ' ':
+                    continue  # skip leading space on new line
+            buf += ch
+            buf_w += ch_w
+        if buf:
+            lines.append(buf)
+        return lines or ['']
+
+    def _pad(text, target_w):
+        """Pad *text* to *target_w* display columns with trailing spaces."""
+        return text + ' ' * max(0, target_w - _display_width(text))
+
+    def _hline(left, mid, right):
+        segs = ['─' * (w + 2) for w in col_widths]
         return f'{indent}{left}{mid.join(segs)}{right}'
 
-    # Print top border
+    # ── render ──
+
     print(_hline('┌', '┬', '┐'))
 
-    for row_idx, (raw_cells, disp_cells) in enumerate(zip(rows, display_rows)):
-        parts = []
-        for i, (raw_c, disp_c) in enumerate(zip(raw_cells, disp_cells)):
-            padded = _pad_cell(disp_c, raw_c, col_widths[i])
-            parts.append(f' {padded} ')
-        print(f'{indent}│{"│".join(parts)}│')
+    for row_idx, cells in enumerate(rows):
+        # Wrap each cell to its column width
+        wrapped = [_wrap_cell(cells[i], col_widths[i]) for i in range(n_cols)]
+        max_lines = max(len(w) for w in wrapped)
 
-        # After header row (first row), print a separator
+        for line_idx in range(max_lines):
+            parts = []
+            for i in range(n_cols):
+                cell_line = wrapped[i][line_idx] if line_idx < len(wrapped[i]) else ''
+                padded = _pad(cell_line, col_widths[i])
+                # Bold styling for header row
+                if row_idx == 0 and S._COLOR:
+                    padded = f'{S.BOLD}{padded}{S.RESET}'
+                parts.append(f' {padded} ')
+            print(f'{indent}│{"│".join(parts)}│')
+
+        # After header row, print a separator
         if row_idx == 0:
             print(_hline('├', '┼', '┤'))
 
