@@ -10,6 +10,7 @@ import threading
 import time
 import unicodedata
 from contextlib import contextmanager
+from datetime import date
 from . import style as S
 
 # ---------------------------------------------------------------------------
@@ -424,6 +425,13 @@ ANALYSIS_PROMPT_TEMPLATE = """你是一位资深的股权研究分析师和DCF�
 ## 历史财务数据（单位：百万，最左列为最新年度 {base_year}）
 {financial_table}
 
+**关于 EBIT（Operating Profit）的重要说明：**
+上表中的 EBIT 是为 DCF 估值目的而调整后的经营利润，**不等同于 GAAP 标准的营业利润或 Operating Income**：
+- **A 股**：EBIT = 营业利润 − 投资收益 − 公允价值变动收益 − 其他收益 − 资产处置收益 − 信用减值损失 − 资产减值损失 + 财务费用。即从营业利润中剔除了非经营性项目（投资收益、一次性损益等），加回了财务费用。
+- **港股**：直接使用 Operating Income，部分公司可能仍包含未剔除的非经营性项目。
+- **美股及其他**：使用数据源（FMP）提供的调整后 Operating Income，已剔除非经常性项目。
+因此，设定目标 EBIT Margin 时，**必须以上表中的历史 EBIT Margin 作为首要参考基准**，而不是外部搜索到的 GAAP operating margin（口径不同，直接对比会产生误导）。
+
 ---
 
 请对以下每个参数进行**独立、深入**的分析。每个参数的分析必须包含：
@@ -445,7 +453,7 @@ ANALYSIS_PROMPT_TEMPLATE = """你是一位资深的股权研究分析师和DCF�
   }},
   "ebit_margin": {{
     "value": <数值>,
-    "reasoning": "<详细中文分析：目标EBIT margin的依据，参考行业benchmark、公司历史趋势、运营杠杆等>"
+    "reasoning": "<详细中文分析：**首要参考上方历史数据表中的 EBIT Margin 趋势和水平**（注意：该 EBIT 是为估值目的调整后的经营利润，口径与 GAAP 标准不同，不要直接与外部搜索到的 GAAP operating margin 对比）。在此基础上，结合行业长期趋势、公司运营杠杆、规模效应等因素，判断公司成熟期能达到的目标 EBIT margin。>"
   }},
   "convergence": {{
     "value": <数值>,
@@ -506,6 +514,13 @@ ANALYSIS_PROMPT_TEMPLATE_EN = """You are a senior equity research analyst and DC
 ## Historical Financial Data (in millions, leftmost column is most recent year {base_year})
 {financial_table}
 
+**Important note about EBIT (Operating Profit):**
+The EBIT figures in the table above are adjusted operating profit for DCF valuation purposes and **may differ from standard GAAP Operating Income**:
+- **China A-shares**: EBIT = Operating Profit − Investment Income − Fair Value Changes − Other Income − Asset Disposal Gains − Credit Impairment Losses − Asset Impairment Losses + Interest Expense. Non-operating items (investment income, one-time gains/losses, etc.) have been stripped out, and interest expense has been added back.
+- **HK stocks**: Uses GAAP Operating Income directly; some companies may still include non-operating items.
+- **US stocks and others**: Uses adjusted Operating Income from the data provider (FMP), with non-recurring items already excluded.
+Therefore, when setting the target EBIT Margin, you **must use the historical EBIT Margin shown in the table above as the primary benchmark**, rather than externally searched GAAP operating margins (which use a different definition and direct comparison would be misleading).
+
 ---
 
 Please conduct **independent, in-depth** analysis for each parameter below. Each analysis must include:
@@ -527,7 +542,7 @@ Please conduct **independent, in-depth** analysis for each parameter below. Each
   }},
   "ebit_margin": {{
     "value": <number>,
-    "reasoning": "<Detailed analysis: Basis for target EBIT margin, referencing industry benchmarks, company historical trends, operating leverage, etc.>"
+    "reasoning": "<Detailed analysis: **Primarily reference the historical EBIT Margin trends and levels shown in the data table above** (note: this EBIT is adjusted for valuation purposes and differs from standard GAAP — do not directly compare with externally searched GAAP operating margins). Based on this, consider long-term industry trends, operating leverage, scale effects, etc. to determine the target EBIT margin the company can achieve at maturity.>"
   }},
   "convergence": {{
     "value": <number>,
@@ -810,10 +825,17 @@ GAP_ANALYSIS_PROMPT_TEMPLATE = """你是一位资深的股权研究分析师。�
 
 ---
 
-**请使用 WebSearch 搜索以下信息来辅助分析：**
-1. 搜索 "{ticker} stock price target analyst {forecast_year}" — 获取分析师目标价
-2. 搜索 "{ticker} risks challenges {forecast_year}" — 获取公司面临的风险
-3. 搜索 "{ticker} growth catalysts outlook" — 获取增长催化剂
+**请使用 WebSearch 搜索以下信息来辅助分析（当前日期：{current_date}）：**
+
+**重要：必须搜索最近 3-6 个月的最新信息。忽略超过 1 年的旧新闻，搜索时优先使用 {current_year} 年的关键词。**
+
+建议搜索（可根据需要追加更多搜索）：
+1. "{company_name} {forecast_year} 分析师目标价" 或 "{ticker} analyst price target {forecast_year}" — 获取分析师目标价
+2. "{company_name} {current_year} 最新消息" 或 "{ticker} latest news {current_year}" — 获取最近的重大新闻和事件
+3. "{company_name} {current_year} 风险 挑战" 或 "{ticker} risks headwinds {current_year}" — 获取当前面临的风险和挑战
+4. "{company_name} {current_year} 增长 前景" 或 "{ticker} growth catalysts outlook {current_year}" — 获取增长驱动因素和前景
+
+如果公司属于特定行业（如科技、消费、金融、医药等），请额外搜索该行业最新的趋势和政策变化，例如 "{company_name} 行业 竞争格局 {current_year}"。
 
 请用**中文**进行分析，包含以下内容：
 
@@ -835,10 +857,16 @@ GAP_ANALYSIS_PROMPT_TEMPLATE = """你是一位资深的股权研究分析师。�
 6. **修正后估值**：综合以上分析因素，给出你认为更合理的每股内在价值。
 
 **修正估值的关键原则（必须严格遵守）：**
-- 修正的目的是：通过搜索发现**之前设定 DCF 参数时可能未考虑到的新信息**（如最新的行业政策变化、重大风险事件、市场情绪转变等），据此判断是否需要调整
+- 修正的目的是：通过搜索发现**之前设定 DCF 参数时可能未考虑到的新信息**，据此判断是否需要调整
+- **"新信息"的严格定义——必须同时满足以下条件：**
+  1. **时效性**：必须是最近 6 个月内发生的事件或趋势变化。超过 6 个月的旧新闻，市场早已消化定价，不构成增量信息
+  2. **增量性**：该信息尚未反映在当前股价或 DCF 参数中。如果事件发生后股价已充分调整，说明市场已定价，不应重复计入
+  3. **实质性**：对公司未来现金流有可量化的实质影响，而非仅停留在情绪或叙事层面
+  - 反面示例：某公司一年前被列入某政府清单 → 已是旧闻，股价早已反映，**不属于新信息，不应据此调整估值**
+  - 正面示例：本月刚发布的新监管政策、最近一个季度的业绩大幅偏离预期、近期突发的重大诉讼等
 - 修正后估值必须与你的分析逻辑**自洽**：
-  - 如果搜索发现了**显著影响估值的负面新信息**（如行业监管政策收紧、重大诉讼风险、竞争格局恶化等，且这些信息在 DCF 参数设定时未被充分考虑），则应向下修正
-  - 如果搜索未发现超出 DCF 假设范围的重大新信息，说明 DCF 估值参数已合理反映公司基本面，**不需要调整**——DCF 高于股价可能意味着市场定价偏低或受短期情绪影响，这恰恰是价值投资的买入机会
+  - 如果搜索发现了**符合上述定义的真正新信息且为负面**，则应向下修正
+  - 如果搜索未发现符合上述定义的重大新信息，说明 DCF 估值参数已合理反映公司基本面，**不需要调整**——DCF 高于股价可能意味着市场定价偏低或受短期情绪影响，这恰恰是价值投资的买入机会
   - **绝对禁止**：分析中列出负面因素后反而把估值调得比 DCF 更高
 - 不要仅仅因为 DCF 估值与市场价有差异就自动向市场价靠拢。市场价格可能是错误的
 
@@ -876,10 +904,17 @@ GAP_ANALYSIS_PROMPT_TEMPLATE_EN = """You are a senior equity research analyst. A
 
 ---
 
-**Please use WebSearch to search for the following information to support your analysis:**
-1. Search "{ticker} stock price target analyst {forecast_year}" — find analyst price targets
-2. Search "{ticker} risks challenges {forecast_year}" — find company risks and challenges
-3. Search "{ticker} growth catalysts outlook" — find growth catalysts
+**Please use WebSearch to search for the following information (Current date: {current_date}):**
+
+**Important: Focus on the most recent 3-6 months of information. Ignore news older than 1 year. Prefer search keywords with {current_year}.**
+
+Suggested searches (add more as needed):
+1. "{company_name} analyst price target {forecast_year}" or "{ticker} price target {forecast_year}" — find analyst price targets
+2. "{company_name} latest news {current_year}" or "{ticker} recent developments {current_year}" — find recent major news and events
+3. "{company_name} risks challenges {current_year}" or "{ticker} risks headwinds {current_year}" — find current risks and challenges
+4. "{company_name} growth catalysts outlook {current_year}" — find growth drivers and outlook
+
+If the company belongs to a specific sector (e.g., technology, consumer, finance, healthcare), please also search for the latest trends and policy changes in that sector, e.g. "{company_name} industry competition {current_year}".
 
 Please conduct your analysis in **English**, covering the following:
 
@@ -901,10 +936,16 @@ Please conduct your analysis in **English**, covering the following:
 6. **Adjusted Valuation**: Considering all the above factors, provide what you believe is a more reasonable intrinsic value per share.
 
 **Key Principles for Adjusted Valuation (must strictly follow):**
-- The purpose of adjustment is: to incorporate **new information discovered through search that may not have been considered when setting DCF parameters** (e.g., recent industry policy changes, major risk events, shifts in market sentiment), and decide whether adjustments are needed
+- The purpose of adjustment is: to incorporate **new information discovered through search that may not have been considered when setting DCF parameters**, and decide whether adjustments are needed
+- **Strict definition of "new information" — ALL of the following conditions must be met:**
+  1. **Recency**: Must be an event or trend change from the last 6 months. News older than 6 months has already been digested and priced in by the market, and does NOT constitute incremental information
+  2. **Incrementality**: The information is not yet reflected in the current stock price or DCF parameters. If the stock price has already fully adjusted after the event, the market has priced it in — do NOT double-count it
+  3. **Materiality**: Must have a quantifiable, substantive impact on the company's future cash flows, not just narrative or sentiment-level concerns
+  - Counter-example: A company was added to a government list over a year ago → this is old news, the stock price has long reflected it, **this is NOT new information and should NOT be used to adjust valuation**
+  - Valid example: A new regulatory policy announced this month, a major earnings miss in the most recent quarter, a significant lawsuit filed recently, etc.
 - The adjusted valuation must be **logically consistent** with your analysis:
-  - If search reveals **significant new negative information affecting valuation** (e.g., tightening industry regulations, major litigation risk, deteriorating competitive landscape, etc., not already factored into DCF parameters), adjust downward
-  - If search reveals no major new information beyond what DCF assumptions already capture, the DCF parameters reasonably reflect company fundamentals and **no adjustment is needed** — DCF above stock price may indicate market mispricing or short-term sentiment, which is precisely a value investing buy opportunity
+  - If search reveals **genuinely new negative information meeting the above criteria**, adjust downward
+  - If search reveals no major new information meeting the above criteria, the DCF parameters reasonably reflect company fundamentals and **no adjustment is needed** — DCF above stock price may indicate market mispricing or short-term sentiment, which is precisely a value investing buy opportunity
   - **Absolutely forbidden**: listing negative factors in analysis but then adjusting valuation higher than DCF
 - Do not automatically gravitate toward market price just because DCF valuation differs from it. Market prices can be wrong
 
@@ -961,6 +1002,10 @@ def analyze_valuation_gap(ticker, company_profile, results, valuation_params, su
 
     financial_table = summary_df.to_string()
 
+    today = date.today()
+    current_date_str = today.strftime('%Y-%m-%d')
+    current_year = today.year
+
     prompt = GAP_ANALYSIS_PROMPT_TEMPLATE.format(
         company_name=company_name,
         ticker=ticker,
@@ -981,6 +1026,8 @@ def analyze_valuation_gap(ticker, company_profile, results, valuation_params, su
         equity_value=results['equity_value'],
         financial_table=financial_table,
         forecast_year=forecast_year_1 if forecast_year_1 else base_year + 1,
+        current_date=current_date_str,
+        current_year=current_year,
     )
     if currency_note:
         prompt += currency_note
