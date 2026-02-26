@@ -263,7 +263,9 @@ This tool focuses on three core drivers: **revenue growth**, **operating efficie
 
 Issues and pull requests are welcome. Contact: [alanhe@icloud.com](mailto:alanhe@icloud.com)
 
-For more on company valuation, follow my WeChat Official Account: **见山笔记**
+For more on company valuation, visit [jianshan.co](https://jianshan.co) or scan to follow on WeChat:
+
+<img src="https://jianshan.co/images/wechat-qrcode.jpg" alt="见山笔记 WeChat QR Code" width="200">
 
 ---
 
