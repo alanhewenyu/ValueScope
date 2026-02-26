@@ -276,12 +276,26 @@ def _run_engine(engine, prompt):
     clean_env = {k: v for k, v in os.environ.items()
                  if not k.startswith('CLAUDE')}
     for _ek in ('PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'TERM',
-                'FMP_API_KEY', 'GEMINI_API_KEY', 'OPENAI_API_KEY'):
+                'FMP_API_KEY', 'GEMINI_API_KEY', 'OPENAI_API_KEY',
+                'DASHSCOPE_API_KEY',
+                # Windows-required env vars
+                'SYSTEMROOT', 'COMSPEC', 'PATHEXT', 'TEMP', 'TMP',
+                'APPDATA', 'LOCALAPPDATA', 'USERPROFILE', 'HOMEDRIVE',
+                'HOMEPATH', 'SYSTEMDRIVE', 'WINDIR'):
         if _ek in os.environ:
             clean_env[_ek] = os.environ[_ek]
+    # On Windows, npm global installs create .cmd wrappers (e.g. qwen.cmd).
+    # subprocess.run() won't find .cmd files without shell=True,
+    # so resolve the full path via shutil.which() first.
+    _is_windows = sys.platform == 'win32'
+    if _is_windows:
+        resolved = shutil.which(cmd[0])
+        if resolved:
+            cmd[0] = resolved
     try:
         result = subprocess.run(cmd, capture_output=True, text=True,
-                                timeout=_timeout, env=clean_env)
+                                timeout=_timeout, env=clean_env,
+                                shell=_is_windows)
     except subprocess.TimeoutExpired:
         _print_progress_safe(f"  {S.warning(f'{engine_label} 调用超时 ({_timeout}s)')}")
         return None
