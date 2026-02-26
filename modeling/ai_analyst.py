@@ -316,7 +316,8 @@ def _run_engine(engine, prompt):
     try:
         result = subprocess.run(cmd, capture_output=True, text=True,
                                 timeout=_timeout, env=clean_env,
-                                shell=_is_windows)
+                                shell=_is_windows, encoding='utf-8',
+                                errors='replace')
     except subprocess.TimeoutExpired:
         _print_progress_safe(f"  {S.warning(f'{engine_label} 调用超时 ({_timeout}s)')}")
         return None
