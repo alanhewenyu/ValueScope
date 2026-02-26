@@ -2150,10 +2150,14 @@ def _run_ai_analysis():
     except Exception as e:
         s._ai_running = False
         _err_msg = str(e)
+        _err_lower = _err_msg.lower()
         st.error(t('err_ai_failed', msg=_err_msg))
         # Engine-specific troubleshooting guidance
         _engine = _ai_mod._AI_ENGINE
         if _engine == 'qwen':
+            # Show targeted hint for common errors
+            if '401' in _err_msg or 'token expired' in _err_lower or 'access token' in _err_lower:
+                st.warning("⚡ **Token 已过期** — 请在终端运行 `qwen` 重新登录，或设置 `DASHSCOPE_API_KEY` 环境变量（API key 不会过期）")
             st.info(
                 "**Qwen Code troubleshooting:**\n\n"
                 "1. **Install:** `npm install -g @qwen-code/qwen-code@latest` (Node.js ≥ 20)\n"
@@ -2164,6 +2168,10 @@ def _run_ai_analysis():
                 "4. **Alternative:** Switch to Claude or Gemini in the sidebar AI Engine selector."
             )
         elif _engine == 'gemini':
+            if 'ineligibletier' in _err_lower:
+                st.warning("⚡ **已知问题** — Google 账号资格验证存在 bug，等待 Google 修复中。建议切换到其他 AI 引擎。")
+            elif 'consent' in _err_lower or 'authentication' in _err_lower:
+                st.warning("⚡ **登录失效** — 请在终端运行 `gemini` 重新登录，或设置 `GEMINI_API_KEY` 环境变量")
             st.info(
                 "**Gemini CLI troubleshooting:**\n\n"
                 "1. **Install:** `npm install -g @google/gemini-cli`\n"
@@ -2171,6 +2179,8 @@ def _run_ai_analysis():
                 "3. If quota exceeded, try again later or switch to another AI engine."
             )
         elif _engine == 'claude':
+            if 'not logged in' in _err_lower or 'login' in _err_lower:
+                st.warning("⚡ **未登录** — 请在终端运行 `claude` 完成登录")
             st.info(
                 "**Claude CLI troubleshooting:**\n\n"
                 "1. **Install:** `npm install -g @anthropic-ai/claude-code`\n"

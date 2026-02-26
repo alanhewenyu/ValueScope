@@ -251,6 +251,27 @@ def _extract_error_message(raw_error):
     return raw_error[:200]
 
 
+def _auth_error_hint(engine, raw_err):
+    """Return a user-friendly fix hint for common authentication errors."""
+    err_lower = raw_err.lower()
+    if engine == 'qwen':
+        if '401' in raw_err or 'token expired' in err_lower or 'access token' in err_lower:
+            return "💡 修复: 终端运行 qwen 重新登录, 或设置环境变量 DASHSCOPE_API_KEY"
+        if 'not found' in err_lower or 'not installed' in err_lower:
+            return "💡 修复: npm install -g @qwen-code/qwen-code@latest"
+    elif engine == 'claude':
+        if 'not logged in' in err_lower or 'login' in err_lower:
+            return "💡 修复: 终端运行 claude 并完成登录"
+        if 'api error' in err_lower or 'rate limit' in err_lower:
+            return "💡 提示: Claude API 限流或 token 过期, 稍后重试"
+    elif engine == 'gemini':
+        if 'ineligibletier' in err_lower:
+            return "💡 已知问题: Google 账号资格验证 bug, 等待 Google 修复中"
+        if 'consent' in err_lower or 'authentication' in err_lower:
+            return "💡 修复: 终端运行 gemini 重新登录, 或设置环境变量 GEMINI_API_KEY"
+    return ""
+
+
 def _run_engine(engine, prompt):
     """Run a single AI engine and return (raw_stdout, engine_name) or None on failure.
 
@@ -301,8 +322,13 @@ def _run_engine(engine, prompt):
         return None
 
     if result.returncode != 0:
-        error_msg = _extract_error_message(result.stderr.strip() or result.stdout.strip() or "Unknown error")
+        raw_err = result.stderr.strip() or result.stdout.strip() or "Unknown error"
+        error_msg = _extract_error_message(raw_err)
         _print_progress_safe(f"  {S.warning(f'{engine_label} 调用失败: {error_msg}')}")
+        # Show actionable fix hints for common auth errors
+        _hints = _auth_error_hint(engine, raw_err)
+        if _hints:
+            _print_progress_safe(f"  {S.muted(_hints)}")
         return None
 
     raw = result.stdout.strip()
