@@ -163,7 +163,14 @@ Primarily used for US stock DCF valuation. Not required for A-shares or HK stock
 Register at [Financial Modeling Prep](https://financialmodelingprep.com/) and set your API key:
 
 ```bash
+# macOS / Linux
 export FMP_API_KEY='your_api_key_here'
+
+# Windows CMD
+set FMP_API_KEY=your_api_key_here
+
+# Windows PowerShell
+$env:FMP_API_KEY="your_api_key_here"
 ```
 
 ### 4. Set Up AI Engine (Optional)
