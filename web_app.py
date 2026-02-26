@@ -1176,7 +1176,7 @@ with st.sidebar:
     st.markdown('<hr style="margin:4px 0; border:none; border-top:1px solid var(--vx-border, #d0d7de);">', unsafe_allow_html=True)
     st.markdown("""
     <div style="text-align:center; font-size:0.72rem; color:#555; line-height:1.7; padding:4px 0;">
-        <div>© 2026 见山笔记 (Alan He) · <a href="https://opensource.org/licenses/MIT" target="_blank" style="color:#58a6ff;text-decoration:none;">MIT License</a></div>
+        <div>© 2026 Alan He · <a href="https://opensource.org/licenses/MIT" target="_blank" style="color:#58a6ff;text-decoration:none;">MIT License</a></div>
         <div><a href="https://jianshan.co" target="_blank" style="color:#58a6ff;text-decoration:none;">见山笔记</a>
         · <a href="https://github.com/alanhewenyu/ValuX" target="_blank" style="color:#58a6ff;text-decoration:none;">GitHub</a>
         · <a href="mailto:alanhe@icloud.com" style="color:#58a6ff;text-decoration:none;">alanhe@icloud.com</a></div>
