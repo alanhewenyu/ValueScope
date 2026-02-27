@@ -1,5 +1,5 @@
 from urllib.request import urlopen
-import re, json, traceback
+import os, re, json, traceback
 import pandas as pd
 from . import style as S
 from .constants import CHINA_DEFAULT_BETA
@@ -13,6 +13,18 @@ def _get_ak():
     if ak is None:
         import akshare as _ak
         ak = _ak
+        # Suppress akshare's internal tqdm progress bars
+        try:
+            import tqdm as _tqdm_mod
+            _orig_init = _tqdm_mod.tqdm.__init__
+            def _quiet_init(self, *args, **kwargs):
+                kwargs['disable'] = True
+                _orig_init(self, *args, **kwargs)
+            _tqdm_mod.tqdm.__init__ = _quiet_init
+            if hasattr(_tqdm_mod, 'auto') and hasattr(_tqdm_mod.auto, 'tqdm'):
+                _tqdm_mod.auto.tqdm.__init__ = _quiet_init
+        except Exception:
+            pass
     return ak
 
 
@@ -29,8 +41,46 @@ def _normalize_ticker(ticker):
     return t
 
 
+def is_b_share(ticker):
+    """Return True if ticker is a Chinese B-share.
+
+    Shenzhen B-shares: 200xxx.SZ — traded in HKD
+    Shanghai B-shares: 900xxx.SS — traded in USD
+    """
+    t = _normalize_ticker(ticker)
+    code = t.split('.')[0]
+    if not code.isdigit() or len(code) != 6:
+        return False
+    if t.endswith('.SZ') and code.startswith('200'):
+        return True
+    if t.endswith('.SS') and code.startswith('900'):
+        return True
+    return False
+
+
+def b_share_currency(ticker):
+    """Return trading currency for a B-share ticker.
+
+    Shenzhen B-shares (200xxx.SZ) trade in HKD.
+    Shanghai B-shares (900xxx.SS) trade in USD.
+    Returns None if not a B-share.
+    """
+    t = _normalize_ticker(ticker)
+    code = t.split('.')[0]
+    if t.endswith('.SZ') and code.startswith('200'):
+        return 'HKD'
+    if t.endswith('.SS') and code.startswith('900'):
+        return 'USD'
+    return None
+
+
 def is_a_share(ticker):
-    """Return True if ticker is a Chinese A-share (SSE/SZSE)."""
+    """Return True if ticker is a Chinese stock on SSE/SZSE (includes B-shares).
+
+    B-shares share the same financials as A-shares and use the same valuation
+    flow.  The only difference is trading currency (HKD/USD vs CNY), handled
+    at the forex-conversion step via ``is_b_share`` / ``b_share_currency``.
+    """
     t = _normalize_ticker(ticker)
     return t.endswith('.SS') or t.endswith('.SZ')
 
@@ -64,7 +114,7 @@ def validate_ticker(ticker):
 
     t = _normalize_ticker(ticker)
 
-    # A-share: 6 digits + .SS or .SZ (also accepts .SH → auto-converted to .SS)
+    # A-share / B-share: 6 digits + .SS or .SZ (also accepts .SH → auto-converted to .SS)
     if t.endswith('.SS') or t.endswith('.SZ'):
         code = t.split('.')[0]
         if not re.match(r'^\d{6}$', code):
@@ -186,13 +236,18 @@ def get_company_share_float(ticker, apikey='', company_profile=None):
 def fetch_company_profile(ticker, apikey=''):
     if is_a_share(ticker):
         try:
-            return fetch_akshare_company_profile(ticker)
+            profile = fetch_akshare_company_profile(ticker)
         except Exception as e:
             print(S.warning(f"⚠ fetch_akshare_company_profile failed ({type(e).__name__}: {e}). Using minimal profile."))
             exchange = 'Shanghai Stock Exchange' if ticker.upper().endswith('.SS') else 'Shenzhen Stock Exchange'
-            return {'companyName': ticker, 'marketCap': 0, 'beta': 1.0,
-                    'country': 'China', 'currency': 'CNY', 'exchange': exchange,
-                    'price': 0, 'outstandingShares': 0}
+            profile = {'companyName': ticker, 'marketCap': 0, 'beta': 1.0,
+                       'country': 'China', 'currency': 'CNY', 'exchange': exchange,
+                       'price': 0, 'outstandingShares': 0}
+        # B-shares trade in HKD (Shenzhen) or USD (Shanghai), not CNY
+        _b_cur = b_share_currency(ticker)
+        if _b_cur:
+            profile['currency'] = _b_cur
+        return profile
     if is_hk_stock(ticker):
         try:
             if _is_cloud_mode():
@@ -479,11 +534,12 @@ def _fill_profile_from_financial_data(profile, financial_data):
         if data_name:
             profile['companyName'] = data_name
 
-    # Outstanding shares: fill if missing or zero
-    if not profile.get('outstandingShares'):
-        data_shares = financial_data.get('_shares_from_data')
-        if data_shares and data_shares > 0:
-            profile['outstandingShares'] = data_shares
+    # Outstanding shares: always prefer balance-sheet SHARE_CAPITAL (总股本).
+    # Other sources (Sina outstanding_share, stock_individual_info_em) may return
+    # tradeable shares (流通股) which excludes restricted shares.
+    data_shares = financial_data.get('_shares_from_data')
+    if data_shares and data_shares > 0:
+        profile['outstandingShares'] = data_shares
 
     # Market cap = price × shares
     if not profile.get('marketCap') and profile.get('price', 0) > 0 and profile.get('outstandingShares', 0) > 0:
@@ -1882,6 +1938,7 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
             # Extract company name and outstanding shares from ORIGINAL (un-transposed)
             # full DataFrames.  These are used by _fill_profile_from_financial_data()
             # to enrich the company profile when APIs fail on Streamlit Cloud.
+            result['_ticker'] = ticker
             try:
                 if _full_income_df is not None and not _full_income_df.empty:
                     if 'SECURITY_NAME_ABBR' in _full_income_df.columns:

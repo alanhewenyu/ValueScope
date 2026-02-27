@@ -251,8 +251,8 @@ def _run_gap_analysis(auto_mode, ticker, company_profile, results, valuation_par
             print(f"\n{S.error(f'估值差异分析出错: {e}')}")
             return None
 
-    run_gap = input(f"\n{S.prompt('是否运行 DCF 估值 vs 当前股价差异分析? (y/N): ')}").strip().lower()
-    if run_gap in ('y', 'yes'):
+    run_gap = input(f"\n{S.prompt('Run DCF vs Market Price gap analysis? (Y/n): ')}").strip().lower()
+    if run_gap not in ('n', 'no'):
         try:
             return analyze_valuation_gap(ticker, company_profile, results, valuation_params,
                                          summary_df, base_year, forecast_year_1=forecast_year_1,
