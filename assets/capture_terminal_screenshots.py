@@ -150,7 +150,7 @@ def run_cli_session():
 
     child = pexpect.spawn(
         'python3 main.py --manual',
-        cwd='/Users/Alan/ValuX',
+        cwd='/Users/Alan/valux',
         encoding='utf-8',
         timeout=90,
         dimensions=(60, 140),  # rows x cols — wider for tables
