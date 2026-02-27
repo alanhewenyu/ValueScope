@@ -269,7 +269,7 @@ def _run_gap_analysis(auto_mode, ticker, company_profile, results, valuation_par
 def _export_excel(auto_mode, use_ai, company_name, base_year_data, financial_data,
                   valuation_params, company_profile, total_equity_risk_premium,
                   gap_analysis_result, ai_result, wacc_results, wacc_base):
-    """Handle Excel export (auto or prompted)."""
+    """Handle Excel export (auto or prompted). Returns True if exported."""
     model_suffix = ''
     if use_ai:
         model_tag = _ai_engine_display_name()
@@ -286,12 +286,15 @@ def _export_excel(auto_mode, use_ai, company_name, base_year_data, financial_dat
 
     if auto_mode:
         _do_export()
+        return True
     else:
         export_to_excel = input(f"\n{S.prompt('Do you want to export the valuation results to Excel? (y/n): ')}").strip().lower()
         if export_to_excel == 'y':
             _do_export()
+            return True
         else:
             print(f"\n{S.muted('Skipping Excel export.')}")
+            return False
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -494,10 +497,36 @@ def main(args):
             auto_mode, ticker, company_profile, results, valuation_params,
             summary_df, base_year, forecast_year_1, forex_rate)
 
-        # ── Excel export ──
-        _export_excel(auto_mode, use_ai, company_name, base_year_data, financial_data,
-                      valuation_params, company_profile, total_equity_risk_premium,
-                      gap_analysis_result, ai_result, wacc_results, wacc_base)
+        # ── Export: DB-first (when VALUX_DB_PATH set) or Excel (default) ──
+        _db_path = os.environ.get('VALUX_DB_PATH')
+        if _db_path:
+            # DB mode: prompt user (default yes), auto_mode skips prompt
+            _save_db = True
+            if not auto_mode:
+                _save_ans = input(f"\n{S.prompt('Save valuation to database? (Y/n): ')}").strip().lower()
+                _save_db = _save_ans != 'n'
+            if _save_db:
+                from modeling.db_export import maybe_save_to_db
+                maybe_save_to_db(
+                    ticker=ticker, company_name=company_name,
+                    mode='auto' if (use_ai and auto_mode) else ('copilot' if use_ai else 'manual'),
+                    ai_engine=_ai_engine_display_name() if use_ai else None,
+                    valuation_params=valuation_params, results=results,
+                    company_profile=company_profile,
+                    gap_analysis_result=gap_analysis_result, ai_result=ai_result,
+                    sensitivity_table=sensitivity_table,
+                    wacc_sensitivity=(wacc_results, wacc_base),
+                    financial_data=financial_data,
+                    forex_rate=forex_rate,
+                )
+                print(f"\n{S.success('Valuation saved to database.')}")
+            else:
+                print(f"\n{S.muted('Database save skipped.')}")
+        else:
+            # Default: Excel export (unchanged for other users)
+            _export_excel(auto_mode, use_ai, company_name, base_year_data, financial_data,
+                          valuation_params, company_profile, total_equity_risk_premium,
+                          gap_analysis_result, ai_result, wacc_results, wacc_base)
 
         # ── Exit or continue ──
         if auto_mode:

@@ -2315,9 +2315,15 @@ def _run_gap_analysis_streaming(ticker, company_profile, results, valuation_para
         except ValueError:
             pass
 
+    # Compute adjusted price in reporting currency (reverse forex conversion)
+    adjusted_price_reporting = None
+    if adjusted_price is not None and currency_converted and forex_rate and forex_rate > 0:
+        adjusted_price_reporting = adjusted_price / forex_rate
+
     return {
         'analysis_text': analysis_text,
         'adjusted_price': adjusted_price,
+        'adjusted_price_reporting': adjusted_price_reporting,
         'current_price': current_price,
         'dcf_price': dcf_price,
         'dcf_price_raw': dcf_price_raw if currency_converted else None,
@@ -2720,6 +2726,11 @@ if gap_btn:
             ss.summary_df, ss.base_year, ss.forecast_year_1, forex_rate)
         ss.gap_analysis_result = gap_result
         ss._gap_just_completed = True
+        # Update DB record with gap analysis
+        if ss.get('_db_row_id'):
+            from modeling.db_export import update_gap_analysis
+            update_gap_analysis(
+                os.environ.get('VALUX_DB_PATH'), ss._db_row_id, gap_result)
     except Exception as e:
         st.error(t('err_gap_failed', msg=str(e)))
 
@@ -3044,6 +3055,24 @@ def _run_dcf_calc():
     ss.wacc_results = wacc_results
     ss.wacc_base = wacc_base
     ss._last_dcf_input_snapshot = _current_raw_snapshot
+
+    # ── Optional DB export ──
+    from modeling.db_export import maybe_save_to_db
+    row_id = maybe_save_to_db(
+        ticker=ss.ticker, company_name=ss.company_name,
+        mode='copilot' if use_ai else 'manual',
+        ai_engine=_ai_engine_display_name() if use_ai else None,
+        valuation_params=valuation_params, results=results,
+        company_profile=ss.company_profile,
+        gap_analysis_result=ss.get('gap_analysis_result'),
+        ai_result=ss.get('ai_result'),
+        sensitivity_table=ss.sensitivity_table,
+        wacc_sensitivity=(wacc_results, wacc_base),
+        financial_data=ss.financial_data,
+        forex_rate=ss.get('forex_rate'),
+    )
+    ss._db_row_id = row_id
+
     return results
 
 # First-time run: show warning + explicit Run DCF button
@@ -3190,6 +3219,8 @@ if _has_results:
         _gap_adj_str = ''
         if gap.get('adjusted_price') is not None:
             _gap_adj_str = f" · Adjusted: <b>{gap['adjusted_price']:,.2f} {gap['currency']}</b>"
+            if gap.get('adjusted_price_reporting') is not None and gap.get('reported_currency'):
+                _gap_adj_str += f" ({gap['adjusted_price_reporting']:,.2f} {gap['reported_currency']})"
         st.markdown('<div id="gap-analysis-anchor"></div>', unsafe_allow_html=True)
         st.markdown(
             f'<div class="expander-hint"><span class="icon">📊</span>'
@@ -3198,7 +3229,10 @@ if _has_results:
         with st.expander(t('gap_expander'), expanded=_gap_just_done):
             if gap.get('adjusted_price') is not None:
                 adj = gap['adjusted_price']
-                st.success(t('gap_adjusted', val=adj, cur=gap['currency']))
+                _adj_msg = t('gap_adjusted', val=adj, cur=gap['currency'])
+                if gap.get('adjusted_price_reporting') is not None and gap.get('reported_currency'):
+                    _adj_msg += f"  ({gap['adjusted_price_reporting']:,.2f} {gap['reported_currency']})"
+                st.success(_adj_msg)
             display_text = re.sub(r'\n?\s*ADJUSTED_PRICE:.*$', '', gap.get('analysis_text', '')).strip()
             # Convert markdown → HTML so we can wrap everything inside a
             # single <div class="ai-card">.  Streamlit wraps each

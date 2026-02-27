@@ -17,13 +17,13 @@ def init_paths(project_root):
 
     Output directory priority:
       1. VALUX_OUTPUT_DIR environment variable (user override)
-      2. ../Stock_valuation  (default — sibling directory next to project)
+      2. ../stock_valuation  (default — sibling directory next to project)
     """
     global EXCEL_TEMPLATE_PATH, EXCEL_OUTPUT_DIR
     EXCEL_TEMPLATE_PATH = os.path.join(project_root, 'modeling', 'DCF valuation template.xlsx')
     EXCEL_OUTPUT_DIR = os.environ.get(
         'VALUX_OUTPUT_DIR',
-        os.path.join(project_root, '..', 'Stock_valuation')
+        os.path.join(project_root, '..', 'stock_valuation')
     )
 
 

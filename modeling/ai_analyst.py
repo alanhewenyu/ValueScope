@@ -1099,6 +1099,11 @@ def analyze_valuation_gap(ticker, company_profile, results, valuation_params, su
             except ValueError:
                 pass
 
+        # Compute adjusted price in reporting currency (reverse forex conversion)
+        adjusted_price_reporting = None
+        if adjusted_price is not None and currency_converted and forex_rate and forex_rate > 0:
+            adjusted_price_reporting = adjusted_price / forex_rate
+
         # Display analysis (strip the ADJUSTED_PRICE line from display)
         display_text = re.sub(r'\n?\s*ADJUSTED_PRICE:.*$', '', analysis_text).strip()
         print(f"\n{S.divider()}")
@@ -1108,10 +1113,13 @@ def analyze_valuation_gap(ticker, company_profile, results, valuation_params, su
         if adjusted_price is not None:
             adj_gap_pct = (adjusted_price - current_price) / current_price * 100
             print(f"\n  {S.label('综合差异分析后修正估值:')} {S.price_colored(adjusted_price, current_price)} {stock_currency}（相对当前股价 {S.pct_colored(adj_gap_pct)}）")
+            if adjusted_price_reporting is not None:
+                print(f"  {S.label('修正估值（列报币种）:')} {adjusted_price_reporting:,.2f} {reported_currency}  {S.muted(f'(÷ {forex_rate:.4f})')}")
 
         return {
             'analysis_text': analysis_text,
             'adjusted_price': adjusted_price,
+            'adjusted_price_reporting': adjusted_price_reporting,
             'current_price': current_price,
             'dcf_price': dcf_price,
             'dcf_price_raw': dcf_price_raw if currency_converted else None,
