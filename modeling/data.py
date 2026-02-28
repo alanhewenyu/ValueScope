@@ -142,7 +142,7 @@ def validate_ticker(ticker):
     )
 
 def get_api_url(requested_data, ticker, period, apikey):
-    base_url = f'https://financialmodelingprep.com/api/v3/{requested_data}/{ticker}?apikey={apikey}'
+    base_url = f'https://financialmodelingprep.com/stable/{requested_data}?symbol={ticker}&apikey={apikey}'
     return base_url if period == 'annual' else f'{base_url}&period=quarter'
 
 def get_jsonparsed_data(url, timeout=15):
@@ -158,7 +158,7 @@ def get_jsonparsed_data(url, timeout=15):
         raise
 
 def fetch_forex_data(apikey):
-    url = f'https://financialmodelingprep.com/api/v3/quotes/forex?apikey={apikey}'
+    url = f'https://financialmodelingprep.com/stable/all-forex-quotes?apikey={apikey}'
     try:
         data = get_jsonparsed_data(url)
         if not data or not isinstance(data, list):
@@ -205,7 +205,7 @@ def fetch_forex_akshare(from_currency, to_currency):
 
 
 def fetch_market_risk_premium(apikey):
-    url = f'https://financialmodelingprep.com/api/v4/market_risk_premium?apikey={apikey}'
+    url = f'https://financialmodelingprep.com/stable/market-risk-premium?apikey={apikey}'
     data = get_jsonparsed_data(url)
     return {item['country']: item['totalEquityRiskPremium'] for item in data}
 
@@ -227,7 +227,7 @@ def get_company_share_float(ticker, apikey='', company_profile=None):
             from .yfinance_data import fetch_yfinance_hk_company_profile
             profile = fetch_yfinance_hk_company_profile(ticker)
         return {'outstandingShares': profile.get('outstandingShares', 0), 'symbol': ticker}
-    url = f'https://financialmodelingprep.com/api/v4/shares_float?symbol={ticker}&apikey={apikey}'
+    url = f'https://financialmodelingprep.com/stable/shares-float?symbol={ticker}&apikey={apikey}'
     company_info = get_jsonparsed_data(url)
     if not company_info:
         raise ValueError(f"No company information found for ticker {ticker}.")
@@ -261,7 +261,7 @@ def fetch_company_profile(ticker, apikey=''):
             return {'companyName': ticker, 'marketCap': 0, 'beta': 1.0,
                     'country': 'Hong Kong', 'currency': 'HKD', 'exchange': 'HKSE',
                     'price': 0, 'outstandingShares': 0}
-    url = f'https://financialmodelingprep.com/api/v3/profile/{ticker}?apikey={apikey}'
+    url = f'https://financialmodelingprep.com/stable/profile?symbol={ticker}&apikey={apikey}'
     data = get_jsonparsed_data(url)
     if not data:
         raise ValueError(f"No company profile data found for ticker {ticker}.")

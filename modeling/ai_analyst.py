@@ -502,15 +502,15 @@ ANALYSIS_PROMPT_TEMPLATE = """你是一位资深的股权研究分析师和DCF�
   }},
   "revenue_invested_capital_ratio_1": {{
     "value": <数值，如果建议设为0则填0>,
-    "reasoning": "<详细中文分析：**分析步骤（必须严格按顺序执行）：**\n1. **首先**检查历史 Revenue / IC 比率（在 Key Ratios 部分）是否各年稳定（波动幅度在±20%以内）。如果稳定，则**优先使用历史平均值**作为基准，并根据未来收入增速预测适当调整（增速加快→比率可略高，增速放缓→比率可略低）。\n2. **其次**，如果 Revenue / IC 波动较大或不适用，则检查历史 Total Reinvestments 数据：如果持续为负数（公司在回收资本），说明是轻资产公司，应设为0；如果为正，则反算合理比率（= 收入增量 / Total Reinvestments），并验证推算出的预期净资本开支与历史水平是否匹配。\n请明确说明采用了哪种方法及原因。>"
+    "reasoning": "<详细中文分析：**分析步骤（必须严格按顺序执行）：**\n1. **首先**检查历史 Revenue / IC 比率（在 Key Ratios 部分）是否各年稳定（波动幅度在±20%以内）。如果稳定，则**优先使用历史平均值**作为基准，并根据未来收入增速预测适当调整（增速加快→比率可略高，增速放缓→比率可略低）。\n2. **其次**，如果 Revenue / IC 波动较大或不适用，则检查历史 Total Reinvestments 数据：如果持续为负数（公司在回收资本），说明是轻资产公司，应设为0；如果为正，则反算合理比率（= 收入增量 / Total Reinvestments），并验证推算出的预期净资本开支与历史水平是否匹配。\n请明确说明采用了哪种方法及原因。\n3. **必须给出再投资金额校验**：根据建议的比率和前面的收入增长率假设，计算 Year 1-2 预期再投资金额（= ΔRevenue × EBIT Margin / Revenue/IC），与最近一年的 Total Reinvestment 对比，说明是否合理。例如：'建议设为3.0，对应 Year 1 预期再投资约 $X B，高于/低于最近一年的 $Y B，符合/需要关注增长趋势。'>"
   }},
   "revenue_invested_capital_ratio_2": {{
     "value": <数值>,
-    "reasoning": "<详细中文分析：Year 3-5阶段的比率依据。同样优先参考历史 Revenue / IC 稳定性，其次对照历史 reinvestment 水平校验。>"
+    "reasoning": "<详细中文分析：Year 3-5阶段的比率依据。同样优先参考历史 Revenue / IC 稳定性，其次对照历史 reinvestment 水平校验。**必须给出再投资金额校验**：根据建议的比率和 Year 3-5 的收入增长率假设，估算该阶段年均预期再投资金额，与最近一年的 Total Reinvestment 对比，说明是否合理。>"
   }},
   "revenue_invested_capital_ratio_3": {{
     "value": <数值>,
-    "reasoning": "<详细中文分析：Year 5-10阶段的比率依据。考虑成熟期资本效率变化，参考历史 Revenue / IC 趋势和 reinvestment 水平。>"
+    "reasoning": "<详细中文分析：Year 5-10阶段的比率依据。考虑成熟期资本效率变化，参考历史 Revenue / IC 趋势和 reinvestment 水平。**必须给出再投资金额校验**：根据建议的比率和 Year 5-10 的收入增长率假设，估算该阶段年均预期再投资金额，与最近一年的 Total Reinvestment 对比，说明是否与公司规模扩大后的资本需求相匹配。>"
   }},
   "tax_rate": {{
     "value": <数值>,
@@ -591,15 +591,15 @@ Please conduct **independent, in-depth** analysis for each parameter below. Each
   }},
   "revenue_invested_capital_ratio_1": {{
     "value": <number, use 0 if recommending zero>,
-    "reasoning": "<Detailed analysis: **Analysis steps (must follow in order):**\n1. **First**, check if historical Revenue / IC ratios (in Key Ratios section) are stable across years (fluctuation within ±20%). If stable, **prioritize using the historical average** as baseline, with adjustments based on projected revenue growth (faster growth → slightly higher ratio, slower growth → slightly lower).\n2. **Second**, if Revenue / IC is volatile or not applicable, check historical Total Reinvestments: if consistently negative (company is returning capital), it's asset-light — set to 0; if positive, back-calculate a reasonable ratio (= revenue increment / Total Reinvestments) and verify that implied capex aligns with historical levels.\nClearly state which method you used and why.>"
+    "reasoning": "<Detailed analysis: **Analysis steps (must follow in order):**\n1. **First**, check if historical Revenue / IC ratios (in Key Ratios section) are stable across years (fluctuation within ±20%). If stable, **prioritize using the historical average** as baseline, with adjustments based on projected revenue growth (faster growth → slightly higher ratio, slower growth → slightly lower).\n2. **Second**, if Revenue / IC is volatile or not applicable, check historical Total Reinvestments: if consistently negative (company is returning capital), it's asset-light — set to 0; if positive, back-calculate a reasonable ratio (= revenue increment / Total Reinvestments) and verify that implied capex aligns with historical levels.\nClearly state which method you used and why.\n3. **Must include reinvestment sanity check**: Using the recommended ratio and the revenue growth rates assumed above, calculate the implied Year 1-2 reinvestment amount (= ΔRevenue × EBIT Margin / Revenue/IC) and compare it against the most recent year's Total Reinvestment. State whether the level is reasonable. Example: 'Recommend 3.0, consistent with recent 2-year levels. Implied Year 1 reinvestment ≈ $X B, above the most recent $Y B but consistent with accelerating growth.'>"
   }},
   "revenue_invested_capital_ratio_2": {{
     "value": <number>,
-    "reasoning": "<Detailed analysis: Basis for Year 3-5 ratio. Similarly prioritize historical Revenue / IC stability, then cross-check against historical reinvestment levels.>"
+    "reasoning": "<Detailed analysis: Basis for Year 3-5 ratio. Similarly prioritize historical Revenue / IC stability, then cross-check against historical reinvestment levels. **Must include reinvestment sanity check**: Using the recommended ratio and Year 3-5 revenue growth assumptions, estimate average annual reinvestment for this period and compare against the most recent year's Total Reinvestment. State whether the level is reasonable.>"
   }},
   "revenue_invested_capital_ratio_3": {{
     "value": <number>,
-    "reasoning": "<Detailed analysis: Basis for Year 5-10 ratio. Consider mature-stage capital efficiency changes, historical Revenue / IC trends and reinvestment levels.>"
+    "reasoning": "<Detailed analysis: Basis for Year 5-10 ratio. Consider mature-stage capital efficiency changes, historical Revenue / IC trends and reinvestment levels. **Must include reinvestment sanity check**: Using the recommended ratio and Year 5-10 revenue growth assumptions, estimate average annual reinvestment for this period and compare against the most recent year's Total Reinvestment. State whether the implied capital needs are consistent with the company's expanding scale.>"
   }},
   "tax_rate": {{
     "value": <number>,
