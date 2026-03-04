@@ -100,7 +100,8 @@ ValuX uses different data sources depending on the market, optimizing for data q
 |--------|------------|----------------|---------|
 | **China A-shares** | [akshare](https://github.com/akfamily/akshare) | akshare | **Not required** (free) |
 | **Hong Kong** | [yfinance](https://github.com/ranaroussi/yfinance) | [FMP](https://financialmodelingprep.com/) | Annual: **free**; Quarterly: FMP key required |
-| **US & Others** | [FMP](https://financialmodelingprep.com/) | FMP | FMP key required |
+| **US** | [FMP](https://financialmodelingprep.com/) (stable API) | FMP | FMP key required |
+| **Japan & Others** | [FMP](https://financialmodelingprep.com/) (legacy API) | FMP | FMP key required |
 
 **Why multiple data sources?**
 - **akshare** — Free, no API key needed. Provides original A-share financial statements with reliable data quality for accurate calculation of valuation metrics.
@@ -219,7 +220,7 @@ Opens automatically in your browser at `http://localhost:8501`. Features interac
 
 ## Usage
 
-1. **Enter stock symbol** — e.g., `AAPL`, `600519.SS` (Moutai), `0700.HK` (Tencent)
+1. **Enter stock symbol** — e.g., `AAPL`, `600519.SS` (Moutai), `0700.HK` (Tencent), `7203.T` (Toyota)
 2. **Review annual historical data** — The program fetches and displays the annual financial summary with TTM data (if available).
 3. **View quarterly data** (optional) — Choose to view quarterly financial data as a reference before valuation.
 4. **AI parameter generation** (or manual input) — AI suggests each parameter with reasoning; press Enter to accept or type a new value.

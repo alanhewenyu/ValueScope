@@ -5,7 +5,7 @@ import os
 import re
 import sys
 from datetime import date
-from modeling.data import get_historical_financials, get_company_share_float, fetch_company_profile, fetch_forex_data, format_summary_df, validate_ticker, _normalize_ticker, is_a_share, is_hk_stock, _fill_profile_from_financial_data, _calculate_beta_akshare
+from modeling.data import get_historical_financials, get_company_share_float, fetch_company_profile, fetch_forex_data, format_summary_df, validate_ticker, _normalize_ticker, is_a_share, is_hk_stock, is_jpn_stock, _fill_profile_from_financial_data, _calculate_beta_akshare
 from modeling.dcf import calculate_dcf, print_dcf_results, sensitivity_analysis, print_sensitivity_table, wacc_sensitivity_analysis, print_wacc_sensitivity, calculate_wacc, print_wacc_details, get_risk_free_rate
 from modeling.constants import HISTORICAL_DATA_PERIODS_ANNUAL, HISTORICAL_DATA_PERIODS_QUARTER, TERMINAL_RISK_PREMIUM, TERMINAL_RONIC_PREMIUM
 from modeling.ai_analyst import analyze_company, interactive_review, analyze_valuation_gap, _AI_ENGINE, set_ai_engine, _ai_engine_display_name
@@ -90,7 +90,7 @@ def _prompt_ticker(auto_mode):
     """Prompt for ticker symbol. Returns normalized ticker string."""
     print(f"\n{S.title('Please enter the stock symbol to continue...')}\n")
     while True:
-        ticker = input(f'{S.prompt("Enter the stock symbol (e.g., AAPL, 0700.HK, 600519.SS): ")}').strip()
+        ticker = input(f'{S.prompt("Enter the stock symbol (e.g., AAPL, 0700.HK, 600519.SS, 5019.T): ")}').strip()
         is_valid, error_msg = validate_ticker(ticker)
         if is_valid:
             break
@@ -342,6 +342,8 @@ def main(args):
                 print(S.error("Error: Failed to fetch A-share data. akshare data source may be temporarily unavailable — please try again later."))
             else:
                 print(S.error("Error: Failed to fetch financial data. Please check your FMP API key and ticker symbol."))
+            if auto_mode:
+                sys.exit(1)
             continue
         summary_df = financial_data['summary']
         company_profile = _fill_profile_from_financial_data(company_profile, financial_data)
