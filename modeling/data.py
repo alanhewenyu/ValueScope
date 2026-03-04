@@ -91,6 +91,12 @@ def is_hk_stock(ticker):
     return t.endswith('.HK')
 
 
+def is_jpn_stock(ticker):
+    """Return True if ticker is a Japanese stock (.T, Tokyo Stock Exchange)."""
+    t = _normalize_ticker(ticker)
+    return t.endswith('.T')
+
+
 def _is_cloud_mode():
     """Check if running on Streamlit Community Cloud (vs local Streamlit or terminal).
 
@@ -128,6 +134,13 @@ def validate_ticker(ticker):
             return False, f"港股代码应为4-5位数字，如 0700.HK 或 9988.HK（当前: {ticker}）"
         return True, ""
 
+    # Japanese stock: 4-5 digits + .T
+    if t.endswith('.T'):
+        code = t.split('.')[0]
+        if not re.match(r'^\d{4,5}$', code):
+            return False, f"日股代码应为4-5位数字，如 5019.T 或 7203.T（当前: {ticker}）"
+        return True, ""
+
     # US stock: 1-5 letters (no suffix needed)
     if re.match(r'^[A-Z]{1,5}$', t):
         return True, ""
@@ -138,11 +151,15 @@ def validate_ticker(ticker):
 
     return False, (
         f"无法识别的股票代码格式: {ticker}\n"
-        f"  支持格式:  美股 AAPL | 港股 0700.HK | A股 600519.SS / 000333.SZ"
+        f"  支持格式:  美股 AAPL | 港股 0700.HK | A股 600519.SS / 000333.SZ | 日股 5019.T"
     )
 
 def get_api_url(requested_data, ticker, period, apikey):
-    base_url = f'https://financialmodelingprep.com/stable/{requested_data}?symbol={ticker}&apikey={apikey}'
+    if is_jpn_stock(ticker):
+        # Stable API returns 402 for JP financial statements; use legacy v3
+        base_url = f'https://financialmodelingprep.com/api/v3/{requested_data}/{ticker}?apikey={apikey}'
+    else:
+        base_url = f'https://financialmodelingprep.com/stable/{requested_data}?symbol={ticker}&apikey={apikey}'
     return base_url if period == 'annual' else f'{base_url}&period=quarter'
 
 def get_jsonparsed_data(url, timeout=15):
@@ -158,7 +175,8 @@ def get_jsonparsed_data(url, timeout=15):
         raise
 
 def fetch_forex_data(apikey):
-    url = f'https://financialmodelingprep.com/stable/all-forex-quotes?apikey={apikey}'
+    # Stable API has no free bulk forex endpoint; use legacy (still active)
+    url = f'https://financialmodelingprep.com/api/v3/quotes/forex?apikey={apikey}'
     try:
         data = get_jsonparsed_data(url)
         if not data or not isinstance(data, list):
@@ -227,7 +245,10 @@ def get_company_share_float(ticker, apikey='', company_profile=None):
             from .yfinance_data import fetch_yfinance_hk_company_profile
             profile = fetch_yfinance_hk_company_profile(ticker)
         return {'outstandingShares': profile.get('outstandingShares', 0), 'symbol': ticker}
-    url = f'https://financialmodelingprep.com/stable/shares-float?symbol={ticker}&apikey={apikey}'
+    if is_jpn_stock(ticker):
+        url = f'https://financialmodelingprep.com/api/v4/shares_float?symbol={ticker}&apikey={apikey}'
+    else:
+        url = f'https://financialmodelingprep.com/stable/shares-float?symbol={ticker}&apikey={apikey}'
     company_info = get_jsonparsed_data(url)
     if not company_info:
         raise ValueError(f"No company information found for ticker {ticker}.")
@@ -261,12 +282,15 @@ def fetch_company_profile(ticker, apikey=''):
             return {'companyName': ticker, 'marketCap': 0, 'beta': 1.0,
                     'country': 'Hong Kong', 'currency': 'HKD', 'exchange': 'HKSE',
                     'price': 0, 'outstandingShares': 0}
-    url = f'https://financialmodelingprep.com/stable/profile?symbol={ticker}&apikey={apikey}'
+    if is_jpn_stock(ticker):
+        url = f'https://financialmodelingprep.com/api/v3/profile/{ticker}?apikey={apikey}'
+    else:
+        url = f'https://financialmodelingprep.com/stable/profile?symbol={ticker}&apikey={apikey}'
     data = get_jsonparsed_data(url)
     if not data:
         raise ValueError(f"No company profile data found for ticker {ticker}.")
 
-    market_cap = data[0].get('mktCap', 0)
+    market_cap = data[0].get('marketCap', data[0].get('mktCap', 0))
     if pd.isna(market_cap) or market_cap == 0:
         print(f"Warning: Market Cap for {ticker} is NaN or 0. Setting to default value.")
         market_cap = 0
@@ -1023,7 +1047,7 @@ def _decumulate_quarterly_cf_if_needed(q_cf, summary_data=None):
     # Group by fiscal year, sort chronologically
     by_year = defaultdict(list)
     for d in q_cf:
-        by_year[d.get('calendarYear', '')].append(d)
+        by_year[d.get('calendarYear', d.get('fiscalYear', ''))].append(d)
     for year in by_year:
         by_year[year].sort(key=lambda x: x.get('date', ''))
 
@@ -1148,12 +1172,42 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                 'cashflow': get_api_url('cash-flow-statement', ticker, period, apikey),
                 'metrics': get_api_url('key-metrics', ticker, period, apikey),
             }
-            with ThreadPoolExecutor(max_workers=4) as executor:
+            # Stable API needs separate ratios endpoint; legacy key-metrics already has all fields
+            if not is_jpn_stock(ticker):
+                urls['ratios'] = get_api_url('ratios', ticker, period, apikey)
+            with ThreadPoolExecutor(max_workers=len(urls)) as executor:
                 futures = {k: executor.submit(get_jsonparsed_data, v) for k, v in urls.items()}
             income_statement = futures['income'].result()[:historical_periods]
             balance_sheet = futures['balance'].result()[:historical_periods]
             cashflow_statement = futures['cashflow'].result()[:historical_periods]
-            key_metrics = futures['metrics'].result()[:historical_periods]
+            # key-metrics and ratios are non-essential; degrade gracefully on timeout
+            try:
+                key_metrics = futures['metrics'].result()[:historical_periods]
+            except Exception:
+                key_metrics = []
+            try:
+                ratios = futures['ratios'].result()[:historical_periods] if 'ratios' in futures else []
+            except Exception:
+                ratios = []
+
+            # Merge ratios into key_metrics and normalize stable API field names.
+            # Stable key-metrics renamed: roic→returnOnInvestedCapital, roe→returnOnEquity
+            # Stable ratios has: debtToAssetsRatio, dividendYield, dividendPayoutRatio
+            _ratios_by_date = {r.get('date'): r for r in ratios}
+            for km_item in key_metrics:
+                # Map stable key-metrics field names to legacy names
+                if 'roic' not in km_item and 'returnOnInvestedCapital' in km_item:
+                    km_item['roic'] = km_item['returnOnInvestedCapital']
+                if 'roe' not in km_item and 'returnOnEquity' in km_item:
+                    km_item['roe'] = km_item['returnOnEquity']
+                # Merge fields from ratios endpoint
+                r = _ratios_by_date.get(km_item.get('date'), {})
+                if 'debtToAssets' not in km_item:
+                    km_item['debtToAssets'] = r.get('debtToAssetsRatio', 0) or 0
+                if 'dividendYield' not in km_item:
+                    km_item['dividendYield'] = r.get('dividendYield', 0) or 0
+                if 'payoutRatio' not in km_item:
+                    km_item['payoutRatio'] = r.get('dividendPayoutRatio', 0) or 0
 
             # FMP totalDebt already includes capitalLeaseObligations — no adjustment needed
 
@@ -1278,7 +1332,7 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
             _has_cf = is_a_share(ticker) or (is_hk_stock(ticker) and period == 'annual') or (cf is not _empty_cf)
 
             data = {
-                'Calendar Year': inc.get('calendarYear', 'N/A'),
+                'Calendar Year': inc.get('calendarYear', inc.get('fiscalYear', 'N/A')),
                 'Date': inc.get('date', 'N/A'),
                 'Period': inc.get('period', 'N/A'),
                 'Reported Currency': inc.get('reportedCurrency', 'N/A'),
@@ -1308,14 +1362,19 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                 # ── Key Ratios ──
                 '▸ Key Ratios': '',
                 'Revenue / IC': revenue_to_invested_capital,
-                'Debt to Assets (%)': (km.get('debtToAssets', 0) or 0) * 100,
+                'Debt to Assets (%)': ((km.get('debtToAssets', 0) or 0) * 100) or (total_debt / total_assets * 100 if total_assets else 0),
                 'Cost of Debt (%)': cost_of_debt * 100,
-                'ROIC (%)': (km.get('roic', 0) or 0) * 100,
-                'ROE (%)': (km.get('roe', 0) or 0) * 100,
+                'ROIC (%)': ((km.get('roic', 0) or 0) * 100) or (ebit * (1 - tax_rate) / invested_capital * 100 if invested_capital > 0 else 0),
+                'ROE (%)': ((km.get('roe', 0) or 0) * 100) or ((income_before_tax - income_tax_expense) / (bs.get('totalEquity', 0) or 1) * 100 if (bs.get('totalEquity', 0) or 0) > 0 else 0),
             }
             if not is_a_share(ticker):
                 data['Dividend Yield (%)'] = (km.get('dividendYield', 0) or 0) * 100
-                data['Payout Ratio (%)'] = (km.get('payoutRatio', 0) or 0) * 100
+                _payout = (km.get('payoutRatio', 0) or 0) * 100
+                if not _payout:
+                    _div_paid = abs(cf.get('commonDividendsPaid', 0) or cf.get('netDividendsPaid', 0) or 0)
+                    _net_inc = abs(inc.get('netIncome', 0) or 0)
+                    _payout = (_div_paid / _net_inc * 100) if _net_inc > 0 else 0
+                data['Payout Ratio (%)'] = _payout
             summary_data.append(data)
 
         # --- TTM column: prepend to summary_data when latest data is not full-year ---
