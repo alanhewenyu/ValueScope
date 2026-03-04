@@ -94,7 +94,7 @@ import time
 # Page config & global CSS
 # ────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="ValuX", page_icon="📊", layout="wide",
-                   initial_sidebar_state="auto")
+                   initial_sidebar_state="expanded")
 
 # ── AI availability flag (False on Streamlit Cloud where no CLI is installed) ──
 _has_ai = (_AI_ENGINE is not None)
@@ -178,12 +178,12 @@ _seo_components.html("""
 if '_lang' not in st.session_state:
     st.session_state._lang = 'en'
 
-# ── Force sidebar open on desktop; leave collapsed on mobile ──
+# ── Force sidebar open: clear cached collapsed state so sidebar always starts expanded ──
 import streamlit.components.v1 as _components
 _components.html("""
 <script>
 (function() {
-    if (window.parent.innerWidth < 768) return;  // mobile: keep sidebar collapsed
+    // Clear cached collapsed state so sidebar always starts expanded (desktop & mobile)
     Object.keys(window.parent.localStorage).forEach(function(key) {
         if (key.indexOf('stSidebarCollapsed') === 0) {
             window.parent.localStorage.removeItem(key);
