@@ -353,6 +353,9 @@ section[data-testid="stSidebar"] > div { padding-top: 0 !important; }
 [data-testid="stSidebarContent"] { padding-top: 0 !important; }
 [data-testid="stSidebarUserContent"] { padding-top: 0 !important; }
 [data-testid="stSidebarHeader"] { display: none !important; }
+@media (max-width: 768px) {
+    [data-testid="stSidebarHeader"] { display: flex !important; min-height: 44px; }
+}
 
 /* ── Sidebar labels ── */
 section[data-testid="stSidebar"] label,
@@ -395,7 +398,28 @@ section[data-testid="stSidebar"] div[data-testid="stTextInput"] input::placehold
     color: var(--vx-text-muted, #8b949e) !important; font-weight: 400 !important;
     font-size: 0.88rem !important;
 }
-div[data-testid="stSidebarCollapsedControl"] { z-index: 999999 !important; }
+div[data-testid="stSidebarCollapsedControl"] {
+    z-index: 999999 !important;
+}
+/* Mobile: make sidebar expand button larger and more visible */
+@media (max-width: 768px) {
+    div[data-testid="stSidebarCollapsedControl"] {
+        top: 0.5rem !important;
+        left: 0.5rem !important;
+    }
+    div[data-testid="stSidebarCollapsedControl"] button {
+        width: 44px !important;
+        height: 44px !important;
+        background: var(--vx-bg, #fff) !important;
+        border: 1px solid var(--vx-border, #d0d7de) !important;
+        border-radius: 10px !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.12) !important;
+    }
+    div[data-testid="stSidebarCollapsedControl"] button svg {
+        width: 20px !important;
+        height: 20px !important;
+    }
+}
 
 /* ── Sidebar brand ── */
 .sidebar-brand {
