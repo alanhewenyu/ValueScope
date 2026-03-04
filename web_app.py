@@ -178,23 +178,66 @@ _seo_components.html("""
 if '_lang' not in st.session_state:
     st.session_state._lang = 'en'
 
-# ── Force sidebar open: clear cached collapsed state so sidebar always starts expanded ──
+# ── Force sidebar open + mobile floating toggle button ──
 import streamlit.components.v1 as _components
 _components.html("""
 <script>
 (function() {
-    // Clear cached collapsed state so sidebar always starts expanded (desktop & mobile)
+    var doc = window.parent.document;
+    // Clear cached collapsed state so sidebar always starts expanded
     Object.keys(window.parent.localStorage).forEach(function(key) {
         if (key.indexOf('stSidebarCollapsed') === 0) {
             window.parent.localStorage.removeItem(key);
         }
     });
-    var sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
+    var sidebar = doc.querySelector('[data-testid="stSidebar"]');
     if (sidebar && sidebar.getAttribute('aria-expanded') === 'false') {
-        var btn = window.parent.document.querySelector('[data-testid="stSidebarCollapsedControl"] button')
-                || window.parent.document.querySelector('[data-testid="collapsedControl"] button');
+        var btn = doc.querySelector('[data-testid="stSidebarCollapsedControl"] button')
+                || doc.querySelector('[data-testid="collapsedControl"] button');
         if (btn) btn.click();
     }
+
+    // ── Mobile floating sidebar toggle ──
+    if (doc.getElementById('vx-sidebar-fab')) return;  // already injected
+    var fab = doc.createElement('button');
+    fab.id = 'vx-sidebar-fab';
+    fab.innerHTML = '☰';
+    fab.setAttribute('aria-label', 'Toggle sidebar');
+    var style = fab.style;
+    style.cssText = 'position:fixed; bottom:24px; right:20px; z-index:999999;'
+        + 'width:48px; height:48px; border-radius:50%; border:none; cursor:pointer;'
+        + 'font-size:22px; line-height:48px; text-align:center; padding:0;'
+        + 'background:#0969da; color:#fff; box-shadow:0 4px 14px rgba(0,0,0,0.25);'
+        + 'display:none; align-items:center; justify-content:center;'
+        + 'transition:transform 0.2s ease, box-shadow 0.2s ease;';
+
+    // Show only on narrow screens
+    function updateFabVisibility() {
+        fab.style.display = window.parent.innerWidth <= 768 ? 'flex' : 'none';
+    }
+    updateFabVisibility();
+    window.parent.addEventListener('resize', updateFabVisibility);
+
+    fab.addEventListener('click', function() {
+        var sb = doc.querySelector('[data-testid="stSidebar"]');
+        if (!sb) return;
+        var expanded = sb.getAttribute('aria-expanded') !== 'false';
+        // Find any close/open button inside sidebar or collapsed control
+        if (expanded) {
+            var closeBtn = sb.querySelector('[data-testid="stSidebarCollapseButton"] button')
+                || doc.querySelector('[data-testid="stSidebarHeader"] button');
+            if (closeBtn) closeBtn.click();
+        } else {
+            var openBtn = doc.querySelector('[data-testid="stSidebarCollapsedControl"] button')
+                || doc.querySelector('[data-testid="collapsedControl"] button');
+            if (openBtn) openBtn.click();
+        }
+    });
+
+    fab.addEventListener('touchstart', function() { fab.style.transform = 'scale(0.92)'; });
+    fab.addEventListener('touchend', function() { fab.style.transform = 'scale(1)'; });
+
+    doc.body.appendChild(fab);
 })();
 </script>
 """, height=0)
