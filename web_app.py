@@ -203,10 +203,10 @@ _components.html("""
     fab.id = 'vx-sidebar-fab';
     fab.innerHTML = '☰';
     fab.setAttribute('aria-label', 'Toggle sidebar');
-    fab.style.cssText = 'position:fixed; bottom:80px; left:16px; z-index:999999;'
-        + 'width:48px; height:48px; border-radius:50%; border:none; cursor:pointer;'
-        + 'font-size:22px; line-height:1; padding:0;'
-        + 'background:#0969da; color:#fff; box-shadow:0 4px 14px rgba(0,0,0,0.25);'
+    fab.style.cssText = 'position:fixed; top:14px; left:14px; z-index:999999;'
+        + 'width:40px; height:40px; border-radius:10px; border:none; cursor:pointer;'
+        + 'font-size:20px; line-height:1; padding:0;'
+        + 'background:#0969da; color:#fff; box-shadow:0 2px 10px rgba(0,0,0,0.2);'
         + 'display:none; align-items:center; justify-content:center;';
 
     // Show only on narrow screens
