@@ -203,13 +203,11 @@ _components.html("""
     fab.id = 'vx-sidebar-fab';
     fab.innerHTML = '☰';
     fab.setAttribute('aria-label', 'Toggle sidebar');
-    var style = fab.style;
-    style.cssText = 'position:fixed; bottom:24px; right:20px; z-index:999999;'
+    fab.style.cssText = 'position:fixed; bottom:80px; left:16px; z-index:999999;'
         + 'width:48px; height:48px; border-radius:50%; border:none; cursor:pointer;'
-        + 'font-size:22px; line-height:48px; text-align:center; padding:0;'
+        + 'font-size:22px; line-height:1; padding:0;'
         + 'background:#0969da; color:#fff; box-shadow:0 4px 14px rgba(0,0,0,0.25);'
-        + 'display:none; align-items:center; justify-content:center;'
-        + 'transition:transform 0.2s ease, box-shadow 0.2s ease;';
+        + 'display:none; align-items:center; justify-content:center;';
 
     // Show only on narrow screens
     function updateFabVisibility() {
@@ -218,24 +216,32 @@ _components.html("""
     updateFabVisibility();
     window.parent.addEventListener('resize', updateFabVisibility);
 
-    fab.addEventListener('click', function() {
+    fab.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
         var sb = doc.querySelector('[data-testid="stSidebar"]');
         if (!sb) return;
         var expanded = sb.getAttribute('aria-expanded') !== 'false';
-        // Find any close/open button inside sidebar or collapsed control
-        if (expanded) {
-            var closeBtn = sb.querySelector('[data-testid="stSidebarCollapseButton"] button')
-                || doc.querySelector('[data-testid="stSidebarHeader"] button');
-            if (closeBtn) closeBtn.click();
-        } else {
-            var openBtn = doc.querySelector('[data-testid="stSidebarCollapsedControl"] button')
-                || doc.querySelector('[data-testid="collapsedControl"] button');
-            if (openBtn) openBtn.click();
+        // Try clicking Streamlit's own buttons first
+        var clicked = false;
+        var selectors = expanded
+            ? ['[data-testid="stSidebarCollapseButton"] button',
+               '[data-testid="stSidebarHeader"] button',
+               'section[data-testid="stSidebar"] button[kind="header"]']
+            : ['[data-testid="stSidebarCollapsedControl"] button',
+               '[data-testid="collapsedControl"] button'];
+        for (var i = 0; i < selectors.length; i++) {
+            var btn = expanded ? sb.querySelector(selectors[i]) : doc.querySelector(selectors[i]);
+            if (btn) { btn.click(); clicked = true; break; }
+        }
+        // Fallback: directly toggle aria-expanded (works in most Streamlit versions)
+        if (!clicked) {
+            sb.setAttribute('aria-expanded', expanded ? 'false' : 'true');
         }
     });
 
-    fab.addEventListener('touchstart', function() { fab.style.transform = 'scale(0.92)'; });
-    fab.addEventListener('touchend', function() { fab.style.transform = 'scale(1)'; });
+    fab.addEventListener('touchstart', function() { fab.style.transform = 'scale(0.92)'; }, {passive:true});
+    fab.addEventListener('touchend', function() { fab.style.transform = 'scale(1)'; }, {passive:true});
 
     doc.body.appendChild(fab);
 })();
