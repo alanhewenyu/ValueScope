@@ -2563,6 +2563,16 @@ if 'summary_df' not in st.session_state:
         st.session_state.pop('_fetch_ticker', None)
         st.session_state._fetch_ready = _fetch_pending  # 'ai' or 'manual'
         st.session_state._fetch_ready_ticker = _fetch_ticker
+        # Collapse sidebar on mobile so user sees the loading/results area
+        _components.html("""<script>
+        (function(){
+            if (window.parent.innerWidth > 768) return;
+            var sb = window.parent.document.querySelector('[data-testid="stSidebar"]');
+            if (sb && sb.getAttribute('aria-expanded') !== 'false') {
+                sb.setAttribute('aria-expanded', 'false');
+            }
+        })();
+        </script>""", height=0)
         st.markdown("""
         <div style="padding:20px 16px; max-width:900px; margin:0 auto;">
             <div class="skeleton-block" style="height:42px; margin-bottom:16px; width:60%;"></div>
