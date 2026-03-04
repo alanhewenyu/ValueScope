@@ -94,7 +94,7 @@ import time
 # Page config & global CSS
 # ────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="ValuX", page_icon="📊", layout="wide",
-                   initial_sidebar_state="expanded")
+                   initial_sidebar_state="auto")
 
 # ── AI availability flag (False on Streamlit Cloud where no CLI is installed) ──
 _has_ai = (_AI_ENGINE is not None)
