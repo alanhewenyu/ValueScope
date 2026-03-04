@@ -116,17 +116,74 @@ if _GA_ID:
     </script>
     """, height=0)
 
+# ── SEO meta tags & structured data ──
+import streamlit.components.v1 as _seo_components
+_seo_components.html("""
+<script>
+(function() {
+    var doc = window.parent.document;
+    if (doc.querySelector('meta[name="description"]')) return;  // already injected
+    var head = doc.head;
+    var m = function(name, content) {
+        var el = doc.createElement('meta');
+        el.setAttribute('name', name);
+        el.setAttribute('content', content);
+        head.appendChild(el);
+    };
+    var p = function(prop, content) {
+        var el = doc.createElement('meta');
+        el.setAttribute('property', prop);
+        el.setAttribute('content', content);
+        head.appendChild(el);
+    };
+    // Basic meta
+    m('description', 'ValuX — AI-powered DCF stock valuation tool. Standardized model, real-time parameter tuning, sensitivity analysis. Free for A-shares & HK stocks.');
+    m('keywords', 'DCF, stock valuation, intrinsic value, WACC, free cash flow, AI valuation, A-shares, HK stocks, 股票估值, 现金流折现');
+    // Open Graph
+    p('og:title', 'ValuX — AI-Powered DCF Stock Valuation');
+    p('og:description', 'Standardized DCF engine with AI copilot. Real-time parameter tuning, sensitivity analysis, Excel export. Free for A-shares & HK stocks.');
+    p('og:type', 'website');
+    p('og:url', 'https://valux-dcf.streamlit.app');
+    // Twitter Card
+    m('twitter:card', 'summary');
+    m('twitter:title', 'ValuX — AI-Powered DCF Stock Valuation');
+    m('twitter:description', 'Standardized DCF engine with AI copilot. Free for A-shares & HK stocks.');
+    // Canonical URL
+    var link = doc.createElement('link');
+    link.setAttribute('rel', 'canonical');
+    link.setAttribute('href', 'https://valux-dcf.streamlit.app');
+    head.appendChild(link);
+    // JSON-LD structured data
+    var ld = doc.createElement('script');
+    ld.setAttribute('type', 'application/ld+json');
+    ld.textContent = JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "ValuX",
+        "description": "AI-powered interactive DCF stock valuation tool with standardized model, real-time parameter tuning, and sensitivity analysis.",
+        "url": "https://valux-dcf.streamlit.app",
+        "applicationCategory": "FinanceApplication",
+        "operatingSystem": "Web",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": { "@type": "Person", "name": "Alan He" }
+    });
+    head.appendChild(ld);
+})();
+</script>
+""", height=0)
+
 # ── Initialize language early so all t() calls during sidebar rendering work ──
 # Language is toggled via EN/CN buttons in the sidebar brand area.
 # They set st.session_state._lang directly and call st.rerun().
 if '_lang' not in st.session_state:
     st.session_state._lang = 'en'
 
-# ── Force sidebar open: clear browser localStorage that caches collapsed state ──
+# ── Force sidebar open on desktop; leave collapsed on mobile ──
 import streamlit.components.v1 as _components
 _components.html("""
 <script>
 (function() {
+    if (window.parent.innerWidth < 768) return;  // mobile: keep sidebar collapsed
     Object.keys(window.parent.localStorage).forEach(function(key) {
         if (key.indexOf('stSidebarCollapsed') === 0) {
             window.parent.localStorage.removeItem(key);
@@ -793,6 +850,32 @@ div[data-testid="InputInstructions"] { display: none !important; }
     .ai-live-section .section-label { font-size: 0.82rem; }
     .ai-live-section .section-value { font-size: 0.78rem; }
     .ai-live-section .section-text { font-size: 0.78rem; }
+
+    /* Force single-column layout on mobile */
+    div[data-testid="stHorizontalBlock"] {
+        flex-direction: column !important;
+    }
+    div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+        width: 100% !important;
+        flex: 1 1 100% !important;
+    }
+
+    /* Touch targets — Apple HIG minimum 44px */
+    .stButton > button,
+    a[data-testid="stDownloadButton"] > button {
+        min-height: 44px !important;
+    }
+
+    /* Disable sticky header on mobile (saves vertical space) */
+    .valux-sticky-hdr {
+        position: static !important;
+    }
+
+    /* Welcome page compact on mobile */
+    .vx-welcome {
+        padding: 40px 16px 30px 16px !important;
+    }
+    .vx-welcome p:first-child { font-size: 2.4rem !important; }
 }
 
 /* ── Tablet (769px – 1024px) ── */
@@ -2455,7 +2538,7 @@ if 'summary_df' not in st.session_state:
         if _empty_ticker_warning:
             st.warning(t('welcome_empty_warning'))
         st.markdown(f"""
-        <div style="text-align:center; padding:80px 20px 60px 20px; max-width:560px; margin:0 auto;">
+        <div class="vx-welcome" style="text-align:center; padding:80px 20px 60px 20px; max-width:560px; margin:0 auto;">
             <p style="font-size:3rem; margin-bottom:8px; line-height:1;">📊</p>
             <p style="font-size:1.5rem; font-weight:700; margin-bottom:6px; color:var(--vx-text, #1f2328);
                        background:linear-gradient(135deg, #00d2ff 0%, #7b2ff7 100%);
@@ -2495,6 +2578,12 @@ _display_mode = ss.get('_display_mode', 'valuation')  # 'fetch_only' or 'valuati
 
 # ── Company header bar ──
 _company_title = f"{ss.company_name} ({ss.ticker})"
+
+# ── Dynamic page title for SEO & better browser tab readability ──
+_escaped_title = _company_title.replace("'", "\\'").replace('"', '\\"')
+_components.html(f"""<script>
+window.parent.document.title = '{_escaped_title} — ValuX DCF';
+</script>""", height=0)
 
 # Build Excel data in advance if results exist (needed for download button)
 _excel_buf = None
