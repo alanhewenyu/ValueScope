@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-app",
+      "runtimeExecutable": "streamlit",
+      "runtimeArgs": ["run", "web_app.py"],
+      "port": 8501
+    },
+    {
+      "name": "viewer",
+      "runtimeExecutable": "streamlit",
+      "runtimeArgs": ["run", "viewer.py", "--server.port", "8502"],
+      "port": 8502
+    }
+  ]
+}
