@@ -752,7 +752,9 @@ if not os.path.exists(DB_PATH):
 all_modes, all_engines = _get_filter_options()
 col_search, col_mode, col_engine, col_d1, col_d2 = st.columns([4, 2, 2, 2, 2])
 with col_search:
-    search_query = st.text_input("🔍 Search", placeholder="e.g. Tencent, NYT",
+    _default_search = st.query_params.get("search", "")
+    search_query = st.text_input("🔍 Search", value=_default_search,
+                                  placeholder="e.g. Tencent, NYT",
                                   key="search_box")
 with col_mode:
     selected_modes = st.multiselect("Mode", all_modes, default=[])
