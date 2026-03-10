@@ -1437,3 +1437,252 @@ def _warn_if_out_of_range(key, value):
         low, high = ranges[key]
         if v < low or v > high:
             print(f"  {S.warning(f'⚠ 警告: 该值 ({v}) 超出通常范围 ({low} ~ {high})，请仔细确认')}")
+
+
+# ---------------------------------------------------------------------------
+# Cloud AI: Serper.dev (Google search) + DeepSeek API (reasoning)
+# Used on Streamlit Cloud where no CLI is installed.
+# ---------------------------------------------------------------------------
+
+import requests as _requests
+
+
+def _serper_search(query, api_key, num_results=5):
+    """Run a Google search via Serper.dev API. Returns list of {title, snippet, link}."""
+    resp = _requests.post(
+        "https://google.serper.dev/search",
+        headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
+        json={"q": query, "num": num_results},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    results = []
+    # Include answer box if present
+    if "answerBox" in data:
+        ab = data["answerBox"]
+        snippet = ab.get("answer", ab.get("snippet", ""))
+        if snippet:
+            results.append({"title": ab.get("title", "Answer Box"), "snippet": snippet, "link": ""})
+    for item in data.get("organic", []):
+        results.append({
+            "title": item.get("title", ""),
+            "snippet": item.get("snippet", ""),
+            "link": item.get("link", ""),
+        })
+    return results[:num_results]
+
+
+def _deepseek_chat(prompt, api_key, model="deepseek-chat"):
+    """Call DeepSeek API (OpenAI-compatible) and return response text."""
+    resp = _requests.post(
+        "https://api.deepseek.com/chat/completions",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.3,
+            "max_tokens": 8192,
+        },
+        timeout=120,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    return data["choices"][0]["message"]["content"]
+
+
+def _format_search_results(queries, all_results):
+    """Format search results into a readable text block for prompt injection."""
+    sections = []
+    for i, query in enumerate(queries):
+        results = all_results.get(i, [])
+        lines = [f"### Search {i+1}: {query}"]
+        if not results:
+            lines.append("（No results found）")
+        else:
+            for r in results:
+                title = r.get("title", "")
+                snippet = r.get("snippet", "")
+                link = r.get("link", "")
+                lines.append(f"- **{title}**")
+                if snippet:
+                    lines.append(f"  {snippet}")
+                if link:
+                    lines.append(f"  Source: {link}")
+        sections.append("\n".join(lines))
+    return "\n\n".join(sections)
+
+
+def _build_cloud_analysis_prompt(template_args, search_context, lang='zh'):
+    """Build analysis prompt with search results injected (no WebSearch tool needed).
+
+    Uses the same ANALYSIS_PROMPT_TEMPLATE but replaces the WebSearch instructions
+    with pre-fetched search results.
+    """
+    _template = ANALYSIS_PROMPT_TEMPLATE if lang == 'zh' else ANALYSIS_PROMPT_TEMPLATE_EN
+    prompt = _template.format(**template_args)
+
+    # Replace the WebSearch instructions block with search results
+    if lang == 'zh':
+        search_instruction_marker = "**重要：请务必先使用 WebSearch 工具搜索以下信息再开始分析：**"
+        replacement_header = "**以下是通过 Google 搜索获取的最新市场数据，请基于这些数据进行分析（你没有 WebSearch 工具，请直接使用下面的搜索结果）：**"
+    else:
+        search_instruction_marker = "**Important: You MUST use WebSearch to search for the following information before starting your analysis:**"
+        replacement_header = "**The following market data has been retrieved via Google Search. Analyze based on these results (you do NOT have WebSearch — use the search results below directly):**"
+
+    # Find and replace the search instructions block
+    marker_pos = prompt.find(search_instruction_marker)
+    if marker_pos >= 0:
+        # Find the end of the search instructions (before the next ## section)
+        next_section = prompt.find("\n## ", marker_pos + len(search_instruction_marker))
+        if next_section < 0:
+            # Try finding the --- separator
+            next_section = prompt.find("\n---", marker_pos + len(search_instruction_marker))
+        if next_section >= 0:
+            prompt = (
+                prompt[:marker_pos]
+                + replacement_header + "\n\n"
+                + search_context + "\n\n"
+                + prompt[next_section:]
+            )
+
+    return prompt
+
+
+def _build_cloud_gap_prompt(template_args, search_context, lang='zh'):
+    """Build gap analysis prompt with search results injected."""
+    _template = GAP_ANALYSIS_PROMPT_TEMPLATE if lang == 'zh' else GAP_ANALYSIS_PROMPT_TEMPLATE_EN
+    prompt = _template.format(**template_args)
+
+    # Replace the WebSearch instructions block with search results
+    if lang == 'zh':
+        search_instruction_marker = "**请使用 WebSearch 搜索以下信息来辅助分析"
+    else:
+        search_instruction_marker = "**Please use WebSearch to search for the following information"
+
+    marker_pos = prompt.find(search_instruction_marker)
+    if marker_pos >= 0:
+        # Find the end of the search instructions block (before the analysis instructions)
+        if lang == 'zh':
+            next_section_marker = "\n请用**中文**进行分析"
+        else:
+            next_section_marker = "\nPlease conduct your analysis in **English**"
+        next_section = prompt.find(next_section_marker, marker_pos)
+        if next_section >= 0:
+            if lang == 'zh':
+                replacement = (
+                    "**以下是通过 Google 搜索获取的最新市场数据，请基于这些数据进行分析"
+                    "（你没有 WebSearch 工具，请直接使用下面的搜索结果）：**\n\n"
+                    + search_context + "\n"
+                )
+            else:
+                replacement = (
+                    "**The following market data has been retrieved via Google Search. "
+                    "Analyze based on these results (you do NOT have WebSearch):**\n\n"
+                    + search_context + "\n"
+                )
+            prompt = prompt[:marker_pos] + replacement + prompt[next_section:]
+
+    return prompt
+
+
+def cloud_ai_analyze(template_args, serper_key, deepseek_key, lang='zh',
+                     progress_callback=None):
+    """Cloud AI analysis: run Serper searches, then call DeepSeek for reasoning.
+
+    Args:
+        template_args: dict of format parameters for ANALYSIS_PROMPT_TEMPLATE
+        serper_key: Serper.dev API key
+        deepseek_key: DeepSeek API key
+        lang: 'zh' or 'en'
+        progress_callback: optional callable(phase, message) for UI updates
+
+    Returns:
+        str: AI response text containing JSON parameters
+    """
+    ticker = template_args['ticker']
+    search_year = template_args['search_year']
+    search_year_2 = template_args['search_year_2']
+
+    # Step 1: Run 4 Serper searches
+    queries = [
+        f"{ticker} earnings guidance revenue outlook {search_year}",
+        f"{ticker} revenue forecast analyst consensus {search_year} {search_year_2}",
+        f"{ticker} EBIT margin operating margin industry average",
+        f"{ticker} WACC cost of capital",
+    ]
+
+    all_results = {}
+    for i, query in enumerate(queries):
+        if progress_callback:
+            progress_callback('searching', query)
+        try:
+            all_results[i] = _serper_search(query, serper_key)
+        except Exception as e:
+            all_results[i] = [{"title": "Search Error", "snippet": str(e), "link": ""}]
+
+    search_context = _format_search_results(queries, all_results)
+
+    # Step 2: Build prompt with search results
+    if progress_callback:
+        progress_callback('analyzing', None)
+    prompt = _build_cloud_analysis_prompt(template_args, search_context, lang)
+
+    # Step 3: Call DeepSeek
+    if progress_callback:
+        progress_callback('generating', None)
+    text = _deepseek_chat(prompt, deepseek_key)
+
+    return text
+
+
+def cloud_gap_analyze(template_args, serper_key, deepseek_key, lang='zh',
+                      progress_callback=None):
+    """Cloud AI gap analysis: run Serper searches, then call DeepSeek.
+
+    Args:
+        template_args: dict of format parameters for GAP_ANALYSIS_PROMPT_TEMPLATE
+        serper_key: Serper.dev API key
+        deepseek_key: DeepSeek API key
+        lang: 'zh' or 'en'
+        progress_callback: optional callable(phase, message)
+
+    Returns:
+        str: AI analysis text with ADJUSTED_PRICE line
+    """
+    ticker = template_args['ticker']
+    company_name = template_args['company_name']
+    forecast_year = template_args.get('forecast_year', '')
+    current_year = template_args.get('current_year', '')
+
+    # Gap analysis searches
+    queries = [
+        f"{ticker} analyst price target {forecast_year}",
+        f"{ticker} latest news {current_year}",
+        f"{ticker} risks headwinds {current_year}",
+        f"{company_name} growth catalysts outlook {current_year}",
+    ]
+
+    all_results = {}
+    for i, query in enumerate(queries):
+        if progress_callback:
+            progress_callback('searching', query)
+        try:
+            all_results[i] = _serper_search(query, serper_key)
+        except Exception as e:
+            all_results[i] = [{"title": "Search Error", "snippet": str(e), "link": ""}]
+
+    search_context = _format_search_results(queries, all_results)
+
+    if progress_callback:
+        progress_callback('analyzing', None)
+    prompt = _build_cloud_gap_prompt(template_args, search_context, lang)
+
+    if progress_callback:
+        progress_callback('generating', None)
+    text = _deepseek_chat(prompt, deepseek_key)
+
+    return text

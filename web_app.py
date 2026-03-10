@@ -80,6 +80,8 @@ from modeling.ai_analyst import (
     _ENGINE_LABELS,
     _CLAUDE_MODEL_DISPLAY,
     GEMINI_MODEL,
+    cloud_ai_analyze,
+    cloud_gap_analyze,
 )
 import modeling.ai_analyst as _ai_mod
 from modeling.excel_export import write_to_excel
@@ -96,8 +98,24 @@ import time
 st.set_page_config(page_title="ValuX", page_icon="📊", layout="wide",
                    initial_sidebar_state="expanded")
 
-# ── AI availability flag (False on Streamlit Cloud where no CLI is installed) ──
+# ── AI availability flags ──
+# _has_ai: local CLI (Claude/Gemini/Qwen) is installed
+# _has_cloud_ai: Serper + DeepSeek API keys are available (for Streamlit Cloud)
 _has_ai = (_AI_ENGINE is not None)
+
+def _get_secret(key):
+    """Get a secret from environment or Streamlit secrets."""
+    val = os.environ.get(key, "")
+    if not val:
+        try:
+            val = st.secrets.get(key, "")
+        except Exception:
+            val = ""
+    return val
+
+_SERPER_API_KEY = _get_secret("SERPER_API_KEY")
+_DEEPSEEK_API_KEY = _get_secret("DEEPSEEK_API_KEY")
+_has_cloud_ai = bool(_SERPER_API_KEY and _DEEPSEEK_API_KEY)
 
 # ── Google Analytics ──
 try:
@@ -1086,7 +1104,7 @@ with st.sidebar:
     st.markdown(f"""
     <div class="sidebar-brand">
         <h1>ValuX</h1>
-        <div class="sub">{t('sidebar_brand_sub_web') if not _has_ai else t('sidebar_brand_sub')}</div>
+        <div class="sub">{t('sidebar_brand_sub_web') if not (_has_ai or _has_cloud_ai) else t('sidebar_brand_sub')}</div>
     </div>
     """, unsafe_allow_html=True)
     # ── Language switch: two tiny buttons styled as text ──
@@ -1139,12 +1157,13 @@ with st.sidebar:
     </script>""", height=0)
 
     ticker_input = st.text_input(
-        t('sidebar_ticker_label_web') if not _has_ai else t('sidebar_ticker_label'),
-        placeholder=t('sidebar_ticker_placeholder_web') if not _has_ai else t('sidebar_ticker_placeholder'),
+        t('sidebar_ticker_label_web') if not (_has_ai or _has_cloud_ai) else t('sidebar_ticker_label'),
+        placeholder=t('sidebar_ticker_placeholder_web') if not (_has_ai or _has_cloud_ai) else t('sidebar_ticker_placeholder'),
         label_visibility="visible",
     )
 
     # ── Action buttons ──
+    _any_ai = _has_ai or _has_cloud_ai
     if 'use_ai' not in st.session_state:
         st.session_state.use_ai = bool(_AI_ENGINE)
 
@@ -1155,12 +1174,12 @@ with st.sidebar:
                                 help=t('sidebar_manual_help'), key='manual_btn',
                                 type="secondary")
     else:
-        # Web version: explicit Go button (Enter detection kept as bonus)
+        # Web version (with or without cloud AI): Go button
         st.markdown('<div style="margin-top:8px;"></div>', unsafe_allow_html=True)
         manual_btn = st.button(t('sidebar_go_btn'), use_container_width=True,
-                                key='go_btn', type="primary")
+                                key='go_btn', type="primary" if not _has_cloud_ai else "secondary")
 
-    if _has_ai:
+    if _any_ai:
         st.markdown(
             '<div style="display:flex; align-items:center; justify-content:center; gap:8px; '
             'margin:2px 0; padding:0;">'
@@ -2267,8 +2286,154 @@ def _parse_cli_output(raw, engine, engine_label, returncode, stderr_content):
     return text
 
 
+def _run_cloud_ai_analysis():
+    """Run cloud AI analysis (Serper + DeepSeek). Returns True on success."""
+    s = st.session_state
+    s._ai_running = True
+    try:
+        company_name = s.company_profile.get('companyName', s.ticker)
+        _lang = s.get('_lang', 'en')
+
+        # Build template args (same as _build_analysis_prompt but as dict)
+        country = s.company_profile.get('country', 'United States')
+        beta = s.company_profile.get('beta', 1.0)
+        market_cap = s.company_profile.get('marketCap', 0)
+        financial_table = s.summary_df.to_string()
+        base_year = s.base_year
+        ttm_quarter = s.ttm_quarter if s.is_ttm else ''
+        ttm_end_date = s.ttm_end_date if s.is_ttm else ''
+
+        if ttm_end_date and ttm_quarter:
+            _end_month = int(ttm_end_date[5:7])
+            _end_year = int(ttm_end_date[:4])
+            forecast_year_1 = _end_year if _end_month <= 6 else _end_year + 1
+        else:
+            forecast_year_1 = base_year + 1
+
+        _ttm_year_label = str(base_year + 1) if ttm_quarter else ''
+        if ttm_quarter:
+            _ttm_label = f'{_ttm_year_label}{ttm_quarter} TTM'
+            if _lang == 'zh':
+                ttm_context = f'，数据为 {_ttm_label}（截至 {ttm_end_date} 的最近十二个月）'
+                forecast_year_guidance = (
+                    f'DCF 预测 Year 1 覆盖从 {ttm_end_date} 起的未来12个月（大致对应 {forecast_year_1} 日历年）。'
+                    f'请以 {forecast_year_1} 年作为 Year 1 的参考年份搜索业绩指引和分析师预期。'
+                )
+            else:
+                ttm_context = f', data is {_ttm_label} (trailing twelve months ending {ttm_end_date})'
+                forecast_year_guidance = (
+                    f'DCF Year 1 covers the next 12 months from {ttm_end_date} '
+                    f'(roughly corresponding to calendar year {forecast_year_1}). '
+                    f'Use {forecast_year_1} as the reference year when searching for earnings guidance.'
+                )
+            ttm_base_label = f' ({_ttm_label})'
+        else:
+            ttm_context = ''
+            ttm_base_label = ''
+            if _lang == 'zh':
+                forecast_year_guidance = f'Year 1 对应 {forecast_year_1} 年。'
+            else:
+                forecast_year_guidance = f'Year 1 corresponds to fiscal year {forecast_year_1}.'
+
+        template_args = dict(
+            ticker=s.ticker,
+            company_name=company_name,
+            country=country,
+            beta=beta,
+            market_cap=f"{market_cap:,.0f}",
+            calculated_wacc=f"{s.wacc:.2%}",
+            calculated_tax_rate=f"{s.average_tax_rate:.2%}",
+            financial_table=financial_table,
+            base_year=base_year,
+            forecast_year_guidance=forecast_year_guidance,
+            search_year=forecast_year_1,
+            search_year_2=forecast_year_1 + 1,
+            ttm_context=ttm_context,
+            ttm_base_label=ttm_base_label,
+        )
+
+        # Run cloud AI with st.status progress
+        start_time = time.time()
+        status_label = t('ai_status_label', company=company_name)
+
+        toast_placeholder = st.empty()
+
+        with st.status(f"🤖 {status_label} via DeepSeek", expanded=True) as status:
+            progress_ph = st.empty()
+
+            def _progress(phase, message):
+                elapsed = time.time() - start_time
+                if phase == 'searching':
+                    progress_ph.write(t('cloud_searching', query=message))
+                    _render_progress_toast(toast_placeholder,
+                                            f'🤖 {status_label} — DeepSeek',
+                                            t('cloud_searching', query=(message or '')[:60]),
+                                            elapsed)
+                elif phase == 'analyzing':
+                    progress_ph.write(t('cloud_analyzing'))
+                    _render_progress_toast(toast_placeholder,
+                                            f'🤖 {status_label} — DeepSeek',
+                                            t('cloud_analyzing'), elapsed)
+                elif phase == 'generating':
+                    progress_ph.write(t('cloud_generating'))
+                    _render_progress_toast(toast_placeholder,
+                                            f'🤖 {status_label} — DeepSeek',
+                                            t('cloud_generating'), elapsed)
+
+            text = cloud_ai_analyze(
+                template_args, _SERPER_API_KEY, _DEEPSEEK_API_KEY,
+                lang=_lang, progress_callback=_progress)
+
+            elapsed = time.time() - start_time
+            status.update(
+                label=t('cloud_ai_complete', elapsed=elapsed),
+                state="complete", expanded=False)
+
+        # Show completion toast briefly, then clear
+        _render_progress_toast(toast_placeholder,
+                                t('ai_toast_complete_title', label=status_label),
+                                t('ai_toast_complete_msg', engine='DeepSeek'),
+                                elapsed, done=True)
+        time.sleep(2)
+        toast_placeholder.empty()
+
+        # Set detected model name for display
+        _ai_mod._detected_model_name = 'DeepSeek'
+
+        parameters = _parse_structured_parameters(text)
+        if parameters is None:
+            st.error(t('err_ai_parse'))
+            s._ai_running = False
+            return False
+
+        s.ai_result = {
+            "parameters": parameters,
+            "raw_text": text,
+        }
+        s.pop('user_params_modified', None)
+        for _k in ('results', 'sensitivity_table', 'wacc_results',
+                    'wacc_base', 'valuation_params', 'gap_analysis_result',
+                    '_last_dcf_input_snapshot',
+                    'p_rg1', 'p_rg2', 'p_em', 'p_conv', 'p_tax',
+                    'p_ric1', 'p_ric2', 'p_ric3', 'p_wacc'):
+            s.pop(_k, None)
+
+        s._reasoning_just_completed = True
+        s._ai_running = False
+        return True
+    except Exception as e:
+        s._ai_running = False
+        st.error(t('err_ai_failed', msg=str(e)))
+        return False
+
+
 def _run_ai_analysis():
-    """Run AI analysis with live reasoning display; store result in session_state. Returns True on success."""
+    """Run AI analysis; routes to cloud or CLI based on availability. Returns True on success."""
+    # Cloud AI path (Serper + DeepSeek) — used on Streamlit Cloud
+    if _has_cloud_ai and not _has_ai:
+        return _run_cloud_ai_analysis()
+
+    # Local CLI path (Claude/Gemini/Qwen)
     s = st.session_state
     s._ai_running = True  # Signal that AI is running (disables header buttons)
     try:
@@ -2440,8 +2605,13 @@ def _run_gap_analysis_streaming(ticker, company_profile, results, valuation_para
             )
 
     financial_table = summary_df.to_string()
-    _gap_template = GAP_ANALYSIS_PROMPT_TEMPLATE if _lang == 'zh' else GAP_ANALYSIS_PROMPT_TEMPLATE_EN
-    prompt = _gap_template.format(
+    from datetime import date as _date
+    _today = _date.today()
+    current_date_str = _today.strftime('%Y-%m-%d')
+    current_year = _today.year
+    _forecast_year = forecast_year_1 if forecast_year_1 else base_year + 1
+
+    _gap_template_args = dict(
         company_name=company_name, ticker=ticker, country=country,
         current_price=current_price, currency=stock_currency,
         dcf_price=dcf_price, gap_pct=gap_pct, gap_direction=gap_direction,
@@ -2455,12 +2625,40 @@ def _run_gap_analysis_streaming(ticker, company_profile, results, valuation_para
         enterprise_value=results['enterprise_value'],
         equity_value=results['equity_value'],
         financial_table=financial_table,
-        forecast_year=forecast_year_1 if forecast_year_1 else base_year + 1,
+        forecast_year=_forecast_year,
+        current_date=current_date_str,
+        current_year=current_year,
     )
-    if currency_note:
-        prompt += currency_note
 
-    analysis_text, _ = _run_ai_streaming(prompt, status_label=t('gap_status_label'))
+    # ── Cloud AI path for gap analysis ──
+    if _has_cloud_ai and not _has_ai:
+        import time as _time
+        _t0 = _time.time()
+        with st.status(t('gap_status_label'), expanded=True) as status:
+            def _gap_progress(phase, msg):
+                if phase == 'searching':
+                    status.update(label=t('cloud_searching').format(query=msg))
+                elif phase == 'analyzing':
+                    status.update(label=t('cloud_analyzing'))
+                elif phase == 'generating':
+                    status.update(label=t('cloud_generating'))
+
+            try:
+                analysis_text = cloud_gap_analyze(
+                    _gap_template_args, _SERPER_API_KEY, _DEEPSEEK_API_KEY,
+                    lang=_lang, progress_callback=_gap_progress,
+                )
+                _elapsed = _time.time() - _t0
+                status.update(label=t('cloud_ai_complete').format(elapsed=_elapsed), state="complete")
+            except Exception as e:
+                status.update(label=f"Error: {e}", state="error")
+                return None
+    else:
+        _gap_template = GAP_ANALYSIS_PROMPT_TEMPLATE if _lang == 'zh' else GAP_ANALYSIS_PROMPT_TEMPLATE_EN
+        prompt = _gap_template.format(**_gap_template_args)
+        if currency_note:
+            prompt += currency_note
+        analysis_text, _ = _run_ai_streaming(prompt, status_label=t('gap_status_label'))
 
     # Parse adjusted price
     adjusted_price = None
@@ -2629,7 +2827,7 @@ if 'summary_df' not in st.session_state:
                 ValuX
             </p>
             <p style="font-size:1.05rem; color:var(--vx-text-secondary, #656d76); line-height:1.6; margin-bottom:20px;">
-                {t('welcome_instruction_web') if not _has_ai else t('welcome_instruction')}
+                {t('welcome_instruction_web') if not (_has_ai or _has_cloud_ai) else t('welcome_instruction')}
             </p>
             <div style="display:flex; justify-content:center; gap:12px; flex-wrap:wrap; margin-bottom:20px;">
                 <span style="font-size:0.8rem; padding:4px 14px; border-radius:20px;
@@ -2707,7 +2905,7 @@ with _hdr_container:
 
     if _has_results:
         # Post-DCF: company name + Financials + [Gap (AI only)] + Excel
-        if _has_ai:
+        if _has_ai or _has_cloud_ai:
             _hcols = st.columns([3.5, 1, 1, 1])
         else:
             _hcols = st.columns([4.5, 1, 1])
@@ -2719,7 +2917,7 @@ with _hdr_container:
         with _hcols[1]:
             _fin_toggled = st.button(_fin_btn_label, use_container_width=True,
                                       key="fin_data_toggle")
-        if _has_ai:
+        if _has_ai or _has_cloud_ai:
             with _hcols[2]:
                 current_price = ss.company_profile.get('price', 0)
                 if current_price and current_price > 0:
@@ -3435,6 +3633,6 @@ elif _gap_just_done:
 # ── Footer — tagline only ──
 st.markdown(f"""
 <div style="margin-top:48px; padding:16px 0 8px 0; border-top:1px solid var(--vx-border-light, #d0d7de); text-align:center; color:var(--vx-text-muted, #8b949e); font-size:0.78rem;">
-    {t('footer_tagline_web') if not _has_ai else t('footer_tagline')}
+    {t('footer_tagline_web') if not (_has_ai or _has_cloud_ai) else t('footer_tagline')}
 </div>
 """, unsafe_allow_html=True)
