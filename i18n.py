@@ -185,10 +185,11 @@ _STRINGS = {
 
         # Cloud AI phase labels
         'cloud_searching': '\U0001f50d Searching: {query}',
-        'cloud_analyzing': '\U0001f916 DeepSeek analyzing valuation parameters...',
+        'cloud_scraping': '\U0001f4c4 Reading page: {url}',
+        'cloud_analyzing': '\U0001f916 DeepSeek R1 analyzing with deep reasoning...',
         'cloud_generating': '\U0001f4ca Generating structured output...',
         'cloud_search_done': '\u2705 {count} searches complete',
-        'cloud_ai_complete': '\u2705 AI analysis complete via DeepSeek ({elapsed:.0f}s)',
+        'cloud_ai_complete': '\u2705 AI analysis complete via DeepSeek R1 ({elapsed:.0f}s)',
 
         # Rotating wait messages
         'wait_1': '\U0001f50d Searching for latest earnings guidance and analyst consensus...',
@@ -469,10 +470,11 @@ _STRINGS = {
 
         # Cloud AI phase labels
         'cloud_searching': '\U0001f50d \u641c\u7d22\u4e2d\uff1a{query}',
-        'cloud_analyzing': '\U0001f916 DeepSeek \u6b63\u5728\u5206\u6790\u4f30\u503c\u53c2\u6570\u2026',
+        'cloud_scraping': '\U0001f4c4 \u6b63\u5728\u8bfb\u53d6\u7f51\u9875\uff1a{url}',
+        'cloud_analyzing': '\U0001f916 DeepSeek R1 \u6df1\u5ea6\u63a8\u7406\u5206\u6790\u4e2d\u2026',
         'cloud_generating': '\U0001f4ca \u6b63\u5728\u751f\u6210\u7ed3\u6784\u5316\u8f93\u51fa\u2026',
         'cloud_search_done': '\u2705 {count} \u6b21\u641c\u7d22\u5b8c\u6210',
-        'cloud_ai_complete': '\u2705 AI \u5206\u6790\u5b8c\u6210\uff0c\u4f7f\u7528 DeepSeek\uff08{elapsed:.0f}\u79d2\uff09',
+        'cloud_ai_complete': '\u2705 AI \u5206\u6790\u5b8c\u6210\uff0c\u4f7f\u7528 DeepSeek R1\uff08{elapsed:.0f}\u79d2\uff09',
 
         # Rotating wait messages
         'wait_1': '\U0001f50d \u6b63\u5728\u641c\u7d22\u6700\u65b0\u4e1a\u7ee9\u6307\u5f15\u548c\u5206\u6790\u5e08\u5171\u8bc6\u2026',

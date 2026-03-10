@@ -1473,29 +1473,73 @@ def _serper_search(query, api_key, num_results=5):
     return results[:num_results]
 
 
-def _deepseek_chat(prompt, api_key, model="deepseek-chat"):
-    """Call DeepSeek API (OpenAI-compatible) and return response text."""
+def _serper_scrape(url, api_key, max_chars=6000):
+    """Scrape a webpage via Serper.dev Scrape API. Returns markdown/text content.
+
+    Args:
+        url: URL to scrape
+        api_key: Serper.dev API key
+        max_chars: Maximum characters to return (to keep prompt size reasonable)
+
+    Returns:
+        str: Scraped page content (markdown), or empty string on failure
+    """
+    try:
+        resp = _requests.post(
+            "https://scrape.serper.dev",
+            headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
+            json={"url": url, "includeMarkdown": True},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        # Prefer markdown content, fall back to text
+        content = data.get("markdown", data.get("text", ""))
+        if content and len(content) > max_chars:
+            content = content[:max_chars] + "\n...(truncated)"
+        return content
+    except Exception:
+        return ""
+
+
+def _deepseek_chat(prompt, api_key, model="deepseek-reasoner"):
+    """Call DeepSeek API (OpenAI-compatible) and return response text.
+
+    Supports both deepseek-chat and deepseek-reasoner models.
+    For deepseek-reasoner: temperature/top_p are ignored (no error), response
+    includes reasoning_content field alongside content.
+    """
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 16384,
+    }
+    # Only set temperature for non-reasoner models (reasoner ignores it)
+    if model != "deepseek-reasoner":
+        payload["temperature"] = 0.3
+
     resp = _requests.post(
         "https://api.deepseek.com/chat/completions",
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         },
-        json={
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.3,
-            "max_tokens": 8192,
-        },
-        timeout=120,
+        json=payload,
+        timeout=300,  # reasoner needs more time for CoT
     )
     resp.raise_for_status()
     data = resp.json()
     return data["choices"][0]["message"]["content"]
 
 
-def _format_search_results(queries, all_results):
-    """Format search results into a readable text block for prompt injection."""
+def _format_search_results(queries, all_results, scraped_pages=None):
+    """Format search results into a readable text block for prompt injection.
+
+    Args:
+        queries: list of search query strings
+        all_results: dict mapping query index -> list of search result dicts
+        scraped_pages: optional dict mapping URL -> scraped content string
+    """
     sections = []
     for i, query in enumerate(queries):
         results = all_results.get(i, [])
@@ -1512,6 +1556,11 @@ def _format_search_results(queries, all_results):
                     lines.append(f"  {snippet}")
                 if link:
                     lines.append(f"  Source: {link}")
+                # Append full page content if scraped
+                if scraped_pages and link and link in scraped_pages:
+                    page_content = scraped_pages[link]
+                    if page_content:
+                        lines.append(f"\n  <page_content source=\"{link}\">\n{page_content}\n  </page_content>")
         sections.append("\n".join(lines))
     return "\n\n".join(sections)
 
@@ -1589,9 +1638,24 @@ def _build_cloud_gap_prompt(template_args, search_context, lang='zh'):
     return prompt
 
 
+def _collect_top_links(all_results, max_links=3):
+    """Collect unique top links from search results for scraping."""
+    seen = set()
+    links = []
+    for i in sorted(all_results.keys()):
+        for r in all_results[i]:
+            link = r.get("link", "")
+            if link and link not in seen and not link.endswith(".pdf"):
+                seen.add(link)
+                links.append(link)
+                if len(links) >= max_links:
+                    return links
+    return links
+
+
 def cloud_ai_analyze(template_args, serper_key, deepseek_key, lang='zh',
                      progress_callback=None):
-    """Cloud AI analysis: run Serper searches, then call DeepSeek for reasoning.
+    """Cloud AI analysis: run Serper searches, scrape top pages, call DeepSeek Reasoner.
 
     Args:
         template_args: dict of format parameters for ANALYSIS_PROMPT_TEMPLATE
@@ -1604,15 +1668,18 @@ def cloud_ai_analyze(template_args, serper_key, deepseek_key, lang='zh',
         str: AI response text containing JSON parameters
     """
     ticker = template_args['ticker']
+    company_name = template_args.get('company_name', ticker)
     search_year = template_args['search_year']
     search_year_2 = template_args['search_year_2']
 
-    # Step 1: Run 4 Serper searches
+    # Step 1: Run 6 Serper searches (expanded from 4)
     queries = [
         f"{ticker} earnings guidance revenue outlook {search_year}",
         f"{ticker} revenue forecast analyst consensus {search_year} {search_year_2}",
-        f"{ticker} EBIT margin operating margin industry average",
-        f"{ticker} WACC cost of capital",
+        f"{ticker} EBIT margin operating margin trend",
+        f"{ticker} WACC cost of capital discount rate",
+        f"{company_name} latest quarterly earnings results analysis",
+        f"{company_name} industry competitive landscape growth drivers {search_year}",
     ]
 
     all_results = {}
@@ -1624,24 +1691,34 @@ def cloud_ai_analyze(template_args, serper_key, deepseek_key, lang='zh',
         except Exception as e:
             all_results[i] = [{"title": "Search Error", "snippet": str(e), "link": ""}]
 
-    search_context = _format_search_results(queries, all_results)
+    # Step 2: Scrape top 3 search result pages for full content
+    scraped_pages = {}
+    top_links = _collect_top_links(all_results, max_links=3)
+    for link in top_links:
+        if progress_callback:
+            progress_callback('scraping', link)
+        content = _serper_scrape(link, serper_key, max_chars=6000)
+        if content:
+            scraped_pages[link] = content
 
-    # Step 2: Build prompt with search results
+    search_context = _format_search_results(queries, all_results, scraped_pages)
+
+    # Step 3: Build prompt with search results + scraped content
     if progress_callback:
         progress_callback('analyzing', None)
     prompt = _build_cloud_analysis_prompt(template_args, search_context, lang)
 
-    # Step 3: Call DeepSeek
+    # Step 4: Call DeepSeek Reasoner (R1 with chain-of-thought)
     if progress_callback:
         progress_callback('generating', None)
-    text = _deepseek_chat(prompt, deepseek_key)
+    text = _deepseek_chat(prompt, deepseek_key, model="deepseek-reasoner")
 
     return text
 
 
 def cloud_gap_analyze(template_args, serper_key, deepseek_key, lang='zh',
                       progress_callback=None):
-    """Cloud AI gap analysis: run Serper searches, then call DeepSeek.
+    """Cloud AI gap analysis: run Serper searches, scrape pages, call DeepSeek Reasoner.
 
     Args:
         template_args: dict of format parameters for GAP_ANALYSIS_PROMPT_TEMPLATE
@@ -1658,12 +1735,14 @@ def cloud_gap_analyze(template_args, serper_key, deepseek_key, lang='zh',
     forecast_year = template_args.get('forecast_year', '')
     current_year = template_args.get('current_year', '')
 
-    # Gap analysis searches
+    # Gap analysis searches (expanded from 4 to 6)
     queries = [
-        f"{ticker} analyst price target {forecast_year}",
-        f"{ticker} latest news {current_year}",
-        f"{ticker} risks headwinds {current_year}",
+        f"{ticker} analyst price target consensus {forecast_year}",
+        f"{ticker} latest news earnings {current_year}",
+        f"{ticker} risks headwinds challenges {current_year}",
         f"{company_name} growth catalysts outlook {current_year}",
+        f"{ticker} valuation analysis fair value {current_year}",
+        f"{ticker} competitive position market share {current_year}",
     ]
 
     all_results = {}
@@ -1675,7 +1754,17 @@ def cloud_gap_analyze(template_args, serper_key, deepseek_key, lang='zh',
         except Exception as e:
             all_results[i] = [{"title": "Search Error", "snippet": str(e), "link": ""}]
 
-    search_context = _format_search_results(queries, all_results)
+    # Scrape top 3 search result pages for full content
+    scraped_pages = {}
+    top_links = _collect_top_links(all_results, max_links=3)
+    for link in top_links:
+        if progress_callback:
+            progress_callback('scraping', link)
+        content = _serper_scrape(link, serper_key, max_chars=6000)
+        if content:
+            scraped_pages[link] = content
+
+    search_context = _format_search_results(queries, all_results, scraped_pages)
 
     if progress_callback:
         progress_callback('analyzing', None)
@@ -1683,6 +1772,6 @@ def cloud_gap_analyze(template_args, serper_key, deepseek_key, lang='zh',
 
     if progress_callback:
         progress_callback('generating', None)
-    text = _deepseek_chat(prompt, deepseek_key)
+    text = _deepseek_chat(prompt, deepseek_key, model="deepseek-reasoner")
 
     return text
