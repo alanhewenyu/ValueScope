@@ -1141,12 +1141,27 @@ def _get_client_id():
     return 'local'
 
 
+def _is_admin():
+    """Check if current user is admin via ?admin=<key> query param."""
+    admin_key = os.environ.get('VALUX_ADMIN_KEY', '')
+    if not admin_key:
+        return False
+    try:
+        params = st.query_params
+        return params.get('admin', '') == admin_key
+    except Exception:
+        return False
+
+
 def _check_ai_quota():
     """Returns (allowed: bool, used: int, limit: int).
 
+    Admin users (via ?admin=<key>) bypass the limit entirely.
     Uses DB-backed tracking when VALUX_DB_PATH is set, otherwise falls back
     to session-state tracking (per-session, per-IP).
     """
+    if _is_admin():
+        return True, 0, 0  # Admin = unlimited
     limit = int(os.environ.get('VALUX_AI_DAILY_LIMIT', '5'))
     if limit <= 0:  # 0 or negative = unlimited
         return True, 0, 0
@@ -1163,7 +1178,9 @@ def _check_ai_quota():
 
 
 def _record_ai_usage(ticker=None):
-    """Record an AI usage event (DB + session-state fallback)."""
+    """Record an AI usage event (DB + session-state fallback). Admin skips recording."""
+    if _is_admin():
+        return
     # Always bump session counter
     _key = '_ai_usage_count'
     st.session_state[_key] = st.session_state.get(_key, 0) + 1
@@ -1278,7 +1295,7 @@ with st.sidebar:
             _sb_remaining = _sb_limit - _sb_used
             st.caption(t('ai_quota_remaining', n=_sb_remaining, limit=_sb_limit))
             if not _sb_allowed:
-                st.caption(t('ai_quota_exceeded', limit=_sb_limit))
+                st.warning(t('ai_quota_exceeded', limit=_sb_limit))
     else:
         oneclick_btn = False
 
@@ -3028,20 +3045,20 @@ if 'summary_df' not in st.session_state:
             <p style="font-size:1.05rem; color:var(--vx-text-secondary, #656d76); line-height:1.6; margin-bottom:20px;">
                 {t('welcome_instruction_web') if not (_has_ai or _has_cloud_ai) else t('welcome_instruction')}
             </p>
-            <div style="display:flex; justify-content:center; gap:12px; flex-wrap:wrap; margin-bottom:20px;">
-                <span style="font-size:0.8rem; padding:4px 14px; border-radius:20px;
+            <div style="display:flex; justify-content:center; gap:8px; flex-wrap:nowrap; margin-bottom:20px;">
+                <span style="font-size:0.78rem; padding:4px 10px; border-radius:20px; white-space:nowrap;
                              background:color-mix(in srgb, var(--vx-accent, #0969da) 8%, transparent);
                              color:var(--vx-accent, #0969da); border:1px solid color-mix(in srgb, var(--vx-accent) 20%, transparent);">
                     {t('welcome_us')}</span>
-                <span style="font-size:0.8rem; padding:4px 14px; border-radius:20px;
+                <span style="font-size:0.78rem; padding:4px 10px; border-radius:20px; white-space:nowrap;
                              background:color-mix(in srgb, var(--vx-accent, #0969da) 8%, transparent);
                              color:var(--vx-accent, #0969da); border:1px solid color-mix(in srgb, var(--vx-accent) 20%, transparent);">
                     {t('welcome_hk')}</span>
-                <span style="font-size:0.8rem; padding:4px 14px; border-radius:20px;
+                <span style="font-size:0.78rem; padding:4px 10px; border-radius:20px; white-space:nowrap;
                              background:color-mix(in srgb, var(--vx-accent, #0969da) 8%, transparent);
                              color:var(--vx-accent, #0969da); border:1px solid color-mix(in srgb, var(--vx-accent) 20%, transparent);">
                     {t('welcome_cn')}</span>
-                <span style="font-size:0.8rem; padding:4px 14px; border-radius:20px;
+                <span style="font-size:0.78rem; padding:4px 10px; border-radius:20px; white-space:nowrap;
                              background:color-mix(in srgb, var(--vx-accent, #0969da) 8%, transparent);
                              color:var(--vx-accent, #0969da); border:1px solid color-mix(in srgb, var(--vx-accent) 20%, transparent);">
                     {t('welcome_jp')}</span>

@@ -89,8 +89,8 @@ _STRINGS = {
         'summary_wacc': 'WACC',
 
         # ── AI quota ──
-        'ai_quota_remaining': '\U0001f916 {n}/{limit} AI analyses remaining today',
-        'ai_quota_exceeded': '\u26a0\ufe0f Daily AI limit reached ({limit}/day). Try again tomorrow.',
+        'ai_quota_remaining': '\U0001f916 Free quota: {n}/{limit} remaining today',
+        'ai_quota_exceeded': 'Today\'s free AI quota is used up ({limit}/day). Try again tomorrow, or run ValuX locally for unlimited access.',
 
         # ── Section headers ──
         'section_hist_data': 'Historical Financial Data (in millions)',
@@ -391,8 +391,8 @@ _STRINGS = {
         'summary_wacc': 'WACC',
 
         # ── AI quota ──
-        'ai_quota_remaining': '\U0001f916 \u4eca\u65e5\u5269\u4f59 {n}/{limit} \u6b21 AI \u5206\u6790',
-        'ai_quota_exceeded': '\u26a0\ufe0f \u5df2\u8fbe\u4eca\u65e5 AI \u5206\u6790\u4e0a\u9650\uff08{limit}\u6b21/\u5929\uff09\uff0c\u8bf7\u660e\u5929\u518d\u8bd5\u3002',
+        'ai_quota_remaining': '\U0001f916 \u514d\u8d39\u989d\u5ea6\uff1a\u4eca\u65e5\u5269\u4f59 {n}/{limit} \u6b21',
+        'ai_quota_exceeded': '\u4eca\u65e5\u514d\u8d39 AI \u989d\u5ea6\u5df2\u7528\u5b8c\uff08{limit}\u6b21/\u5929\uff09\u3002\u8bf7\u660e\u5929\u518d\u8bd5\uff0c\u6216\u672c\u5730\u8fd0\u884c ValuX \u53ef\u65e0\u9650\u4f7f\u7528\u3002',
 
         # ── Section headers ──
         'section_hist_data': '\u5386\u53f2\u8d22\u52a1\u6570\u636e\uff08\u767e\u4e07\uff09',
