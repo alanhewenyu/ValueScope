@@ -1332,17 +1332,22 @@ with st.sidebar:
 
     # Detect Enter key on ticker input
     _ticker_enter = False
-    _show_mode_prompt = False
     _has_latched_btn = '_btn_action' in st.session_state
     if ticker_input and not oneclick_btn and not manual_btn and not _has_latched_btn:
         _prev_ticker = st.session_state.get('_prev_ticker_input', '')
         if ticker_input != _prev_ticker:
             if _any_ai:
-                _show_mode_prompt = True   # Prompt user to pick a mode
+                st.session_state['_needs_mode_select'] = True   # persist until button clicked
             else:
                 _ticker_enter = True       # No AI available: Enter triggers manual valuation
     if ticker_input:
         st.session_state._prev_ticker_input = ticker_input
+
+    # Clear mode-selection prompt when a button is clicked
+    if oneclick_btn or manual_btn or _has_latched_btn:
+        st.session_state.pop('_needs_mode_select', None)
+
+    _show_mode_prompt = st.session_state.get('_needs_mode_select', False)
 
     # Show mode-selection prompt when AI is available (local or cloud)
     if _show_mode_prompt and _any_ai:
