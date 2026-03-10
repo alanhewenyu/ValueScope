@@ -382,7 +382,7 @@ div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hdr) div[data-testid="st
     border-color: color-mix(in srgb, var(--vx-accent) 50%, transparent) !important;
 }
 
-/* ── Sticky mini hero bar (second row, below company header) ── */
+/* ── Sticky verdict bar (second row, below company header) ── */
 div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hero),
 div[data-testid="stVerticalBlockBorderWrapper"]:has(div.valux-sticky-hero) {
     position: sticky !important; top: 60px !important; z-index: 999990 !important;
@@ -394,26 +394,55 @@ div.valux-sticky-hero { height: 0; overflow: hidden; margin: 0; padding: 0; line
 div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hero) div[data-testid="stVerticalBlock"] { gap: 0 !important; }
 div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hero) div[data-testid="stMarkdownContainer"] { margin-bottom: 0 !important; }
 div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hero) div[data-testid="stElementContainer"] { margin: 0 !important; }
-.mini-hero-bar {
-    display: flex; align-items: center; justify-content: flex-start; gap: 18px;
-    padding: 8px 16px 6px 16px; min-height: 48px; flex-wrap: wrap; row-gap: 4px;
+
+/* ── Verdict card ── */
+.verdict-card {
+    border-radius: 12px; padding: 16px 20px; margin: 8px 0;
+    display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap;
 }
-.mini-hero-bar .mh-title {
-    font-size: 0.78rem; font-weight: 700; color: var(--vx-accent); text-transform: uppercase;
-    letter-spacing: 0.8px; margin-right: 4px; white-space: nowrap; align-self: center;
+.verdict-card.buy  { background: var(--vx-hero-positive); border: 1px solid rgba(46,204,113,0.3); }
+.verdict-card.hold { background: var(--vx-hero-neutral); border: 1px solid var(--vx-border); }
+.verdict-card.sell { background: var(--vx-hero-negative); border: 1px solid rgba(231,76,60,0.3); }
+.verdict-badge {
+    display: inline-flex; flex-direction: column; align-items: center; gap: 2px; min-width: 100px;
 }
-.mini-hero-bar .mh-item { display: flex; align-items: baseline; gap: 6px; align-self: center; }
-.mini-hero-bar .mh-label { font-size: 0.72rem; color: var(--vx-text-muted); text-transform: uppercase; letter-spacing: 0.4px; }
-.mini-hero-bar .mh-val { font-size: 1.2rem; font-weight: 700; line-height: 1; }
-.mini-hero-bar .mh-val.intrinsic { color: var(--vx-intrinsic); }
-.mini-hero-bar .mh-val.market { color: var(--vx-market-num); }
-.mini-hero-bar .mh-vs { font-size: 1.0rem; color: var(--vx-text-muted); font-weight: 300; align-self: center; }
-.mini-hero-bar .mh-mos { font-weight: 700; font-size: 1.0rem; padding: 3px 10px; border-radius: 5px; align-self: center; }
-.mini-hero-bar .mh-mos.positive { color: #2ea043; background: rgba(46,160,67,0.1); }
-.mini-hero-bar .mh-mos.negative { color: #cf222e; background: rgba(207,34,46,0.1); }
-.mini-hero-bar .mh-mos-label { font-size: 0.68rem; color: var(--vx-text-muted); margin-left: 2px; align-self: center; }
-.mini-hero-bar .mh-summary { font-size: 0.88rem; color: var(--vx-text-secondary); margin-left: 6px; line-height: 1.2; align-self: center; width: 100%; }
-.mini-hero-bar .mh-forex { font-size: 0.65rem; color: var(--vx-text-muted); opacity: 0.7; }
+.verdict-badge .badge-label {
+    font-size: 1.4rem; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; line-height: 1;
+}
+.verdict-card.buy .badge-label  { color: var(--vx-green); }
+.verdict-card.hold .badge-label { color: var(--vx-text-muted); }
+.verdict-card.sell .badge-label { color: var(--vx-red); }
+.verdict-badge .badge-sub {
+    font-size: 0.72rem; color: var(--vx-text-secondary); text-align: center; line-height: 1.2;
+}
+.verdict-metrics {
+    display: flex; align-items: center; gap: 20px; flex-wrap: wrap; flex: 1; justify-content: center;
+}
+.verdict-metric { text-align: center; }
+.verdict-metric .vm-label {
+    font-size: 0.68rem; color: var(--vx-text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;
+}
+.verdict-metric .vm-val { font-size: 1.5rem; font-weight: 800; line-height: 1; }
+.verdict-metric .vm-val.intrinsic { color: var(--vx-intrinsic); }
+.verdict-metric .vm-val.market   { color: var(--vx-market-num); }
+.verdict-vs { font-size: 1.1rem; color: var(--vx-text-muted); font-weight: 300; align-self: center; }
+.verdict-mos { text-align: center; min-width: 90px; }
+.verdict-mos .vm-label { font-size: 0.68rem; color: var(--vx-text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+.verdict-mos .vm-pct { font-size: 1.5rem; font-weight: 800; line-height: 1; }
+.verdict-card.buy  .verdict-mos .vm-pct { color: var(--vx-green); }
+.verdict-card.hold .verdict-mos .vm-pct { color: var(--vx-text-secondary); }
+.verdict-card.sell .verdict-mos .vm-pct { color: var(--vx-red); }
+
+/* ── Summary cards (4 metric cards below verdict) ── */
+.summary-cards {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 4px 0 8px 0;
+}
+.summary-card {
+    background: var(--vx-card-bg); border: 1px solid var(--vx-card-border);
+    border-radius: 8px; padding: 10px 14px; text-align: center;
+}
+.summary-card .sc-label { font-size: 0.68rem; color: var(--vx-text-muted); text-transform: uppercase; letter-spacing: 0.4px; }
+.summary-card .sc-val { font-size: 1.3rem; font-weight: 700; color: var(--vx-text); margin-top: 2px; }
 
 /* ── Global backgrounds — follow system theme ── */
 section[data-testid="stSidebar"] > div { padding-top: 0 !important; }
@@ -844,18 +873,17 @@ div[data-testid="InputInstructions"] { display: none !important; }
     /* Section headers smaller */
     .section-hdr { font-size: 1rem; margin: 1.2rem 0 0.6rem 0; }
 
-    /* Mini hero bar: stack vertically */
-    .mini-hero-bar {
-        flex-direction: column; align-items: flex-start;
-        gap: 6px; padding: 6px 10px; min-height: auto;
+    /* Verdict card: stack on mobile */
+    .verdict-card {
+        flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 14px;
     }
-    .mini-hero-bar .mh-val { font-size: 1.0rem; }
-    .mini-hero-bar .mh-summary { font-size: 0.78rem; }
-    .mini-hero-bar .mh-vs { display: none; }
-    .mini-hero-bar .mh-title { font-size: 0.7rem; }
-    .mini-hero-bar .mh-label { font-size: 0.65rem; }
-    .mini-hero-bar .mh-mos { font-size: 0.85rem; padding: 2px 8px; }
-    .mini-hero-bar .mh-mos-label { font-size: 0.6rem; }
+    .verdict-badge .badge-label { font-size: 1.1rem; }
+    .verdict-metrics { gap: 12px; }
+    .verdict-metric .vm-val { font-size: 1.2rem; }
+    .verdict-mos .vm-pct { font-size: 1.2rem; }
+    .verdict-vs { display: none; }
+    .summary-cards { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .summary-card .sc-val { font-size: 1.1rem; }
 
     /* Sticky header buttons smaller */
     div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hdr) div[data-testid="stHorizontalBlock"] button,
@@ -971,8 +999,8 @@ div[data-testid="InputInstructions"] { display: none !important; }
 
 /* ── Tablet (769px – 1024px) ── */
 @media (min-width: 769px) and (max-width: 1024px) {
-    .mini-hero-bar .mh-val { font-size: 1.1rem; }
-    .mini-hero-bar .mh-summary { font-size: 0.82rem; }
+    .verdict-metric .vm-val { font-size: 1.3rem; }
+    .verdict-badge .badge-label { font-size: 1.2rem; }
     .company-header-bar .company-name { font-size: 1.2rem; }
     .section-hdr { font-size: 1.1rem; }
     .ai-param-grid { gap: 6px 16px; }
@@ -1097,6 +1125,45 @@ _stc.html("""
 """, height=0)
 
 # ────────────────────────────────────────────────────────────────
+# AI quota helpers (must be defined before sidebar uses them)
+# ────────────────────────────────────────────────────────────────
+def _get_client_id():
+    """Get client IP from Streamlit Cloud headers, fallback to 'local'."""
+    try:
+        headers = st.context.headers  # Streamlit 1.37+
+        forwarded = headers.get('X-Forwarded-For', '')
+        if forwarded:
+            return forwarded.split(',')[0].strip()
+    except Exception:
+        pass
+    return 'local'
+
+
+def _check_ai_quota():
+    """Returns (allowed: bool, used: int, limit: int)."""
+    limit = int(os.environ.get('VALUX_AI_DAILY_LIMIT', '5'))
+    if limit <= 0:  # 0 or negative = unlimited
+        return True, 0, 0
+    db_path = os.environ.get('VALUX_DB_PATH')
+    if not db_path:
+        return True, 0, 0  # No DB = no tracking = allow
+    from modeling.db_export import get_ai_usage_today
+    client_id = _get_client_id()
+    used = get_ai_usage_today(db_path, client_id)
+    return used < limit, used, limit
+
+
+def _record_ai_usage(ticker=None):
+    """Record an AI usage event."""
+    db_path = os.environ.get('VALUX_DB_PATH')
+    if not db_path:
+        return
+    from modeling.db_export import record_ai_usage
+    client_id = _get_client_id()
+    record_ai_usage(db_path, client_id, ticker)
+
+
+# ────────────────────────────────────────────────────────────────
 # Sidebar — ValuX brand at top, then ticker + buttons
 # ────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -1189,8 +1256,14 @@ with st.sidebar:
             '</div>',
             unsafe_allow_html=True)
 
+        # Check AI quota for button state
+        _sb_allowed, _sb_used, _sb_limit = _check_ai_quota()
         oneclick_btn = st.button(t('sidebar_oneclick_btn'), type="primary", use_container_width=True,
-                                  help=t('sidebar_oneclick_help'), key='oneclick_btn')
+                                  help=t('sidebar_oneclick_help'), key='oneclick_btn',
+                                  disabled=not _sb_allowed)
+        if _sb_limit > 0:
+            _sb_remaining = _sb_limit - _sb_used
+            st.caption(t('ai_quota_remaining', n=_sb_remaining, limit=_sb_limit))
     else:
         oneclick_btn = False
 
@@ -1560,6 +1633,103 @@ def _render_metric_card(label, value, delta=None):
             f'<div class="value">{value}</div>'
             f'{delta_html}'
             f'</div>')
+
+
+def _render_verdict_section(results, company_profile, valuation_params, forex_rate):
+    """Render verdict card + 4 summary metric cards as HTML."""
+    # ── Compute IV in stock currency ──
+    dcf_raw = results['price_per_share']
+    rep_cur = results.get('reported_currency', '')
+    stk_cur = company_profile.get('currency', '')
+    cur = rep_cur or stk_cur or ''
+    needs_forex = (rep_cur and stk_cur and rep_cur != stk_cur)
+    if forex_rate and needs_forex:
+        iv = dcf_raw * forex_rate
+        iv_cur = stk_cur
+    else:
+        iv = dcf_raw
+        iv_cur = cur
+    mkt = company_profile.get('price', 0) or 0
+
+    # ── Determine verdict ──
+    mos = None
+    if mkt > 0:
+        mos = (iv - mkt) / mkt * 100
+    # 3-tier badge
+    if mos is None:
+        badge_cls, badge_label = 'hold', t('verdict_hold')
+    elif mos > 10:
+        badge_cls, badge_label = 'buy', t('verdict_buy')
+    elif mos < -10:
+        badge_cls, badge_label = 'sell', t('verdict_sell')
+    else:
+        badge_cls, badge_label = 'hold', t('verdict_hold')
+    # 5-tier sub-text
+    if mos is not None:
+        if mos > 30:     sub_text = t('verdict_sig_under')
+        elif mos > 10:   sub_text = t('verdict_mod_under')
+        elif mos > -10:  sub_text = t('verdict_fair')
+        elif mos > -30:  sub_text = t('verdict_mod_over')
+        else:            sub_text = t('verdict_sig_over')
+    else:
+        sub_text = ''
+
+    # ── Build verdict card HTML ──
+    html = f'<div class="verdict-card {badge_cls}">'
+    # Badge
+    html += (f'<div class="verdict-badge">'
+             f'<span class="badge-label">{badge_label}</span>'
+             f'<span class="badge-sub">{sub_text}</span>'
+             f'</div>')
+    # IV vs Market metrics
+    html += '<div class="verdict-metrics">'
+    html += (f'<div class="verdict-metric">'
+             f'<div class="vm-label">{t("verdict_iv_label")}</div>'
+             f'<div class="vm-val intrinsic">{iv_cur} {iv:,.2f}</div>'
+             f'</div>')
+    html += '<span class="verdict-vs">vs</span>'
+    if mkt > 0:
+        html += (f'<div class="verdict-metric">'
+                 f'<div class="vm-label">{t("verdict_mkt_label")}</div>'
+                 f'<div class="vm-val market">{stk_cur} {mkt:,.2f}</div>'
+                 f'</div>')
+    else:
+        html += '<div class="verdict-metric"><div class="vm-val market">\u2014</div></div>'
+    # MOS%
+    if mos is not None:
+        html += (f'<div class="verdict-mos">'
+                 f'<div class="vm-label">{t("verdict_mos_label")}</div>'
+                 f'<div class="vm-pct">{mos:+.1f}%</div>'
+                 f'</div>')
+    html += '</div>'  # verdict-metrics
+    html += '</div>'  # verdict-card
+
+    # ── Build 4 summary cards ──
+    vp = valuation_params or {}
+    g1 = vp.get('revenue_growth_1', 0)
+    g2 = vp.get('revenue_growth_2', 0)
+    m = vp.get('ebit_margin', 0)
+    w = vp.get('wacc', 0)
+    html += '<div class="summary-cards">'
+    html += (f'<div class="summary-card">'
+             f'<div class="sc-label">{t("summary_y1_growth")}</div>'
+             f'<div class="sc-val">{g1:.1f}%</div>'
+             f'</div>')
+    html += (f'<div class="summary-card">'
+             f'<div class="sc-label">{t("summary_y25_cagr")}</div>'
+             f'<div class="sc-val">{g2:.1f}%</div>'
+             f'</div>')
+    html += (f'<div class="summary-card">'
+             f'<div class="sc-label">{t("summary_ebit_margin")}</div>'
+             f'<div class="sc-val">{m:.1f}%</div>'
+             f'</div>')
+    html += (f'<div class="summary-card">'
+             f'<div class="sc-label">{t("summary_wacc")}</div>'
+             f'<div class="sc-val">{w:.1f}%</div>'
+             f'</div>')
+    html += '</div>'  # summary-cards
+
+    return html
 
 
 def _render_ai_reasoning(params):
@@ -2968,72 +3138,25 @@ with _hdr_container:
         st.rerun()
     _show_fin_data = ss.get('_show_fin_data', False)
 
-# ── Sticky mini hero bar (second row, only after DCF results) ──
+# ── Sticky verdict bar (second row, only after DCF results) ──
 if _has_results:
     _hero_bar_container = st.container()
     with _hero_bar_container:
         st.markdown('<div class="valux-sticky-hero"></div>', unsafe_allow_html=True)
-        # Compute IV in stock currency for the mini hero bar
-        _hdr_res = ss.results
-        _hdr_dcf_raw = _hdr_res['price_per_share']
-        _hdr_rep_cur = _hdr_res.get('reported_currency', '')
-        _hdr_stk_cur = ss.company_profile.get('currency', '')
-        _hdr_cur = _hdr_rep_cur or _hdr_stk_cur or ''
+        # Ensure forex rate is available for cross-currency valuations
         _hdr_forex = ss.get('forex_rate')
-        _hdr_needs_forex = (_hdr_rep_cur and _hdr_stk_cur
-                            and _hdr_rep_cur != _hdr_stk_cur)
-        if _hdr_needs_forex and not _hdr_forex:
+        _hdr_rep_cur = ss.results.get('reported_currency', '')
+        _hdr_stk_cur = ss.company_profile.get('currency', '')
+        if (_hdr_rep_cur and _hdr_stk_cur and _hdr_rep_cur != _hdr_stk_cur
+                and not _hdr_forex):
             _hdr_forex, _ = _compute_forex_rate_web(
-                _hdr_res, ss.company_profile, apikey)
+                ss.results, ss.company_profile, apikey)
             if _hdr_forex:
                 ss.forex_rate = _hdr_forex
-        if _hdr_forex and _hdr_needs_forex:
-            _hdr_iv = _hdr_dcf_raw * _hdr_forex
-            _hdr_iv_cur = _hdr_stk_cur
-        else:
-            _hdr_iv = _hdr_dcf_raw
-            _hdr_iv_cur = _hdr_cur
-        _hdr_mkt = ss.company_profile.get('price', 0) or 0
-
-        _hdr_mos = None
-        _mh_html = '<div class="mini-hero-bar">'
-        _mh_html += f'<span class="mh-title">{t("hero_title")}</span>'
-        _mh_html += (f'<div class="mh-item">'
-                     f'<span class="mh-label">{t("hero_intrinsic")}</span>'
-                     f'<span class="mh-val intrinsic">{_hdr_iv_cur} {_hdr_iv:,.2f}</span>'
-                     f'</div>')
-        _mh_html += '<span class="mh-vs">vs</span>'
-        if _hdr_mkt > 0:
-            _mh_html += (f'<div class="mh-item">'
-                         f'<span class="mh-label">{t("hero_market")}</span>'
-                         f'<span class="mh-val market">{_hdr_stk_cur} {_hdr_mkt:,.2f}</span>'
-                         f'</div>')
-            _hdr_mos = (_hdr_iv - _hdr_mkt) / _hdr_mkt * 100
-            _mos_cls = 'positive' if _hdr_mos >= 0 else 'negative'
-            _mos_word = t('hero_undervalued') if _hdr_mos >= 0 else t('hero_overvalued')
-            _mh_html += (f'<div class="mh-item">'
-                         f'<span class="mh-mos {_mos_cls}">{_hdr_mos:+.1f}%</span>'
-                         f'<span class="mh-mos-label">{_mos_word}</span>'
-                         f'</div>')
-        else:
-            _mh_html += '<div class="mh-item"><span class="mh-val market">—</span></div>'
-        # One-line summary inline with descriptive param labels
-        _mh_vp = ss.get('valuation_params', {})
-        if _hdr_mos is not None and _hdr_mkt > 0:
-            _mh_abs = abs(_hdr_mos)
-            if _hdr_mos > 30:     _mh_verdict = t('verdict_sig_under')
-            elif _hdr_mos > 10:   _mh_verdict = t('verdict_mod_under')
-            elif _hdr_mos > -10:  _mh_verdict = t('verdict_fair')
-            elif _hdr_mos > -30:  _mh_verdict = t('verdict_mod_over')
-            else:                 _mh_verdict = t('verdict_sig_over')
-            _mh_g1 = _mh_vp.get('revenue_growth_1', 0)
-            _mh_g = _mh_vp.get('revenue_growth_2', 0)
-            _mh_m = _mh_vp.get('ebit_margin', 0)
-            _mh_w = _mh_vp.get('wacc', 0)
-            _mh_html += (f'<span class="mh-summary">'
-                         f'{t("hero_summary", g1=_mh_g1, g2=_mh_g, m=_mh_m, w=_mh_w, verdict=_mh_verdict)}</span>')
-        _mh_html += '</div>'
-        st.markdown(_mh_html, unsafe_allow_html=True)
+        _verdict_html = _render_verdict_section(
+            ss.results, ss.company_profile,
+            ss.get('valuation_params', {}), _hdr_forex)
+        st.markdown(_verdict_html, unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════════
 # MODE: Fetch Only — show ONLY historical financial data
@@ -3078,18 +3201,25 @@ if ss.get('_scroll_to_fin_data'):
 
 # ── Execute One-Click AI + DCF (progress renders here, below header) ──
 if _pending_oneclick:
-    ai_ok = _run_ai_analysis()
-    _did_ai_run = True
-    ss._ai_pending = False  # Clear the persistent flag regardless of outcome
-    if ai_ok:
-        with st.spinner(t('calculating_dcf')):
-            _run_dcf_from_ai()
-        ss._dcf_just_ran = False  # First AI run — no "updated" banner
-        ss._scroll_to_results = True
-        ss._save_snapshot_on_next_render = True
-        st.rerun()
+    # Check AI quota before running
+    _ai_allowed, _ai_used, _ai_limit = _check_ai_quota()
+    if not _ai_allowed:
+        st.warning(t('ai_quota_exceeded', used=_ai_used, limit=_ai_limit))
+        ss._ai_pending = False
     else:
-        st.warning(t('warn_ai_no_params'))
+        _record_ai_usage(ss.get('ticker'))
+        ai_ok = _run_ai_analysis()
+        _did_ai_run = True
+        ss._ai_pending = False  # Clear the persistent flag regardless of outcome
+        if ai_ok:
+            with st.spinner(t('calculating_dcf')):
+                _run_dcf_from_ai()
+            ss._dcf_just_ran = False  # First AI run — no "updated" banner
+            ss._scroll_to_results = True
+            ss._save_snapshot_on_next_render = True
+            st.rerun()
+        else:
+            st.warning(t('warn_ai_no_params'))
 
 # ── Handle Gap Analysis button ──
 if gap_btn:
