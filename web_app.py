@@ -1,5 +1,5 @@
 # Copyright (c) 2026 Alan He. Licensed under MIT.
-"""ValuX Streamlit Web App — DCF Stock Valuation."""
+"""ValueScope Streamlit Web App — DCF Stock Valuation."""
 
 import io
 import os
@@ -97,7 +97,7 @@ import time
 # ────────────────────────────────────────────────────────────────
 # Page config & global CSS
 # ────────────────────────────────────────────────────────────────
-st.set_page_config(page_title="ValuX", page_icon="📊", layout="wide",
+st.set_page_config(page_title="ValueScope", page_icon="📊", layout="wide",
                    initial_sidebar_state="expanded")
 
 # ── AI availability flags ──
@@ -157,21 +157,21 @@ _seo_components.html("""
         head.appendChild(el);
     };
     // Basic meta
-    m('description', 'ValuX — AI-powered DCF stock valuation tool. Standardized model, real-time parameter tuning, sensitivity analysis. Free for A-shares & HK stocks.');
+    m('description', 'ValueScope — AI-powered DCF stock valuation tool. Standardized model, real-time parameter tuning, sensitivity analysis. Free for A-shares & HK stocks.');
     m('keywords', 'DCF, stock valuation, intrinsic value, WACC, free cash flow, AI valuation, A-shares, HK stocks, 股票估值, 现金流折现');
     // Open Graph
-    p('og:title', 'ValuX — AI-Powered DCF Stock Valuation');
+    p('og:title', 'ValueScope — AI-Powered DCF Stock Valuation');
     p('og:description', 'Standardized DCF engine with AI copilot. Real-time parameter tuning, sensitivity analysis, Excel export. Free for A-shares & HK stocks.');
     p('og:type', 'website');
-    p('og:url', 'https://valux-dcf.streamlit.app');
+    p('og:url', 'https://valuescope.streamlit.app');
     // Twitter Card
     m('twitter:card', 'summary');
-    m('twitter:title', 'ValuX — AI-Powered DCF Stock Valuation');
+    m('twitter:title', 'ValueScope — AI-Powered DCF Stock Valuation');
     m('twitter:description', 'Standardized DCF engine with AI copilot. Free for A-shares & HK stocks.');
     // Canonical URL
     var link = doc.createElement('link');
     link.setAttribute('rel', 'canonical');
-    link.setAttribute('href', 'https://valux-dcf.streamlit.app');
+    link.setAttribute('href', 'https://valuescope.streamlit.app');
     head.appendChild(link);
     // JSON-LD structured data
     var ld = doc.createElement('script');
@@ -179,9 +179,9 @@ _seo_components.html("""
     ld.textContent = JSON.stringify({
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
-        "name": "ValuX",
+        "name": "ValueScope",
         "description": "AI-powered interactive DCF stock valuation tool with standardized model, real-time parameter tuning, and sensitivity analysis.",
-        "url": "https://valux-dcf.streamlit.app",
+        "url": "https://valuescope.streamlit.app",
         "applicationCategory": "FinanceApplication",
         "operatingSystem": "Web",
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
@@ -271,7 +271,7 @@ _components.html("""
 st.markdown("""
 <style>
 /* ══════════════════════════════════════════════════════════════
-   ValuX CSS — System theme–aware (light/dark)
+   ValueScope CSS — System theme–aware (light/dark)
    Uses CSS variables so colours adapt automatically.
    ══════════════════════════════════════════════════════════════ */
 
@@ -350,26 +350,26 @@ header[data-testid="stHeader"] {
 header[data-testid="stHeader"] button { visibility: visible !important; }
 
 /* ── Sticky header ── */
-div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hdr),
-div[data-testid="stVerticalBlockBorderWrapper"]:has(div.valux-sticky-hdr) {
+div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hdr),
+div[data-testid="stVerticalBlockBorderWrapper"]:has(div.vs-sticky-hdr) {
     position: sticky !important; top: 0 !important; z-index: 999991 !important;
     background: var(--vx-bg) !important;
     border-bottom: 1px solid var(--vx-border-light);
     box-shadow: var(--vx-shadow);
     padding: 6px 0 !important;
 }
-div.valux-sticky-hdr { height: 0; overflow: hidden; margin: 0; padding: 0; line-height: 0; font-size: 0; }
-div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hdr) div[data-testid="stVerticalBlock"] { gap: 0 !important; }
-div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hdr) div[data-testid="stMarkdownContainer"] { margin-bottom: 0 !important; }
-div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hdr) div[data-testid="stElementContainer"] { margin: 0 !important; }
+div.vs-sticky-hdr { height: 0; overflow: hidden; margin: 0; padding: 0; line-height: 0; font-size: 0; }
+div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hdr) div[data-testid="stVerticalBlock"] { gap: 0 !important; }
+div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hdr) div[data-testid="stMarkdownContainer"] { margin-bottom: 0 !important; }
+div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hdr) div[data-testid="stElementContainer"] { margin: 0 !important; }
 
 /* ── Header action buttons & company name ── */
-div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hdr) div[data-testid="stHorizontalBlock"] { align-items: center !important; min-height: 48px; }
-div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hdr) div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"] { display: flex !important; align-items: center !important; }
-div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hdr) div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"] > div { width: 100%; }
-div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hdr) div[data-testid="stMarkdownContainer"] p { margin-bottom: 0 !important; padding: 0 !important; }
-div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hdr) div[data-testid="stHorizontalBlock"] button,
-div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hdr) div[data-testid="stHorizontalBlock"] a[data-testid="stDownloadButton"] button {
+div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hdr) div[data-testid="stHorizontalBlock"] { align-items: center !important; min-height: 48px; }
+div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hdr) div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"] { display: flex !important; align-items: center !important; }
+div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hdr) div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"] > div { width: 100%; }
+div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hdr) div[data-testid="stMarkdownContainer"] p { margin-bottom: 0 !important; padding: 0 !important; }
+div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hdr) div[data-testid="stHorizontalBlock"] button,
+div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hdr) div[data-testid="stHorizontalBlock"] a[data-testid="stDownloadButton"] button {
     height: 42px !important; padding: 2px 6px !important; font-size: 0.66rem !important;
     white-space: pre-line !important; display: flex !important; align-items: center !important;
     justify-content: center !important; text-align: center !important; line-height: 1.2 !important;
@@ -378,24 +378,24 @@ div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hdr) div[data-testid="st
     color: var(--vx-accent) !important;
     border-radius: 6px !important; transition: all 0.15s ease !important;
 }
-div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hdr) div[data-testid="stHorizontalBlock"] button:hover,
-div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hdr) div[data-testid="stHorizontalBlock"] a[data-testid="stDownloadButton"] button:hover {
+div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hdr) div[data-testid="stHorizontalBlock"] button:hover,
+div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hdr) div[data-testid="stHorizontalBlock"] a[data-testid="stDownloadButton"] button:hover {
     background: color-mix(in srgb, var(--vx-accent) 18%, transparent) !important;
     border-color: color-mix(in srgb, var(--vx-accent) 50%, transparent) !important;
 }
 
 /* ── Sticky verdict bar (second row, below company header) ── */
-div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hero),
-div[data-testid="stVerticalBlockBorderWrapper"]:has(div.valux-sticky-hero) {
+div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hero),
+div[data-testid="stVerticalBlockBorderWrapper"]:has(div.vs-sticky-hero) {
     position: sticky !important; top: 60px !important; z-index: 999990 !important;
     background: var(--vx-bg) !important;
     border-bottom: 1px solid var(--vx-border-light);
     padding: 0 !important;
 }
-div.valux-sticky-hero { height: 0; overflow: hidden; margin: 0; padding: 0; line-height: 0; font-size: 0; }
-div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hero) div[data-testid="stVerticalBlock"] { gap: 0 !important; }
-div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hero) div[data-testid="stMarkdownContainer"] { margin-bottom: 0 !important; }
-div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hero) div[data-testid="stElementContainer"] { margin: 0 !important; }
+div.vs-sticky-hero { height: 0; overflow: hidden; margin: 0; padding: 0; line-height: 0; font-size: 0; }
+div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hero) div[data-testid="stVerticalBlock"] { gap: 0 !important; }
+div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hero) div[data-testid="stMarkdownContainer"] { margin-bottom: 0 !important; }
+div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hero) div[data-testid="stElementContainer"] { margin: 0 !important; }
 
 /* ── Verdict card ── */
 .verdict-card {
@@ -890,8 +890,8 @@ div[data-testid="InputInstructions"] { display: none !important; }
     .summary-card .sc-val { font-size: 1.1rem; }
 
     /* Sticky header buttons smaller */
-    div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hdr) div[data-testid="stHorizontalBlock"] button,
-    div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hdr) div[data-testid="stHorizontalBlock"] a[data-testid="stDownloadButton"] button {
+    div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hdr) div[data-testid="stHorizontalBlock"] button,
+    div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hdr) div[data-testid="stHorizontalBlock"] a[data-testid="stDownloadButton"] button {
         height: 36px !important; font-size: 0.58rem !important; padding: 2px 4px !important;
     }
 
@@ -990,7 +990,7 @@ div[data-testid="InputInstructions"] { display: none !important; }
     }
 
     /* Disable sticky header on mobile (saves vertical space) */
-    .valux-sticky-hdr {
+    .vs-sticky-hdr {
         position: static !important;
     }
 
@@ -1145,7 +1145,7 @@ def _get_client_id():
 
 def _is_admin():
     """Check if current user is admin via ?admin=<key> query param."""
-    admin_key = _get_secret('VALUX_ADMIN_KEY')
+    admin_key = _get_secret('VS_ADMIN_KEY')
     if not admin_key:
         return False
     try:
@@ -1159,16 +1159,16 @@ def _check_ai_quota():
     """Returns (allowed: bool, used: int, limit: int).
 
     Admin users (via ?admin=<key>) bypass the limit entirely.
-    Uses DB-backed tracking when VALUX_DB_PATH is set, otherwise falls back
+    Uses DB-backed tracking when VS_DB_PATH is set, otherwise falls back
     to session-state tracking (per-session, per-IP).
     The effective limit = base limit + any extra quota granted by admin.
     """
     if _is_admin():
         return True, 0, 0  # Admin = unlimited
-    base_limit = int(_get_secret('VALUX_AI_DAILY_LIMIT') or '5')
+    base_limit = int(_get_secret('VS_AI_DAILY_LIMIT') or '5')
     if base_limit <= 0:  # 0 or negative = unlimited
         return True, 0, 0
-    db_path = _get_secret('VALUX_DB_PATH')
+    db_path = _get_secret('VS_DB_PATH')
     if db_path:
         from modeling.db_export import get_ai_usage_today, get_extra_quota_today
         client_id = _get_client_id()
@@ -1191,7 +1191,7 @@ def _record_ai_usage(ticker=None):
     _key = '_ai_usage_count'
     st.session_state[_key] = st.session_state.get(_key, 0) + 1
     # DB tracking if available
-    db_path = _get_secret('VALUX_DB_PATH')
+    db_path = _get_secret('VS_DB_PATH')
     if not db_path:
         return
     from modeling.db_export import record_ai_usage
@@ -1200,13 +1200,13 @@ def _record_ai_usage(ticker=None):
 
 
 # ────────────────────────────────────────────────────────────────
-# Sidebar — ValuX brand at top, then ticker + buttons
+# Sidebar — ValueScope brand at top, then ticker + buttons
 # ────────────────────────────────────────────────────────────────
 with st.sidebar:
     _cur = lang()  # 'en' or 'zh'
     st.markdown(f"""
     <div class="sidebar-brand">
-        <h1>ValuX</h1>
+        <h1>ValueScope</h1>
         <div class="sub">{t('sidebar_brand_sub_web') if not (_has_ai or _has_cloud_ai) else t('sidebar_brand_sub')}</div>
     </div>
     """, unsafe_allow_html=True)
@@ -1302,10 +1302,10 @@ with st.sidebar:
             st.caption(t('ai_quota_remaining', n=_sb_remaining, limit=_sb_limit))
             if not _sb_allowed:
                 st.warning(t('ai_quota_exceeded', limit=_sb_limit))
-                _contact_email = _get_secret('VALUX_CONTACT_EMAIL') or 'alanhe@icloud.com'
+                _contact_email = _get_secret('VS_CONTACT_EMAIL') or 'alanhe@icloud.com'
                 st.caption(t('ai_quota_exceeded_contact', email=f'mailto:{_contact_email}'))
                 # ── Invite code redemption ──
-                _invite_db = _get_secret('VALUX_DB_PATH')
+                _invite_db = _get_secret('VS_DB_PATH')
                 if _invite_db:
                     _code_input = st.text_input(
                         t('invite_code_label'), placeholder=t('invite_code_placeholder'),
@@ -1470,10 +1470,10 @@ with st.sidebar:
     # ── Admin panel (visible only with ?admin=<key>) ──
     if _is_admin():
         with st.expander("🔧 Admin", expanded=False):
-            _adm_limit = int(_get_secret('VALUX_AI_DAILY_LIMIT') or '5')
-            _db_path = _get_secret('VALUX_DB_PATH')
+            _adm_limit = int(_get_secret('VS_AI_DAILY_LIMIT') or '5')
+            _db_path = _get_secret('VS_DB_PATH')
             if not _db_path:
-                st.caption("⚠️ Set `VALUX_DB_PATH` in Secrets to enable admin features.")
+                st.caption("⚠️ Set `VS_DB_PATH` in Secrets to enable admin features.")
             else:
                 from modeling.db_export import (
                     get_ai_usage_stats, grant_extra_quota, reset_usage_today,
@@ -1561,7 +1561,7 @@ with st.sidebar:
     <div style="text-align:center; font-size:0.72rem; color:#555; line-height:1.7; padding:4px 0;">
         <div>© 2026 Alan He · <a href="https://opensource.org/licenses/MIT" target="_blank" style="color:#58a6ff;text-decoration:none;">MIT License</a></div>
         <div><a href="https://jianshan.co" target="_blank" style="color:#58a6ff;text-decoration:none;">见山笔记</a>
-        · <a href="https://github.com/alanhewenyu/ValuX" target="_blank" style="color:#58a6ff;text-decoration:none;">GitHub</a>
+        · <a href="https://github.com/alanhewenyu/ValueScope" target="_blank" style="color:#58a6ff;text-decoration:none;">GitHub</a>
         · <a href="mailto:alanhe@icloud.com" style="color:#58a6ff;text-decoration:none;">alanhe@icloud.com</a></div>
     </div>
     """, unsafe_allow_html=True)
@@ -3156,7 +3156,7 @@ if 'summary_df' not in st.session_state:
             <p style="font-size:1.5rem; font-weight:700; margin-bottom:6px; color:var(--vx-text, #1f2328);
                        background:linear-gradient(135deg, #00d2ff 0%, #7b2ff7 100%);
                        -webkit-background-clip:text; -webkit-text-fill-color:transparent;">
-                ValuX
+                ValueScope
             </p>
             <p style="font-size:1.05rem; color:var(--vx-text-secondary, #656d76); line-height:1.6; margin-bottom:20px;">
                 {t('welcome_instruction_web') if not (_has_ai or _has_cloud_ai) else t('welcome_instruction')}
@@ -3199,7 +3199,7 @@ _company_title = f"{ss.company_name} ({ss.ticker})"
 # ── Dynamic page title for SEO & better browser tab readability ──
 _escaped_title = _company_title.replace("'", "\\'").replace('"', '\\"')
 _components.html(f"""<script>
-window.parent.document.title = '{_escaped_title} — ValuX DCF';
+window.parent.document.title = '{_escaped_title} — ValueScope DCF';
 </script>""", height=0)
 
 # Build Excel data in advance if results exist (needed for download button)
@@ -3232,8 +3232,8 @@ _btns_disabled = _pending_oneclick or ss.get('_ai_pending', False)
 _hdr_container = st.container()
 
 with _hdr_container:
-    # Invisible marker div — CSS :has(div.valux-sticky-hdr) targets the parent
-    st.markdown('<div class="valux-sticky-hdr"></div>', unsafe_allow_html=True)
+    # Invisible marker div — CSS :has(div.vs-sticky-hdr) targets the parent
+    st.markdown('<div class="vs-sticky-hdr"></div>', unsafe_allow_html=True)
 
     # ── Financial data toggle button (shared logic for both pre/post DCF) ──
     _fin_currently_shown = ss.get('_show_fin_data', False)
@@ -3298,7 +3298,7 @@ with _hdr_container:
 if _has_results:
     _hero_bar_container = st.container()
     with _hero_bar_container:
-        st.markdown('<div class="valux-sticky-hero"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="vs-sticky-hero"></div>', unsafe_allow_html=True)
         # Ensure forex rate is available for cross-currency valuations
         _hdr_forex = ss.get('forex_rate')
         _hdr_rep_cur = ss.results.get('reported_currency', '')
@@ -3396,7 +3396,7 @@ if gap_btn:
         if ss.get('_db_row_id'):
             from modeling.db_export import update_gap_analysis
             update_gap_analysis(
-                _get_secret('VALUX_DB_PATH'), ss._db_row_id, gap_result)
+                _get_secret('VS_DB_PATH'), ss._db_row_id, gap_result)
     except Exception as e:
         st.error(t('err_gap_failed', msg=str(e)))
 

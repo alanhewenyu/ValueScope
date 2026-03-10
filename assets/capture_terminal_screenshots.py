@@ -145,12 +145,12 @@ def render_html_to_png(html_content, output_path, pw_browser, vp_width=1400):
 
 
 def run_cli_session():
-    """Run the ValuX CLI session and capture output sections."""
+    """Run the ValueScope CLI session and capture output sections."""
     sections = {}
 
     child = pexpect.spawn(
         'python3 main.py --manual',
-        cwd='/Users/Alan/valux',
+        cwd='/Users/Alan/valuescope',
         encoding='utf-8',
         timeout=90,
         dimensions=(60, 140),  # rows x cols — wider for tables

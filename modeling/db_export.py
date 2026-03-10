@@ -1,9 +1,9 @@
 # Copyright (c) 2025 Alan He. Licensed under MIT.
 """Optional SQLite export for DCF valuation results.
 
-Activated only when the VALUX_DB_PATH environment variable is set.
+Activated only when the VS_DB_PATH environment variable is set.
 Usage:
-    export VALUX_DB_PATH=/path/to/valuations.db
+    export VS_DB_PATH=/path/to/valuations.db
 """
 
 import json
@@ -341,8 +341,8 @@ def maybe_save_to_db(
     financial_data=None,
     forex_rate=None,
 ):
-    """Save to DB if VALUX_DB_PATH is set. Silent no-op otherwise."""
-    db_path = os.environ.get('VALUX_DB_PATH')
+    """Save to DB if VS_DB_PATH is set. Silent no-op otherwise."""
+    db_path = os.environ.get('VS_DB_PATH')
     if not db_path:
         return None
     try:
@@ -364,7 +364,7 @@ def maybe_save_to_db(
             forex_rate=forex_rate,
         )
     except Exception as e:
-        print(f"[ValuX DB] Warning: failed to save to database: {e}", file=sys.stderr)
+        print(f"[VS DB] Warning: failed to save to database: {e}", file=sys.stderr)
         return None
 
 
@@ -433,7 +433,7 @@ def record_ai_usage(db_path, client_id, ticker=None):
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"[ValuX DB] Warning: failed to record AI usage: {e}", file=sys.stderr)
+        print(f"[VS DB] Warning: failed to record AI usage: {e}", file=sys.stderr)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -489,7 +489,7 @@ def grant_extra_quota(db_path, client_id, extra, note=None):
         conn.close()
         return True
     except Exception as e:
-        print(f"[ValuX DB] Warning: failed to grant quota: {e}", file=sys.stderr)
+        print(f"[VS DB] Warning: failed to grant quota: {e}", file=sys.stderr)
         return False
 
 
@@ -506,7 +506,7 @@ def reset_usage_today(db_path, client_id):
         conn.close()
         return True
     except Exception as e:
-        print(f"[ValuX DB] Warning: failed to reset usage: {e}", file=sys.stderr)
+        print(f"[VS DB] Warning: failed to reset usage: {e}", file=sys.stderr)
         return False
 
 
@@ -554,7 +554,7 @@ def generate_invite_code(db_path, quota=10, source='manual', prefix='VIP'):
         conn.close()
         return code
     except Exception as e:
-        print(f"[ValuX DB] Warning: failed to generate invite code: {e}", file=sys.stderr)
+        print(f"[VS DB] Warning: failed to generate invite code: {e}", file=sys.stderr)
         return None
 
 
@@ -603,7 +603,7 @@ def redeem_invite_code(db_path, code, client_id):
         conn.close()
         return True, quota, None
     except Exception as e:
-        print(f"[ValuX DB] Warning: failed to redeem invite code: {e}", file=sys.stderr)
+        print(f"[VS DB] Warning: failed to redeem invite code: {e}", file=sys.stderr)
         return False, 0, 'invalid'
 
 

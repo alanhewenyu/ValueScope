@@ -4,7 +4,7 @@
 
 ---
 
-# ValuX
+# ValueScope
 
 **AI-powered interactive DCF valuation for global stocks — standardized model, real-time parameter tuning, reproducible results. A-shares & HK stocks free, no API key needed.**
 
@@ -14,16 +14,16 @@
 
 ---
 
-## What is ValuX?
+## What is ValueScope?
 
-ValuX is an AI-powered stock valuation tool built on a **standardized DCF engine** — 10-year explicit forecast, terminal value, WACC, and sensitivity analysis in a fixed, reproducible framework. Unlike asking an LLM to "value this stock" (where every conversation may use a different method, different discount rates, or even different valuation approaches), ValuX produces **consistent, comparable results** you can trust for investment decisions.
+ValueScope is an AI-powered stock valuation tool built on a **standardized DCF engine** — 10-year explicit forecast, terminal value, WACC, and sensitivity analysis in a fixed, reproducible framework. Unlike asking an LLM to "value this stock" (where every conversation may use a different method, different discount rates, or even different valuation approaches), ValueScope produces **consistent, comparable results** you can trust for investment decisions.
 
-**What sets ValuX apart from raw AI chat?**
+**What sets ValueScope apart from raw AI chat?**
 
 - 🔧 **Standardized DCF Engine** — A fixed valuation framework (10-year FCFF, WACC, terminal value) ensures every valuation is reproducible and comparable across companies and time periods. No more guessing which method the AI used this time.
 - 📊 **Structured Data Pipeline** — Automatically fetches historical financials, calculates TTM metrics, WACC, and historical reference ranges. A-shares and HK stock data are free for everyone.
 - 🖥️ **Terminal + Local Web GUI** — Two ways to run locally: a feature-rich **terminal CLI** with AI copilot, or a **local web dashboard** for visual, interactive parameter tuning with sliders and real-time charts — accessible at `http://localhost:8501` in your browser. Both share the same valuation engine and data pipeline.
-- 🌐 **Cloud Web App** — Don't want to install anything? Try the lightweight cloud version at [valux-dcf.streamlit.app](https://valux-dcf.streamlit.app) — no installation, no API key needed. Supports A-shares and HK stocks in manual mode. (AI features are not available in the cloud version.)
+- 🌐 **Cloud Web App** — Don't want to install anything? Try the lightweight cloud version at [valuescope.streamlit.app](https://valuescope.streamlit.app) — no installation, no API key needed. Supports A-shares and HK stocks in manual mode. (AI features are not available in the cloud version.)
 
 Think of it as having an equity research analyst sitting next to you: AI searches for earnings guidance, analyst consensus, and industry benchmarks, then suggests valuation parameters — but the underlying model is always rigorous, transparent, and under your control.
 
@@ -94,7 +94,7 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 
 ## Data Sources
 
-ValuX uses different data sources depending on the market, optimizing for data quality and cost:
+ValueScope uses different data sources depending on the market, optimizing for data quality and cost:
 
 | Market | Annual Data | Quarterly Data | API Key |
 |--------|------------|----------------|---------|
@@ -114,7 +114,7 @@ ValuX uses different data sources depending on the market, optimizing for data q
 
 ## AI Engines
 
-ValuX supports three AI engines. On startup, it auto-detects installed CLI tools (priority: Claude > Gemini > Qwen). You can also force a specific engine with `--engine`.
+ValueScope supports three AI engines. On startup, it auto-detects installed CLI tools (priority: Claude > Gemini > Qwen). You can also force a specific engine with `--engine`.
 
 | Engine | CLI Tool | Install | Notes |
 |--------|----------|---------|-------|
@@ -122,7 +122,7 @@ ValuX supports three AI engines. On startup, it auto-detects installed CLI tools
 | **Gemini** | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `npm install -g @google/gemini-cli` | Free with Google account login. |
 | **Qwen** | [Qwen Code](https://github.com/QwenLM/qwen-code) | `npm install -g @anthropic-ai/qwen-code` | Free with qwen.ai account login. |
 
-If no AI engine is detected, ValuX automatically falls back to manual mode.
+If no AI engine is detected, ValueScope automatically falls back to manual mode.
 
 ---
 
@@ -145,8 +145,8 @@ Additional flags:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/alanhewenyu/ValuX.git
-cd ValuX
+git clone https://github.com/alanhewenyu/ValueScope.git
+cd ValueScope
 ```
 
 ### 2. Install Dependencies
@@ -189,14 +189,14 @@ npm install -g @google/gemini-cli
 npm install -g @anthropic-ai/qwen-code
 ```
 
-If no AI engine is available, ValuX falls back to manual mode automatically.
+If no AI engine is available, ValueScope falls back to manual mode automatically.
 
 ### 5. Run
 
-Make sure you're in the ValuX directory first:
+Make sure you're in the ValueScope directory first:
 
 ```bash
-cd ValuX
+cd ValueScope
 ```
 
 **Terminal CLI** — full-featured with AI copilot:

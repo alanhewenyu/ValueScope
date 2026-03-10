@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # Copyright (c) 2025 Alan He. Licensed under MIT.
-"""ValuX Valuation History Viewer.
+"""ValueScope Valuation History Viewer.
 
 Usage:
     streamlit run viewer.py
-    # or via alias: valux-view
+    # or via alias: valuescope-view
 """
 
 import json
@@ -25,8 +25,8 @@ try:
 except ImportError:
     _HAS_MD = False
 
-st.set_page_config(page_title="ValuX History", page_icon="📊", layout="wide")
-DB_PATH = os.environ.get('VALUX_DB_PATH', os.path.join(os.path.dirname(__file__), 'valuations.db'))
+st.set_page_config(page_title="ValueScope History", page_icon="📊", layout="wide")
+DB_PATH = os.environ.get('VS_DB_PATH', os.path.join(os.path.dirname(__file__), 'valuations.db'))
 
 def _delete_record(row_id):
     """Delete a valuation record by ID."""
@@ -738,7 +738,7 @@ st.markdown("""
 # Header
 # ────────────────────────────────────────
 
-st.markdown('<div class="main-title">📊 ValuX Valuation History</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">📊 ValueScope Valuation History</div>', unsafe_allow_html=True)
 
 if not os.path.exists(DB_PATH):
     st.error(f"Database not found: {DB_PATH}")
