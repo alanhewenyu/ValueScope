@@ -75,6 +75,22 @@ _STRINGS = {
         'verdict_sig_over': 'significantly overvalued',
         'hero_summary': '{g1:.1f}% Y1 growth, {g2:.1f}% Y2-5 CAGR, {m:.1f}% operating margin, {w:.1f}% WACC \u2192 <b>{verdict}</b>',
 
+        # ── Verdict section ──
+        'verdict_buy': 'BUY',
+        'verdict_hold': 'HOLD',
+        'verdict_sell': 'SELL',
+        'verdict_iv_label': 'Intrinsic Value',
+        'verdict_mkt_label': 'Market Price',
+        'verdict_mos_label': 'Margin of Safety',
+        'summary_y1_growth': 'Y1 Growth',
+        'summary_y25_cagr': 'Y2-5 CAGR',
+        'summary_ebit_margin': 'EBIT Margin',
+        'summary_wacc': 'WACC',
+
+        # ── AI quota ──
+        'ai_quota_remaining': '\U0001f916 {n}/{limit} AI analyses remaining today',
+        'ai_quota_exceeded': '\u26a0\ufe0f Daily AI limit reached ({limit}/day). Try again tomorrow.',
+
         # ── Section headers ──
         'section_hist_data': 'Historical Financial Data (in millions)',
         'section_valuation_params': 'Valuation Parameters',
@@ -359,6 +375,22 @@ _STRINGS = {
         'verdict_mod_over': '\u9002\u5ea6\u9ad8\u4f30',
         'verdict_sig_over': '\u663e\u8457\u9ad8\u4f30',
         'hero_summary': '{g1:.1f}% \u7b2c1\u5e74\u589e\u957f, {g2:.1f}% 2-5\u5e74 CAGR, {m:.1f}% \u8425\u4e1a\u5229\u6da6\u7387, {w:.1f}% WACC \u2192 <b>{verdict}</b>',
+
+        # ── Verdict section ──
+        'verdict_buy': '\u4e70\u5165',
+        'verdict_hold': '\u6301\u6709',
+        'verdict_sell': '\u5356\u51fa',
+        'verdict_iv_label': '\u5185\u5728\u4ef7\u503c',
+        'verdict_mkt_label': '\u5e02\u573a\u4ef7\u683c',
+        'verdict_mos_label': '\u5b89\u5168\u8fb9\u9645',
+        'summary_y1_growth': '\u7b2c1\u5e74\u589e\u957f',
+        'summary_y25_cagr': '2-5\u5e74 CAGR',
+        'summary_ebit_margin': 'EBIT \u5229\u6da6\u7387',
+        'summary_wacc': 'WACC',
+
+        # ── AI quota ──
+        'ai_quota_remaining': '\U0001f916 \u4eca\u65e5\u5269\u4f59 {n}/{limit} \u6b21 AI \u5206\u6790',
+        'ai_quota_exceeded': '\u26a0\ufe0f \u5df2\u8fbe\u4eca\u65e5 AI \u5206\u6790\u4e0a\u9650\uff08{limit}\u6b21/\u5929\uff09\uff0c\u8bf7\u660e\u5929\u518d\u8bd5\u3002',
 
         # ── Section headers ──
         'section_hist_data': '\u5386\u53f2\u8d22\u52a1\u6570\u636e\uff08\u767e\u4e07\uff09',

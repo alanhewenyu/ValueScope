@@ -366,3 +366,55 @@ def maybe_save_to_db(
     except Exception as e:
         print(f"[ValuX DB] Warning: failed to save to database: {e}", file=sys.stderr)
         return None
+
+
+# ──────────────────────────────────────────────────────────────
+# AI Usage Tracking (per-IP daily rate limiting)
+# ──────────────────────────────────────────────────────────────
+
+_AI_USAGE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS ai_usage (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id  TEXT NOT NULL,
+    used_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    ticker     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_client_date ON ai_usage(client_id, used_at);
+"""
+
+
+def _ensure_ai_usage_table(db_path):
+    """Create ai_usage table if it doesn't exist."""
+    conn = sqlite3.connect(db_path)
+    conn.executescript(_AI_USAGE_SCHEMA)
+    conn.close()
+
+
+def get_ai_usage_today(db_path, client_id):
+    """Count today's AI calls for a given client_id."""
+    try:
+        _ensure_ai_usage_table(db_path)
+        conn = sqlite3.connect(db_path)
+        row = conn.execute(
+            "SELECT COUNT(*) FROM ai_usage WHERE client_id = ? AND date(used_at) = date('now')",
+            (client_id,),
+        ).fetchone()
+        conn.close()
+        return row[0] if row else 0
+    except Exception:
+        return 0
+
+
+def record_ai_usage(db_path, client_id, ticker=None):
+    """Insert a new AI usage row."""
+    try:
+        _ensure_ai_usage_table(db_path)
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "INSERT INTO ai_usage (client_id, ticker) VALUES (?, ?)",
+            (client_id, ticker),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[ValuX DB] Warning: failed to record AI usage: {e}", file=sys.stderr)
