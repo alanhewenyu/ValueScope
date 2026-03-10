@@ -434,3 +434,77 @@ def record_ai_usage(db_path, client_id, ticker=None):
         conn.close()
     except Exception as e:
         print(f"[ValuX DB] Warning: failed to record AI usage: {e}", file=sys.stderr)
+
+
+# ──────────────────────────────────────────────────────────────
+# AI Quota Grants (per-IP extra quota from admin)
+# ──────────────────────────────────────────────────────────────
+
+_AI_GRANTS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS ai_quota_grants (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id   TEXT NOT NULL,
+    extra_quota INTEGER NOT NULL DEFAULT 0,
+    grant_date  TEXT NOT NULL DEFAULT (date('now')),
+    note        TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ai_grants_client_date ON ai_quota_grants(client_id, grant_date);
+"""
+
+
+def _ensure_ai_grants_table(db_path):
+    """Create ai_quota_grants table if it doesn't exist."""
+    conn = sqlite3.connect(db_path)
+    conn.executescript(_AI_GRANTS_SCHEMA)
+    conn.close()
+
+
+def get_extra_quota_today(db_path, client_id):
+    """Get total extra quota granted to a client for today."""
+    try:
+        _ensure_ai_grants_table(db_path)
+        conn = sqlite3.connect(db_path)
+        row = conn.execute(
+            "SELECT COALESCE(SUM(extra_quota), 0) FROM ai_quota_grants "
+            "WHERE client_id = ? AND grant_date = date('now')",
+            (client_id,),
+        ).fetchone()
+        conn.close()
+        return row[0] if row else 0
+    except Exception:
+        return 0
+
+
+def grant_extra_quota(db_path, client_id, extra, note=None):
+    """Grant extra AI quota to a specific client_id for today."""
+    try:
+        _ensure_ai_grants_table(db_path)
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "INSERT INTO ai_quota_grants (client_id, extra_quota, note) VALUES (?, ?, ?)",
+            (client_id, extra, note),
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"[ValuX DB] Warning: failed to grant quota: {e}", file=sys.stderr)
+        return False
+
+
+def reset_usage_today(db_path, client_id):
+    """Delete today's AI usage records for a specific client_id (reset quota)."""
+    try:
+        _ensure_ai_usage_table(db_path)
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "DELETE FROM ai_usage WHERE client_id = ? AND date(used_at) = date('now')",
+            (client_id,),
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"[ValuX DB] Warning: failed to reset usage: {e}", file=sys.stderr)
+        return False

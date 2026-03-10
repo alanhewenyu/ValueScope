@@ -1145,7 +1145,7 @@ def _get_client_id():
 
 def _is_admin():
     """Check if current user is admin via ?admin=<key> query param."""
-    admin_key = os.environ.get('VALUX_ADMIN_KEY', '')
+    admin_key = _get_secret('VALUX_ADMIN_KEY')
     if not admin_key:
         return False
     try:
@@ -1161,22 +1161,26 @@ def _check_ai_quota():
     Admin users (via ?admin=<key>) bypass the limit entirely.
     Uses DB-backed tracking when VALUX_DB_PATH is set, otherwise falls back
     to session-state tracking (per-session, per-IP).
+    The effective limit = base limit + any extra quota granted by admin.
     """
     if _is_admin():
         return True, 0, 0  # Admin = unlimited
-    limit = int(os.environ.get('VALUX_AI_DAILY_LIMIT', '5'))
-    if limit <= 0:  # 0 or negative = unlimited
+    base_limit = int(_get_secret('VALUX_AI_DAILY_LIMIT') or '5')
+    if base_limit <= 0:  # 0 or negative = unlimited
         return True, 0, 0
-    db_path = os.environ.get('VALUX_DB_PATH')
+    db_path = _get_secret('VALUX_DB_PATH')
     if db_path:
-        from modeling.db_export import get_ai_usage_today
+        from modeling.db_export import get_ai_usage_today, get_extra_quota_today
         client_id = _get_client_id()
         used = get_ai_usage_today(db_path, client_id)
+        extra = get_extra_quota_today(db_path, client_id)
+        effective_limit = base_limit + extra
     else:
         # Fallback: session-state tracking (resets on redeploy / new session)
         _key = '_ai_usage_count'
         used = st.session_state.get(_key, 0)
-    return used < limit, used, limit
+        effective_limit = base_limit
+    return used < effective_limit, used, effective_limit
 
 
 def _record_ai_usage(ticker=None):
@@ -1187,7 +1191,7 @@ def _record_ai_usage(ticker=None):
     _key = '_ai_usage_count'
     st.session_state[_key] = st.session_state.get(_key, 0) + 1
     # DB tracking if available
-    db_path = os.environ.get('VALUX_DB_PATH')
+    db_path = _get_secret('VALUX_DB_PATH')
     if not db_path:
         return
     from modeling.db_export import record_ai_usage
@@ -1298,7 +1302,7 @@ with st.sidebar:
             st.caption(t('ai_quota_remaining', n=_sb_remaining, limit=_sb_limit))
             if not _sb_allowed:
                 st.warning(t('ai_quota_exceeded', limit=_sb_limit))
-                _contact_email = os.environ.get('VALUX_CONTACT_EMAIL', 'alanhe@icloud.com')
+                _contact_email = _get_secret('VALUX_CONTACT_EMAIL') or 'alanhe@icloud.com'
                 st.caption(t('ai_quota_exceeded_contact', email=f'mailto:{_contact_email}'))
     else:
         oneclick_btn = False
@@ -1441,26 +1445,40 @@ with st.sidebar:
     # ── Admin panel (visible only with ?admin=<key>) ──
     if _is_admin():
         with st.expander("🔧 Admin", expanded=False):
-            _adm_limit = int(os.environ.get('VALUX_AI_DAILY_LIMIT', '5'))
-            st.markdown(f"**Daily limit:** `{_adm_limit}` per user/IP")
-            st.caption("Change via Streamlit Secrets: `VALUX_AI_DAILY_LIMIT`")
+            _adm_limit = int(_get_secret('VALUX_AI_DAILY_LIMIT') or '5')
+            st.markdown(f"**Daily limit:** `{_adm_limit}` / user / day")
             # Usage stats
-            _db_path = os.environ.get('VALUX_DB_PATH')
+            _db_path = _get_secret('VALUX_DB_PATH')
             if _db_path:
-                from modeling.db_export import get_ai_usage_stats
+                from modeling.db_export import get_ai_usage_stats, grant_extra_quota, reset_usage_today, get_extra_quota_today
                 _stats = get_ai_usage_stats(_db_path)
                 if _stats:
                     _total = sum(r[1] for r in _stats)
-                    st.markdown(f"**Today's usage:** {_total} calls from {len(_stats)} IPs")
-                    for _ip, _cnt, _last_tk in _stats:
-                        _tk_label = f" ({_last_tk})" if _last_tk else ""
-                        st.caption(f"`{_ip}` — {_cnt}x{_tk_label}")
+                    st.markdown(f"**Today:** {_total} calls · {len(_stats)} users")
+                    st.markdown("---")
+                    for _idx, (_ip, _cnt, _last_tk) in enumerate(_stats):
+                        _extra = get_extra_quota_today(_db_path, _ip)
+                        _eff_limit = _adm_limit + _extra
+                        _tk_label = f" · {_last_tk}" if _last_tk else ""
+                        _ip_short = _ip[:15] + '…' if len(_ip) > 15 else _ip
+                        st.markdown(f"**`{_ip_short}`** — {_cnt}/{_eff_limit} used{_tk_label}")
+                        _col_g, _col_r = st.columns(2)
+                        with _col_g:
+                            if st.button(f"➕ +5 quota", key=f"grant_{_idx}"):
+                                grant_extra_quota(_db_path, _ip, 5, note="admin grant")
+                                st.rerun()
+                        with _col_r:
+                            if st.button(f"🔄 Reset", key=f"reset_{_idx}"):
+                                reset_usage_today(_db_path, _ip)
+                                st.rerun()
                 else:
                     st.caption("No AI usage today.")
+                st.markdown("---")
+                st.caption("💡 Change base limit via Secrets: `VALUX_AI_DAILY_LIMIT`")
             else:
                 _sess_count = st.session_state.get('_ai_usage_count', 0)
                 st.markdown(f"**Session usage:** {_sess_count} calls")
-                st.caption("Set `VALUX_DB_PATH` for IP-level tracking.")
+                st.caption("⚠️ Set `VALUX_DB_PATH` in Secrets for per-IP tracking.")
 
     # ── API key ──
     _fmp_env = os.environ.get("FMP_API_KEY", "")
@@ -3322,7 +3340,7 @@ if gap_btn:
         if ss.get('_db_row_id'):
             from modeling.db_export import update_gap_analysis
             update_gap_analysis(
-                os.environ.get('VALUX_DB_PATH'), ss._db_row_id, gap_result)
+                _get_secret('VALUX_DB_PATH'), ss._db_row_id, gap_result)
     except Exception as e:
         st.error(t('err_gap_failed', msg=str(e)))
 

@@ -3,6 +3,7 @@ __pycache__/
 .DS_Store
 stock_valuation/
 .env
+.streamlit/secrets.toml
 *.swp
 *.swo
 assets/*.cast
