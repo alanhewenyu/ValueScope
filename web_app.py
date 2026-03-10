@@ -1325,16 +1325,23 @@ with st.sidebar:
     else:
         oneclick_btn = False
 
-    # Determine internal mode based on button clicks
+    # Latch button clicks into session state so they survive concurrent reruns.
+    # Streamlit buttons are ephemeral (True only during the click-triggered
+    # rerun).  If the text-input focus-loss also fires a rerun at the same
+    # time, the button True can be lost.  Storing in session_state makes the
+    # click "sticky" until it's consumed by the trigger logic further down.
     if oneclick_btn:
         st.session_state.use_ai = True
+        st.session_state['_btn_action'] = 'ai'
     elif manual_btn:
         st.session_state.use_ai = False
+        st.session_state['_btn_action'] = 'manual'
 
     # Detect Enter key on ticker input
     _ticker_enter = False
     _show_mode_prompt = False
-    if ticker_input and not oneclick_btn and not manual_btn:
+    _has_latched_btn = '_btn_action' in st.session_state
+    if ticker_input and not oneclick_btn and not manual_btn and not _has_latched_btn:
         _prev_ticker = st.session_state.get('_prev_ticker_input', '')
         if ticker_input != _prev_ticker:
             if _has_ai:
@@ -3033,9 +3040,12 @@ if (st.session_state.get('_ai_pending')
         and 'ai_result' not in st.session_state):
     _pending_oneclick = True
 
-# Effective triggers: button click (local) or Enter key (web)
-_trigger_ai = oneclick_btn and ticker_input
-_trigger_manual = (manual_btn and ticker_input) or (_ticker_enter and ticker_input)
+# Effective triggers: consume latched button action from session state.
+# This is robust against concurrent reruns where the ephemeral button
+# value (oneclick_btn / manual_btn) may have already gone back to False.
+_btn_action = st.session_state.pop('_btn_action', None)
+_trigger_ai = (oneclick_btn or _btn_action == 'ai') and ticker_input
+_trigger_manual = ((manual_btn or _btn_action == 'manual') and ticker_input) or (_ticker_enter and ticker_input)
 
 # ── Clean-slate reset: clear ALL previous results so the page starts fresh ──
 _ALL_RESULT_KEYS = (
