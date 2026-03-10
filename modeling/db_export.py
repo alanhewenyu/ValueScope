@@ -461,13 +461,13 @@ def _ensure_ai_grants_table(db_path):
 
 
 def get_extra_quota_today(db_path, client_id):
-    """Get total extra quota granted to a client for today."""
+    """Get total extra quota granted to a client (today's grants + permanent grants like invite codes)."""
     try:
         _ensure_ai_grants_table(db_path)
         conn = sqlite3.connect(db_path)
         row = conn.execute(
             "SELECT COALESCE(SUM(extra_quota), 0) FROM ai_quota_grants "
-            "WHERE client_id = ? AND grant_date = date('now')",
+            "WHERE client_id = ? AND (grant_date = date('now') OR grant_date = '9999-12-31')",
             (client_id,),
         ).fetchone()
         conn.close()
@@ -508,3 +508,120 @@ def reset_usage_today(db_path, client_id):
     except Exception as e:
         print(f"[ValuX DB] Warning: failed to reset usage: {e}", file=sys.stderr)
         return False
+
+
+# ──────────────────────────────────────────────────────────────
+# Invite Codes (redeemable quota vouchers)
+# ──────────────────────────────────────────────────────────────
+
+import secrets as _secrets
+import string as _string
+
+_INVITE_CODES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS invite_codes (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    code         TEXT NOT NULL UNIQUE,
+    quota        INTEGER NOT NULL DEFAULT 10,
+    redeemed_by  TEXT,
+    redeemed_at  TEXT,
+    source       TEXT NOT NULL DEFAULT 'manual',
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_invite_code ON invite_codes(code);
+"""
+
+
+def _ensure_invite_codes_table(db_path):
+    """Create invite_codes table if it doesn't exist."""
+    conn = sqlite3.connect(db_path)
+    conn.executescript(_INVITE_CODES_SCHEMA)
+    conn.close()
+
+
+def generate_invite_code(db_path, quota=10, source='manual', prefix='VIP'):
+    """Generate a new invite code and store it in DB. Returns the code string."""
+    try:
+        _ensure_invite_codes_table(db_path)
+        # Generate a short random code: VIP-XXXXXX (6 alphanumeric chars)
+        suffix = ''.join(_secrets.choice(_string.ascii_lowercase + _string.digits) for _ in range(6))
+        code = f"{prefix}-{suffix}"
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "INSERT INTO invite_codes (code, quota, source) VALUES (?, ?, ?)",
+            (code, quota, source),
+        )
+        conn.commit()
+        conn.close()
+        return code
+    except Exception as e:
+        print(f"[ValuX DB] Warning: failed to generate invite code: {e}", file=sys.stderr)
+        return None
+
+
+def generate_invite_codes_batch(db_path, count=5, quota=10, source='manual', prefix='VIP'):
+    """Generate multiple invite codes at once. Returns list of code strings."""
+    codes = []
+    for _ in range(count):
+        code = generate_invite_code(db_path, quota=quota, source=source, prefix=prefix)
+        if code:
+            codes.append(code)
+    return codes
+
+
+def redeem_invite_code(db_path, code, client_id):
+    """Redeem an invite code. Returns (success: bool, quota: int, error_key: str).
+
+    error_key values: None (success), 'invalid', 'already_used'
+    """
+    try:
+        # Ensure both tables exist before opening the working connection
+        _ensure_invite_codes_table(db_path)
+        _ensure_ai_grants_table(db_path)
+        conn = sqlite3.connect(db_path)
+        row = conn.execute(
+            "SELECT id, quota, redeemed_by FROM invite_codes WHERE code = ?",
+            (code.strip(),),
+        ).fetchone()
+        if not row:
+            conn.close()
+            return False, 0, 'invalid'
+        _id, quota, redeemed_by = row
+        if redeemed_by:
+            conn.close()
+            return False, 0, 'already_used'
+        # Mark as redeemed + grant quota in one transaction
+        conn.execute(
+            "UPDATE invite_codes SET redeemed_by = ?, redeemed_at = datetime('now') WHERE id = ?",
+            (client_id, _id),
+        )
+        conn.execute(
+            "INSERT INTO ai_quota_grants (client_id, extra_quota, grant_date, note) "
+            "VALUES (?, ?, '9999-12-31', ?)",
+            (client_id, quota, f"invite:{code}"),
+        )
+        conn.commit()
+        conn.close()
+        return True, quota, None
+    except Exception as e:
+        print(f"[ValuX DB] Warning: failed to redeem invite code: {e}", file=sys.stderr)
+        return False, 0, 'invalid'
+
+
+def list_invite_codes(db_path, limit=50):
+    """List invite codes (newest first). Returns list of dicts."""
+    try:
+        _ensure_invite_codes_table(db_path)
+        conn = sqlite3.connect(db_path)
+        rows = conn.execute(
+            "SELECT code, quota, redeemed_by, redeemed_at, source, created_at "
+            "FROM invite_codes ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        conn.close()
+        return [
+            {'code': r[0], 'quota': r[1], 'redeemed_by': r[2],
+             'redeemed_at': r[3], 'source': r[4], 'created_at': r[5]}
+            for r in rows
+        ]
+    except Exception:
+        return []

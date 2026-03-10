@@ -1304,6 +1304,24 @@ with st.sidebar:
                 st.warning(t('ai_quota_exceeded', limit=_sb_limit))
                 _contact_email = _get_secret('VALUX_CONTACT_EMAIL') or 'alanhe@icloud.com'
                 st.caption(t('ai_quota_exceeded_contact', email=f'mailto:{_contact_email}'))
+                # ── Invite code redemption ──
+                _invite_db = _get_secret('VALUX_DB_PATH')
+                if _invite_db:
+                    _code_input = st.text_input(
+                        t('invite_code_label'), placeholder=t('invite_code_placeholder'),
+                        key='invite_code_input', label_visibility='collapsed',
+                    )
+                    if _code_input:
+                        from modeling.db_export import redeem_invite_code
+                        _ok, _granted, _err = redeem_invite_code(
+                            _invite_db, _code_input.strip(), _get_client_id())
+                        if _ok:
+                            st.success(t('invite_code_success', n=_granted))
+                            st.rerun()
+                        elif _err == 'already_used':
+                            st.error(t('invite_code_used'))
+                        else:
+                            st.error(t('invite_code_invalid'))
     else:
         oneclick_btn = False
 
@@ -1446,39 +1464,67 @@ with st.sidebar:
     if _is_admin():
         with st.expander("🔧 Admin", expanded=False):
             _adm_limit = int(_get_secret('VALUX_AI_DAILY_LIMIT') or '5')
-            st.markdown(f"**Daily limit:** `{_adm_limit}` / user / day")
-            # Usage stats
             _db_path = _get_secret('VALUX_DB_PATH')
-            if _db_path:
-                from modeling.db_export import get_ai_usage_stats, grant_extra_quota, reset_usage_today, get_extra_quota_today
-                _stats = get_ai_usage_stats(_db_path)
-                if _stats:
-                    _total = sum(r[1] for r in _stats)
-                    st.markdown(f"**Today:** {_total} calls · {len(_stats)} users")
-                    st.markdown("---")
-                    for _idx, (_ip, _cnt, _last_tk) in enumerate(_stats):
-                        _extra = get_extra_quota_today(_db_path, _ip)
-                        _eff_limit = _adm_limit + _extra
-                        _tk_label = f" · {_last_tk}" if _last_tk else ""
-                        _ip_short = _ip[:15] + '…' if len(_ip) > 15 else _ip
-                        st.markdown(f"**`{_ip_short}`** — {_cnt}/{_eff_limit} used{_tk_label}")
-                        _col_g, _col_r = st.columns(2)
-                        with _col_g:
-                            if st.button(f"➕ +5 quota", key=f"grant_{_idx}"):
-                                grant_extra_quota(_db_path, _ip, 5, note="admin grant")
-                                st.rerun()
-                        with _col_r:
-                            if st.button(f"🔄 Reset", key=f"reset_{_idx}"):
-                                reset_usage_today(_db_path, _ip)
-                                st.rerun()
-                else:
-                    st.caption("No AI usage today.")
-                st.markdown("---")
-                st.caption("💡 Change base limit via Secrets: `VALUX_AI_DAILY_LIMIT`")
+            if not _db_path:
+                st.caption("⚠️ Set `VALUX_DB_PATH` in Secrets to enable admin features.")
             else:
-                _sess_count = st.session_state.get('_ai_usage_count', 0)
-                st.markdown(f"**Session usage:** {_sess_count} calls")
-                st.caption("⚠️ Set `VALUX_DB_PATH` in Secrets for per-IP tracking.")
+                from modeling.db_export import (
+                    get_ai_usage_stats, grant_extra_quota, reset_usage_today,
+                    get_extra_quota_today, generate_invite_code, list_invite_codes,
+                )
+
+                # ── Tab layout: Usage | Invite Codes ──
+                _adm_tab1, _adm_tab2 = st.tabs(["📊 Usage", "🎟️ Invite Codes"])
+
+                with _adm_tab1:
+                    st.markdown(f"**Base limit:** `{_adm_limit}` / user / day")
+                    _stats = get_ai_usage_stats(_db_path)
+                    if _stats:
+                        _total = sum(r[1] for r in _stats)
+                        st.markdown(f"**Today:** {_total} calls · {len(_stats)} users")
+                        for _idx, (_ip, _cnt, _last_tk) in enumerate(_stats):
+                            _extra = get_extra_quota_today(_db_path, _ip)
+                            _eff_limit = _adm_limit + _extra
+                            _tk_label = f" · {_last_tk}" if _last_tk else ""
+                            _ip_short = _ip[:15] + '…' if len(_ip) > 15 else _ip
+                            st.markdown(f"`{_ip_short}` — **{_cnt}/{_eff_limit}**{_tk_label}")
+                            _col_g, _col_r = st.columns(2)
+                            with _col_g:
+                                if st.button("➕ +10", key=f"grant_{_idx}"):
+                                    grant_extra_quota(_db_path, _ip, 10, note="admin grant")
+                                    st.rerun()
+                            with _col_r:
+                                if st.button("🔄 Reset", key=f"reset_{_idx}"):
+                                    reset_usage_today(_db_path, _ip)
+                                    st.rerun()
+                    else:
+                        st.caption("No AI usage today.")
+
+                with _adm_tab2:
+                    # Generate new invite code
+                    _code_quota = st.number_input("Quota per code", min_value=1, max_value=999,
+                                                   value=10, step=5, key="adm_code_quota")
+                    _code_count = st.number_input("How many codes", min_value=1, max_value=20,
+                                                   value=1, step=1, key="adm_code_count")
+                    if st.button("🎟️ Generate", key="gen_codes"):
+                        _new_codes = []
+                        for _ in range(int(_code_count)):
+                            _c = generate_invite_code(_db_path, quota=int(_code_quota))
+                            if _c:
+                                _new_codes.append(_c)
+                        if _new_codes:
+                            st.success(f"Generated {len(_new_codes)} code(s)")
+                            st.code('\n'.join(_new_codes), language=None)
+                        else:
+                            st.error("Failed to generate codes")
+
+                    # List existing codes
+                    _codes = list_invite_codes(_db_path, limit=20)
+                    if _codes:
+                        st.markdown("**Recent codes:**")
+                        for _ci in _codes:
+                            _status = f"✅ {_ci['redeemed_by'][:12]}…" if _ci['redeemed_by'] else "🟡 unused"
+                            st.caption(f"`{_ci['code']}` · {_ci['quota']}x · {_status}")
 
     # ── API key ──
     _fmp_env = os.environ.get("FMP_API_KEY", "")

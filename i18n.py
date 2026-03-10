@@ -92,6 +92,11 @@ _STRINGS = {
         'ai_quota_remaining': '\U0001f916 Free AI quota: {n}/{limit} remaining today',
         'ai_quota_exceeded': 'Today\'s free AI quota is used up ({limit}/day). Try again tomorrow or contact the admin.',
         'ai_quota_exceeded_contact': '[Contact admin]({email}) for more quota, or run ValuX locally for unlimited access.',
+        'invite_code_label': 'Enter invite code',
+        'invite_code_placeholder': 'Enter invite code, e.g. VIP-abc123',
+        'invite_code_success': '🎉 Code redeemed! +{n} AI analyses added.',
+        'invite_code_used': 'This code has already been used.',
+        'invite_code_invalid': 'Invalid code. Please check and try again.',
 
         # ── Section headers ──
         'section_hist_data': 'Historical Financial Data (in millions)',
@@ -397,6 +402,11 @@ _STRINGS = {
         'ai_quota_remaining': '\U0001f916 \u514d\u8d39AI\u989d\u5ea6\uff1a\u4eca\u65e5\u5269\u4f59 {n}/{limit} \u6b21',
         'ai_quota_exceeded': '\u4eca\u65e5\u514d\u8d39AI\u989d\u5ea6\u5df2\u7528\u5b8c\uff08{limit}\u6b21/\u5929\uff09\u3002\u8bf7\u660e\u5929\u518d\u8bd5\u6216\u8054\u7cfb\u7ba1\u7406\u5458\u3002',
         'ai_quota_exceeded_contact': '[\u8054\u7cfb\u7ba1\u7406\u5458]({email})\u83b7\u53d6\u66f4\u591a\u989d\u5ea6\uff0c\u6216\u672c\u5730\u8fd0\u884c ValuX \u53ef\u65e0\u9650\u4f7f\u7528\u3002',
+        'invite_code_label': '\u8f93\u5165\u9080\u8bf7\u7801',
+        'invite_code_placeholder': '\u8f93\u5165\u9080\u8bf7\u7801\uff0c\u4f8b\u5982 VIP-abc123',
+        'invite_code_success': '\U0001f389 \u5151\u6362\u6210\u529f\uff01\u5df2\u589e\u52a0 {n} \u6b21 AI \u5206\u6790\u989d\u5ea6\u3002',
+        'invite_code_used': '\u8be5\u9080\u8bf7\u7801\u5df2\u88ab\u4f7f\u7528\u3002',
+        'invite_code_invalid': '\u65e0\u6548\u9080\u8bf7\u7801\uff0c\u8bf7\u68c0\u67e5\u540e\u91cd\u8bd5\u3002',
 
         # ── Section headers ──
         'section_hist_data': '\u5386\u53f2\u8d22\u52a1\u6570\u636e\uff08\u767e\u4e07\uff09',
