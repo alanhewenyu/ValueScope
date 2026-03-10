@@ -82,6 +82,8 @@ from modeling.ai_analyst import (
     GEMINI_MODEL,
     cloud_ai_analyze,
     cloud_gap_analyze,
+    SerperCreditError,
+    DeepSeekCreditError,
 )
 import modeling.ai_analyst as _ai_mod
 from modeling.excel_export import write_to_excel
@@ -1296,6 +1298,8 @@ with st.sidebar:
             st.caption(t('ai_quota_remaining', n=_sb_remaining, limit=_sb_limit))
             if not _sb_allowed:
                 st.warning(t('ai_quota_exceeded', limit=_sb_limit))
+                _contact_email = os.environ.get('VALUX_CONTACT_EMAIL', 'alanhe@icloud.com')
+                st.caption(t('ai_quota_exceeded_contact', email=f'mailto:{_contact_email}'))
     else:
         oneclick_btn = False
 
@@ -1433,6 +1437,30 @@ with st.sidebar:
     # ── Spacer between action buttons and settings ──
     st.markdown('<div style="margin-top:20px;"></div>', unsafe_allow_html=True)
     st.markdown('<hr style="margin:0 0 12px 0; border:none; border-top:1px solid var(--vx-border, #d0d7de); opacity:0.5;">', unsafe_allow_html=True)
+
+    # ── Admin panel (visible only with ?admin=<key>) ──
+    if _is_admin():
+        with st.expander("🔧 Admin", expanded=False):
+            _adm_limit = int(os.environ.get('VALUX_AI_DAILY_LIMIT', '5'))
+            st.markdown(f"**Daily limit:** `{_adm_limit}` per user/IP")
+            st.caption("Change via Streamlit Secrets: `VALUX_AI_DAILY_LIMIT`")
+            # Usage stats
+            _db_path = os.environ.get('VALUX_DB_PATH')
+            if _db_path:
+                from modeling.db_export import get_ai_usage_stats
+                _stats = get_ai_usage_stats(_db_path)
+                if _stats:
+                    _total = sum(r[1] for r in _stats)
+                    st.markdown(f"**Today's usage:** {_total} calls from {len(_stats)} IPs")
+                    for _ip, _cnt, _last_tk in _stats:
+                        _tk_label = f" ({_last_tk})" if _last_tk else ""
+                        st.caption(f"`{_ip}` — {_cnt}x{_tk_label}")
+                else:
+                    st.caption("No AI usage today.")
+            else:
+                _sess_count = st.session_state.get('_ai_usage_count', 0)
+                st.markdown(f"**Session usage:** {_sess_count} calls")
+                st.caption("Set `VALUX_DB_PATH` for IP-level tracking.")
 
     # ── API key ──
     _fmp_env = os.environ.get("FMP_API_KEY", "")
@@ -2634,6 +2662,14 @@ def _run_cloud_ai_analysis():
         s._reasoning_just_completed = True
         s._ai_running = False
         return True
+    except SerperCreditError:
+        s._ai_running = False
+        st.error(t('err_serper_credits'))
+        return False
+    except DeepSeekCreditError:
+        s._ai_running = False
+        st.error(t('err_deepseek_credits'))
+        return False
     except Exception as e:
         s._ai_running = False
         st.error(t('err_ai_failed', msg=str(e)))
@@ -2866,6 +2902,12 @@ def _run_gap_analysis_streaming(ticker, company_profile, results, valuation_para
                 )
                 _elapsed = _time.time() - _t0
                 status.update(label=t('cloud_ai_complete').format(elapsed=_elapsed), state="complete")
+            except SerperCreditError:
+                status.update(label="Error", state="error")
+                st.error(t('err_serper_credits'))
+            except DeepSeekCreditError:
+                status.update(label="Error", state="error")
+                st.error(t('err_deepseek_credits'))
             except Exception as e:
                 status.update(label=f"Error: {e}", state="error")
                 return None

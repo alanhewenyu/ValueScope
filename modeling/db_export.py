@@ -405,6 +405,22 @@ def get_ai_usage_today(db_path, client_id):
         return 0
 
 
+def get_ai_usage_stats(db_path):
+    """Return today's AI usage grouped by client_id: list of (client_id, count, last_ticker)."""
+    try:
+        _ensure_ai_usage_table(db_path)
+        conn = sqlite3.connect(db_path)
+        rows = conn.execute(
+            "SELECT client_id, COUNT(*) as cnt, MAX(ticker) as last_ticker "
+            "FROM ai_usage WHERE date(used_at) = date('now') "
+            "GROUP BY client_id ORDER BY cnt DESC",
+        ).fetchall()
+        conn.close()
+        return rows
+    except Exception:
+        return []
+
+
 def record_ai_usage(db_path, client_id, ticker=None):
     """Insert a new AI usage row."""
     try:
