@@ -2358,7 +2358,7 @@ def _run_cloud_ai_analysis():
 
         toast_placeholder = st.empty()
 
-        with st.status(f"🤖 {status_label} via DeepSeek", expanded=True) as status:
+        with st.status(f"🤖 {status_label} via DeepSeek R1", expanded=True) as status:
             progress_ph = st.empty()
 
             def _progress(phase, message):
@@ -2366,18 +2366,25 @@ def _run_cloud_ai_analysis():
                 if phase == 'searching':
                     progress_ph.write(t('cloud_searching', query=message))
                     _render_progress_toast(toast_placeholder,
-                                            f'🤖 {status_label} — DeepSeek',
+                                            f'🤖 {status_label} — DeepSeek R1',
                                             t('cloud_searching', query=(message or '')[:60]),
+                                            elapsed)
+                elif phase == 'scraping':
+                    _url_short = (message or '')[:50]
+                    progress_ph.write(t('cloud_scraping', url=_url_short))
+                    _render_progress_toast(toast_placeholder,
+                                            f'🤖 {status_label} — DeepSeek R1',
+                                            t('cloud_scraping', url=_url_short),
                                             elapsed)
                 elif phase == 'analyzing':
                     progress_ph.write(t('cloud_analyzing'))
                     _render_progress_toast(toast_placeholder,
-                                            f'🤖 {status_label} — DeepSeek',
+                                            f'🤖 {status_label} — DeepSeek R1',
                                             t('cloud_analyzing'), elapsed)
                 elif phase == 'generating':
                     progress_ph.write(t('cloud_generating'))
                     _render_progress_toast(toast_placeholder,
-                                            f'🤖 {status_label} — DeepSeek',
+                                            f'🤖 {status_label} — DeepSeek R1',
                                             t('cloud_generating'), elapsed)
 
             text = cloud_ai_analyze(
@@ -2392,7 +2399,7 @@ def _run_cloud_ai_analysis():
         # Show completion toast briefly, then clear
         _render_progress_toast(toast_placeholder,
                                 t('ai_toast_complete_title', label=status_label),
-                                t('ai_toast_complete_msg', engine='DeepSeek'),
+                                t('ai_toast_complete_msg', engine='DeepSeek R1'),
                                 elapsed, done=True)
         time.sleep(2)
         toast_placeholder.empty()
@@ -2638,6 +2645,9 @@ def _run_gap_analysis_streaming(ticker, company_profile, results, valuation_para
             def _gap_progress(phase, msg):
                 if phase == 'searching':
                     status.update(label=t('cloud_searching').format(query=msg))
+                elif phase == 'scraping':
+                    _url_short = (msg or '')[:50]
+                    status.update(label=t('cloud_scraping').format(url=_url_short))
                 elif phase == 'analyzing':
                     status.update(label=t('cloud_analyzing'))
                 elif phase == 'generating':
