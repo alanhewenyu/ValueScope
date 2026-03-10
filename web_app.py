@@ -397,8 +397,8 @@ div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hero) div[data-testid="s
 
 /* ── Verdict card ── */
 .verdict-card {
-    border-radius: 12px; padding: 16px 20px; margin: 8px 0;
-    display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap;
+    border-radius: 12px; padding: 16px 24px; margin: 8px 0;
+    display: flex; align-items: center; justify-content: space-between; gap: 28px; flex-wrap: wrap;
 }
 .verdict-card.buy  { background: var(--vx-hero-positive); border: 1px solid rgba(46,204,113,0.3); }
 .verdict-card.hold { background: var(--vx-hero-neutral); border: 1px solid var(--vx-border); }
@@ -416,9 +416,9 @@ div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hero) div[data-testid="s
     font-size: 0.72rem; color: var(--vx-text-secondary); text-align: center; line-height: 1.2;
 }
 .verdict-metrics {
-    display: flex; align-items: center; gap: 20px; flex-wrap: wrap; flex: 1; justify-content: center;
+    display: flex; align-items: center; gap: 28px; flex-wrap: wrap; flex: 1; justify-content: flex-end;
 }
-.verdict-metric { text-align: center; }
+.verdict-metric { text-align: right; }
 .verdict-metric .vm-label {
     font-size: 0.68rem; color: var(--vx-text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;
 }
@@ -426,7 +426,7 @@ div[data-testid="stLayoutWrapper"]:has(div.valux-sticky-hero) div[data-testid="s
 .verdict-metric .vm-val.intrinsic { color: var(--vx-intrinsic); }
 .verdict-metric .vm-val.market   { color: var(--vx-market-num); }
 .verdict-vs { font-size: 1.1rem; color: var(--vx-text-muted); font-weight: 300; align-self: center; }
-.verdict-mos { text-align: center; min-width: 90px; }
+.verdict-mos { text-align: right; min-width: 100px; padding-left: 8px; border-left: 1px solid rgba(128,128,128,0.2); }
 .verdict-mos .vm-label { font-size: 0.68rem; color: var(--vx-text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
 .verdict-mos .vm-pct { font-size: 1.5rem; font-weight: 800; line-height: 1; }
 .verdict-card.buy  .verdict-mos .vm-pct { color: var(--vx-green); }
@@ -878,8 +878,10 @@ div[data-testid="InputInstructions"] { display: none !important; }
         flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 14px;
     }
     .verdict-badge .badge-label { font-size: 1.1rem; }
-    .verdict-metrics { gap: 12px; }
+    .verdict-metrics { gap: 12px; justify-content: center; }
+    .verdict-metric { text-align: center; }
     .verdict-metric .vm-val { font-size: 1.2rem; }
+    .verdict-mos { text-align: center; border-left: none; padding-left: 0; border-top: 1px solid rgba(128,128,128,0.15); padding-top: 8px; }
     .verdict-mos .vm-pct { font-size: 1.2rem; }
     .verdict-vs { display: none; }
     .summary-cards { grid-template-columns: repeat(2, 1fr); gap: 8px; }
@@ -1140,21 +1142,32 @@ def _get_client_id():
 
 
 def _check_ai_quota():
-    """Returns (allowed: bool, used: int, limit: int)."""
+    """Returns (allowed: bool, used: int, limit: int).
+
+    Uses DB-backed tracking when VALUX_DB_PATH is set, otherwise falls back
+    to session-state tracking (per-session, per-IP).
+    """
     limit = int(os.environ.get('VALUX_AI_DAILY_LIMIT', '5'))
     if limit <= 0:  # 0 or negative = unlimited
         return True, 0, 0
     db_path = os.environ.get('VALUX_DB_PATH')
-    if not db_path:
-        return True, 0, 0  # No DB = no tracking = allow
-    from modeling.db_export import get_ai_usage_today
-    client_id = _get_client_id()
-    used = get_ai_usage_today(db_path, client_id)
+    if db_path:
+        from modeling.db_export import get_ai_usage_today
+        client_id = _get_client_id()
+        used = get_ai_usage_today(db_path, client_id)
+    else:
+        # Fallback: session-state tracking (resets on redeploy / new session)
+        _key = '_ai_usage_count'
+        used = st.session_state.get(_key, 0)
     return used < limit, used, limit
 
 
 def _record_ai_usage(ticker=None):
-    """Record an AI usage event."""
+    """Record an AI usage event (DB + session-state fallback)."""
+    # Always bump session counter
+    _key = '_ai_usage_count'
+    st.session_state[_key] = st.session_state.get(_key, 0) + 1
+    # DB tracking if available
     db_path = os.environ.get('VALUX_DB_PATH')
     if not db_path:
         return
@@ -1264,6 +1277,8 @@ with st.sidebar:
         if _sb_limit > 0:
             _sb_remaining = _sb_limit - _sb_used
             st.caption(t('ai_quota_remaining', n=_sb_remaining, limit=_sb_limit))
+            if not _sb_allowed:
+                st.caption(t('ai_quota_exceeded', limit=_sb_limit))
     else:
         oneclick_btn = False
 
@@ -1397,6 +1412,10 @@ with st.sidebar:
             )
             st.session_state[_state_key] = _speed
     # ── Language is now controlled by EN|CN buttons in brand area (query params) ──
+
+    # ── Spacer between action buttons and settings ──
+    st.markdown('<div style="margin-top:20px;"></div>', unsafe_allow_html=True)
+    st.markdown('<hr style="margin:0 0 12px 0; border:none; border-top:1px solid var(--vx-border, #d0d7de); opacity:0.5;">', unsafe_allow_html=True)
 
     # ── API key ──
     _fmp_env = os.environ.get("FMP_API_KEY", "")
@@ -3022,6 +3041,10 @@ if 'summary_df' not in st.session_state:
                              background:color-mix(in srgb, var(--vx-accent, #0969da) 8%, transparent);
                              color:var(--vx-accent, #0969da); border:1px solid color-mix(in srgb, var(--vx-accent) 20%, transparent);">
                     {t('welcome_cn')}</span>
+                <span style="font-size:0.8rem; padding:4px 14px; border-radius:20px;
+                             background:color-mix(in srgb, var(--vx-accent, #0969da) 8%, transparent);
+                             color:var(--vx-accent, #0969da); border:1px solid color-mix(in srgb, var(--vx-accent) 20%, transparent);">
+                    {t('welcome_jp')}</span>
             </div>
             <p style="font-size:0.78rem; color:var(--vx-text-muted, #8b949e);">
                 {t('welcome_api_note')}
