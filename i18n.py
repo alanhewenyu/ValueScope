@@ -1,5 +1,5 @@
 # Copyright (c) 2026 Alan He. Licensed under MIT.
-"""ValuX i18n — lightweight Chinese/English UI translations."""
+"""ValueScope i18n — lightweight Chinese/English UI translations."""
 
 import streamlit as st
 
@@ -16,10 +16,10 @@ _STRINGS = {
         'sidebar_ticker_placeholder': 'e.g. AAPL, 0700.HK, 7203.T, or 600519.SS',
         'sidebar_ticker_placeholder_web': 'e.g. AAPL, 0700.HK, 7203.T',
         'sidebar_go_btn': '\u25b6\ufe0f Start Valuation',
-        'sidebar_manual_btn': '\U0001f4dd Manual Valuation',
+        'sidebar_manual_btn': '\U0001f4dd Custom Valuation',
         'sidebar_manual_help': 'We fetch the data \u2014 you review it and set each assumption yourself for full control.',
         'sidebar_or': 'or',
-        'sidebar_oneclick_btn': '\U0001f916 AI Valuation',
+        'sidebar_oneclick_btn': '\U0001f916 AI Quick Valuation',
         'sidebar_oneclick_help': 'Fully automated: AI researches the company, sets all assumptions, and runs the DCF.',
         'sidebar_mode_prompt': '\U0001f446 Choose a valuation mode above to start',
         'sidebar_ai_engine': 'AI Engine',
@@ -30,12 +30,12 @@ _STRINGS = {
         'sidebar_speed_quality_qwen': '\U0001f50d Quality (+ Web)',
         'sidebar_speed_fast_qwen': '\u26a1 Fast (data only)',
         'sidebar_speed_help_qwen': 'Quality enables web search via Tavily. Fast uses only the financial data provided \u2014 no web access, much faster.',
-        'sidebar_no_engine': ('**AI Valuation is not available in the web version.**\n\n'
-                               'AI Valuation requires a locally installed AI CLI '
+        'sidebar_no_engine': ('**AI Quick Valuation is not available in the web version.**\n\n'
+                               'AI Quick Valuation requires a locally installed AI CLI '
                                '(Claude Code, Gemini CLI, or Qwen CLI).\n\n'
-                               'To use AI Valuation, download and run ValuX locally:\n\n'
-                               '```\ngit clone https://github.com/alanhewenyu/ValuX.git\ncd ValuX && pip install -r requirements.txt\nstreamlit run web_app.py\n```\n\n'
-                               'You can still use **Manual Valuation** on this page \u2014 it works the same way, '
+                               'To use AI Quick Valuation, download and run ValueScope locally:\n\n'
+                               '```\ngit clone https://github.com/alanhewenyu/ValueScope.git\ncd ValueScope && pip install -r requirements.txt\nstreamlit run web_app.py\n```\n\n'
+                               'You can still use **Custom Valuation** on this page \u2014 it works the same way, '
                                'you just set the assumptions yourself.'),
         'sidebar_language': 'Language',
         'sidebar_language_help': 'Interface & AI output language. EN = English, CN = \u4e2d\u6587.',
@@ -47,7 +47,7 @@ _STRINGS = {
 
         # ── Welcome page ──
         'welcome_instruction': 'Enter a stock symbol in the sidebar, then click<br>'
-                               '<b>\U0001f4dd Manual Valuation</b> or <b>\U0001f916 AI Valuation</b> to begin.',
+                               '<b>\U0001f4dd Custom Valuation</b> or <b>\U0001f916 AI Quick Valuation</b> to begin.',
         'welcome_instruction_web': 'Enter a stock symbol in the sidebar and press <b>Enter</b> to begin.',
         'welcome_us': '\U0001f1fa\U0001f1f8 US \u2014 e.g. AAPL',
         'welcome_hk': '\U0001f1ed\U0001f1f0 HK \u2014 e.g. 0700.HK',
@@ -91,7 +91,7 @@ _STRINGS = {
         # ── AI quota ──
         'ai_quota_remaining': '\U0001f916 Free AI quota: {n}/{limit} remaining today',
         'ai_quota_exceeded': 'Today\'s free AI quota is used up ({limit}/day). Try again tomorrow or contact the admin.',
-        'ai_quota_exceeded_contact': '[Contact admin]({email}) for more quota, or run ValuX locally for unlimited access.',
+        'ai_quota_exceeded_contact': '[Contact admin]({email}) for more quota, or run ValueScope locally for unlimited access.',
         'invite_code_label': 'Enter invite code',
         'invite_code_placeholder': 'Enter invite code, e.g. VIP-abc123',
         'invite_code_success': '🎉 Code redeemed! +{n} AI analyses added.',
@@ -275,8 +275,8 @@ _STRINGS = {
         'err_fetch_failed_a': 'Failed to fetch A-share data. Data source temporarily unavailable — please try again later.',
         'err_ai_parse': 'AI Analysis succeeded but failed to parse parameters. The model might have returned an invalid format.',
         'err_ai_failed': 'AI Analysis failed: {msg}',
-        'err_serper_credits': '⚠️ Search service (Serper) credits exhausted or API key invalid. AI analysis requires an active Serper subscription. Please contact the admin or run ValuX locally.',
-        'err_deepseek_credits': '⚠️ AI service (DeepSeek) credits exhausted or API key invalid. Please contact the admin or run ValuX locally.',
+        'err_serper_credits': '⚠️ Search service (Serper) credits exhausted or API key invalid. AI analysis requires an active Serper subscription. Please contact the admin or run ValueScope locally.',
+        'err_deepseek_credits': '⚠️ AI service (DeepSeek) credits exhausted or API key invalid. Please contact the admin or run ValueScope locally.',
         'err_gap_failed': 'Gap analysis failed: {msg}',
         'warn_ai_no_params': 'AI could not produce parameters. Please switch to Manual Input.',
         'fetching_data': 'Fetching data for {ticker}...',
@@ -284,8 +284,8 @@ _STRINGS = {
         'calculating_dcf': 'Calculating DCF...',
 
         # ── Footer ──
-        'footer_tagline': '<b>ValuX</b> \u2014 AI-Powered Interactive DCF Valuation',
-        'footer_tagline_web': '<b>ValuX</b> \u2014 Interactive DCF Valuation',
+        'footer_tagline': '<b>ValueScope</b> \u2014 AI-Powered Interactive DCF Valuation',
+        'footer_tagline_web': '<b>ValueScope</b> \u2014 Interactive DCF Valuation',
 
         # ── Financial table row labels ──
         'fin_reported_currency': 'Reported Currency',
@@ -327,10 +327,10 @@ _STRINGS = {
         'sidebar_ticker_placeholder': '\u4f8b\u5982 AAPL, 0700.HK, 7203.T, 600519.SS',
         'sidebar_ticker_placeholder_web': '\u4f8b\u5982 AAPL, 0700.HK, 7203.T',
         'sidebar_go_btn': '\u25b6\ufe0f \u5f00\u59cb\u4f30\u503c',
-        'sidebar_manual_btn': '\U0001f4dd \u624b\u52a8\u4f30\u503c',
+        'sidebar_manual_btn': '\U0001f4dd \u81ea\u5b9a\u4e49\u4f30\u503c',
         'sidebar_manual_help': '\u6211\u4eec\u83b7\u53d6\u6570\u636e\u2014\u2014\u60a8\u5ba1\u9605\u5e76\u81ea\u884c\u8bbe\u5b9a\u6bcf\u4e2a\u5047\u8bbe\uff0c\u5b8c\u5168\u638c\u63a7\u3002',
         'sidebar_or': '\u6216',
-        'sidebar_oneclick_btn': '\U0001f916 AI \u4f30\u503c',
+        'sidebar_oneclick_btn': '\U0001f916 AI \u4e00\u952e\u4f30\u503c',
         'sidebar_oneclick_help': '\u5168\u81ea\u52a8\uff1aAI \u8c03\u7814\u516c\u53f8\u3001\u8bbe\u5b9a\u6240\u6709\u5047\u8bbe\u5e76\u8fd0\u884c DCF\u3002',
         'sidebar_mode_prompt': '\U0001f446 \u8bf7\u5728\u4e0a\u65b9\u9009\u62e9\u4f30\u503c\u6a21\u5f0f',
         'sidebar_ai_engine': 'AI \u5f15\u64ce',
@@ -341,11 +341,11 @@ _STRINGS = {
         'sidebar_speed_quality_qwen': '\U0001f50d \u7cbe\u7ec6 (+ \u7f51\u7edc\u641c\u7d22)',
         'sidebar_speed_fast_qwen': '\u26a1 \u5feb\u901f (\u4ec5\u6570\u636e)',
         'sidebar_speed_help_qwen': '\u7cbe\u7ec6\u6a21\u5f0f\u901a\u8fc7 Tavily \u542f\u7528\u7f51\u7edc\u641c\u7d22\u3002\u5feb\u901f\u6a21\u5f0f\u4ec5\u4f7f\u7528\u63d0\u4f9b\u7684\u8d22\u52a1\u6570\u636e\u2014\u2014\u65e0\u7f51\u7edc\u8bbf\u95ee\uff0c\u901f\u5ea6\u66f4\u5feb\u3002',
-        'sidebar_no_engine': ('**\u7f51\u9875\u7248\u6682\u4e0d\u652f\u6301 AI \u4f30\u503c\u3002**\n\n'
-                               'AI \u4f30\u503c\u9700\u8981\u672c\u5730\u5b89\u88c5 AI CLI\uff08Claude Code\u3001Gemini CLI \u6216 Qwen CLI\uff09\u3002\n\n'
-                               '\u5982\u9700\u4f7f\u7528 AI \u4f30\u503c\uff0c\u8bf7\u4e0b\u8f7d\u5e76\u5728\u672c\u5730\u8fd0\u884c ValuX\uff1a\n\n'
-                               '```\ngit clone https://github.com/alanhewenyu/ValuX.git\ncd ValuX && pip install -r requirements.txt\nstreamlit run web_app.py\n```\n\n'
-                               '\u60a8\u4ecd\u53ef\u4ee5\u5728\u6b64\u9875\u9762\u4f7f\u7528 **\u624b\u52a8\u4f30\u503c** \u2014\u2014 \u529f\u80fd\u5b8c\u5168\u76f8\u540c\uff0c'
+        'sidebar_no_engine': ('**\u7f51\u9875\u7248\u6682\u4e0d\u652f\u6301 AI \u4e00\u952e\u4f30\u503c\u3002**\n\n'
+                               'AI \u4e00\u952e\u4f30\u503c\u9700\u8981\u672c\u5730\u5b89\u88c5 AI CLI\uff08Claude Code\u3001Gemini CLI \u6216 Qwen CLI\uff09\u3002\n\n'
+                               '\u5982\u9700\u4f7f\u7528 AI \u4e00\u952e\u4f30\u503c\uff0c\u8bf7\u4e0b\u8f7d\u5e76\u5728\u672c\u5730\u8fd0\u884c ValueScope\uff1a\n\n'
+                               '```\ngit clone https://github.com/alanhewenyu/ValueScope.git\ncd ValueScope && pip install -r requirements.txt\nstreamlit run web_app.py\n```\n\n'
+                               '\u60a8\u4ecd\u53ef\u4ee5\u5728\u6b64\u9875\u9762\u4f7f\u7528 **\u81ea\u5b9a\u4e49\u4f30\u503c** \u2014\u2014 \u529f\u80fd\u5b8c\u5168\u76f8\u540c\uff0c'
                                '\u53ea\u662f\u9700\u8981\u60a8\u81ea\u5df1\u8bbe\u5b9a\u5047\u8bbe\u53c2\u6570\u3002'),
         'sidebar_language': '\u8bed\u8a00',
         'sidebar_language_help': '\u754c\u9762\u548c AI \u8f93\u51fa\u8bed\u8a00\u3002EN = English\uff0cCN = \u4e2d\u6587\u3002',
@@ -357,7 +357,7 @@ _STRINGS = {
 
         # ── Welcome page ──
         'welcome_instruction': '\u5728\u4fa7\u8fb9\u680f\u8f93\u5165\u80a1\u7968\u4ee3\u7801\uff0c\u7136\u540e\u70b9\u51fb<br>'
-                               '<b>\U0001f4dd \u624b\u52a8\u4f30\u503c</b> \u6216 <b>\U0001f916 AI \u4f30\u503c</b> \u5f00\u59cb\u3002',
+                               '<b>\U0001f4dd \u81ea\u5b9a\u4e49\u4f30\u503c</b> \u6216 <b>\U0001f916 AI \u4e00\u952e\u4f30\u503c</b> \u5f00\u59cb\u3002',
         'welcome_instruction_web': '\u5728\u4fa7\u8fb9\u680f\u8f93\u5165\u80a1\u7968\u4ee3\u7801\uff0c\u6309 <b>Enter</b> \u5f00\u59cb\u3002',
         'welcome_us': '\U0001f1fa\U0001f1f8 \u7f8e\u80a1 \u2014 \u4f8b\u5982 AAPL',
         'welcome_hk': '\U0001f1ed\U0001f1f0 \u6e2f\u80a1 \u2014 \u4f8b\u5982 0700.HK',
@@ -401,7 +401,7 @@ _STRINGS = {
         # ── AI quota ──
         'ai_quota_remaining': '\U0001f916 \u514d\u8d39AI\u989d\u5ea6\uff1a\u4eca\u65e5\u5269\u4f59 {n}/{limit} \u6b21',
         'ai_quota_exceeded': '\u4eca\u65e5\u514d\u8d39AI\u989d\u5ea6\u5df2\u7528\u5b8c\uff08{limit}\u6b21/\u5929\uff09\u3002\u8bf7\u660e\u5929\u518d\u8bd5\u6216\u8054\u7cfb\u7ba1\u7406\u5458\u3002',
-        'ai_quota_exceeded_contact': '[\u8054\u7cfb\u7ba1\u7406\u5458]({email})\u83b7\u53d6\u66f4\u591a\u989d\u5ea6\uff0c\u6216\u672c\u5730\u8fd0\u884c ValuX \u53ef\u65e0\u9650\u4f7f\u7528\u3002',
+        'ai_quota_exceeded_contact': '[\u8054\u7cfb\u7ba1\u7406\u5458]({email})\u83b7\u53d6\u66f4\u591a\u989d\u5ea6\uff0c\u6216\u672c\u5730\u8fd0\u884c ValueScope \u53ef\u65e0\u9650\u4f7f\u7528\u3002',
         'invite_code_label': '\u8f93\u5165\u9080\u8bf7\u7801',
         'invite_code_placeholder': '\u8f93\u5165\u9080\u8bf7\u7801\uff0c\u4f8b\u5982 VIP-abc123',
         'invite_code_success': '\U0001f389 \u5151\u6362\u6210\u529f\uff01\u5df2\u589e\u52a0 {n} \u6b21 AI \u5206\u6790\u989d\u5ea6\u3002',
@@ -585,8 +585,8 @@ _STRINGS = {
         'err_fetch_failed_a': '获取 A 股数据失败。数据源暂时不可用，请稍后重试。',
         'err_ai_parse': 'AI \u5206\u6790\u6210\u529f\u4f46\u53c2\u6570\u89e3\u6790\u5931\u8d25\u3002\u6a21\u578b\u53ef\u80fd\u8fd4\u56de\u4e86\u65e0\u6548\u683c\u5f0f\u3002',
         'err_ai_failed': 'AI \u5206\u6790\u5931\u8d25\uff1a{msg}',
-        'err_serper_credits': '\u26a0\ufe0f \u641c\u7d22\u670d\u52a1\uff08Serper\uff09\u989d\u5ea6\u5df2\u7528\u5b8c\u6216 API Key \u65e0\u6548\u3002AI \u5206\u6790\u9700\u8981\u6709\u6548\u7684 Serper \u8ba2\u9605\u3002\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458\u6216\u672c\u5730\u8fd0\u884c ValuX\u3002',
-        'err_deepseek_credits': '\u26a0\ufe0f AI \u670d\u52a1\uff08DeepSeek\uff09\u989d\u5ea6\u5df2\u7528\u5b8c\u6216 API Key \u65e0\u6548\u3002\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458\u6216\u672c\u5730\u8fd0\u884c ValuX\u3002',
+        'err_serper_credits': '\u26a0\ufe0f \u641c\u7d22\u670d\u52a1\uff08Serper\uff09\u989d\u5ea6\u5df2\u7528\u5b8c\u6216 API Key \u65e0\u6548\u3002AI \u5206\u6790\u9700\u8981\u6709\u6548\u7684 Serper \u8ba2\u9605\u3002\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458\u6216\u672c\u5730\u8fd0\u884c ValueScope\u3002',
+        'err_deepseek_credits': '\u26a0\ufe0f AI \u670d\u52a1\uff08DeepSeek\uff09\u989d\u5ea6\u5df2\u7528\u5b8c\u6216 API Key \u65e0\u6548\u3002\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458\u6216\u672c\u5730\u8fd0\u884c ValueScope\u3002',
         'err_gap_failed': '\u5dee\u5f02\u5206\u6790\u5931\u8d25\uff1a{msg}',
         'warn_ai_no_params': 'AI \u65e0\u6cd5\u751f\u6210\u53c2\u6570\u3002\u8bf7\u5207\u6362\u5230\u624b\u52a8\u8f93\u5165\u3002',
         'fetching_data': '\u6b63\u5728\u83b7\u53d6 {ticker} \u7684\u6570\u636e\u2026',
@@ -594,8 +594,8 @@ _STRINGS = {
         'calculating_dcf': '\u6b63\u5728\u8ba1\u7b97 DCF\u2026',
 
         # ── Footer ──
-        'footer_tagline': '<b>ValuX</b> \u2014 AI \u667a\u80fd\u4ea4\u4e92\u5f0f DCF \u4f30\u503c',
-        'footer_tagline_web': '<b>ValuX</b> \u2014 \u4ea4\u4e92\u5f0f DCF \u4f30\u503c',
+        'footer_tagline': '<b>ValueScope</b> \u2014 AI \u667a\u80fd\u4ea4\u4e92\u5f0f DCF \u4f30\u503c',
+        'footer_tagline_web': '<b>ValueScope</b> \u2014 \u4ea4\u4e92\u5f0f DCF \u4f30\u503c',
 
         # ── Financial table row labels ──
         'fin_reported_currency': '\u62a5\u544a\u8d27\u5e01',

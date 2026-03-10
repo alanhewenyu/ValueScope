@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2025 Alan He. Licensed under MIT.
-"""Import existing ValuX Excel files into SQLite database.
+"""Import existing ValueScope Excel files into SQLite database.
 
 Usage:
     python import_excels.py --db valuations.db
@@ -14,8 +14,8 @@ import sys
 
 from openpyxl import load_workbook
 
-# Add ValuX to path so we can import db_export
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'valux'))
+# Add ValueScope to path so we can import db_export
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'valuescope'))
 from modeling.db_export import save_to_db
 
 
@@ -195,12 +195,12 @@ def _extract_sheet_text(ws, start_row=1):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Import ValuX Excel files into SQLite')
+    parser = argparse.ArgumentParser(description='Import ValueScope Excel files into SQLite')
     parser.add_argument('--db', required=True, help='Path to SQLite database file')
     parser.add_argument(
         '--dir',
-        default=os.path.join(os.path.dirname(__file__), '..', 'valux', 'stock_valuation'),
-        help='Directory containing Excel files (default: ../valux/stock_valuation)',
+        default=os.path.join(os.path.dirname(__file__), '..', 'valuescope', 'stock_valuation'),
+        help='Directory containing Excel files (default: ../valuescope/stock_valuation)',
     )
     args = parser.parse_args()
 

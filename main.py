@@ -499,8 +499,8 @@ def main(args):
             auto_mode, ticker, company_profile, results, valuation_params,
             summary_df, base_year, forecast_year_1, forex_rate)
 
-        # ── Export: DB-first (when VALUX_DB_PATH set) or Excel (default) ──
-        _db_path = os.environ.get('VALUX_DB_PATH')
+        # ── Export: DB-first (when VS_DB_PATH set) or Excel (default) ──
+        _db_path = os.environ.get('VS_DB_PATH')
         if _db_path:
             # DB mode: prompt user (default yes), auto_mode skips prompt
             _save_db = True

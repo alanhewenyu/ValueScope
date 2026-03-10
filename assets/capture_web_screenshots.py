@@ -5,7 +5,7 @@ import time
 from playwright.sync_api import sync_playwright
 
 URL = "http://localhost:8501"
-OUTPUT_DIR = "/Users/Alan/valux/assets"
+OUTPUT_DIR = "/Users/Alan/valuescope/assets"
 TICKER = "600519.SS"
 
 def main():
