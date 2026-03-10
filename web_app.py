@@ -1270,17 +1270,10 @@ with st.sidebar:
     if 'use_ai' not in st.session_state:
         st.session_state.use_ai = bool(_AI_ENGINE)
 
-    if _has_ai:
-        # Local version: show Manual + AI buttons
-        st.markdown('<div style="margin-top:8px;"></div>', unsafe_allow_html=True)
-        manual_btn = st.button(t('sidebar_manual_btn'), use_container_width=True,
-                                help=t('sidebar_manual_help'), key='manual_btn',
-                                type="secondary")
-    else:
-        # Web version (with or without cloud AI): Go button
-        st.markdown('<div style="margin-top:8px;"></div>', unsafe_allow_html=True)
-        manual_btn = st.button(t('sidebar_go_btn'), use_container_width=True,
-                                key='go_btn', type="primary" if not _has_cloud_ai else "secondary")
+    st.markdown('<div style="margin-top:8px;"></div>', unsafe_allow_html=True)
+    manual_btn = st.button(t('sidebar_manual_btn'), use_container_width=True,
+                            help=t('sidebar_manual_help'), key='manual_btn',
+                            type="secondary" if _any_ai else "primary")
 
     if _any_ai:
         st.markdown(
