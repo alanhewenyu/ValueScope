@@ -1461,13 +1461,6 @@ with st.sidebar:
     st.markdown('<hr style="margin:0 0 12px 0; border:none; border-top:1px solid var(--vx-border, #d0d7de); opacity:0.5;">', unsafe_allow_html=True)
 
     # ── Admin panel (visible only with ?admin=<key>) ──
-    # DEBUG: temporarily show admin diagnostics
-    _dbg_key = _get_secret('VALUX_ADMIN_KEY')
-    try:
-        _dbg_param = st.query_params.get('admin', '')
-    except Exception as _dbg_e:
-        _dbg_param = f'ERR:{_dbg_e}'
-    st.caption(f"🔍 key={repr(_dbg_key)[:20]} param={repr(_dbg_param)[:20]} match={_dbg_param == _dbg_key}")
     if _is_admin():
         with st.expander("🔧 Admin", expanded=False):
             _adm_limit = int(_get_secret('VALUX_AI_DAILY_LIMIT') or '5')
