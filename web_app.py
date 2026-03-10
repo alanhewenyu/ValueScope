@@ -110,10 +110,10 @@ def _get_secret(key):
     val = os.environ.get(key, "")
     if not val:
         try:
-            val = st.secrets.get(key, "")
-        except Exception:
+            val = st.secrets[key]
+        except (KeyError, FileNotFoundError, Exception):
             val = ""
-    return val
+    return val or ""
 
 _SERPER_API_KEY = _get_secret("SERPER_API_KEY")
 _DEEPSEEK_API_KEY = _get_secret("DEEPSEEK_API_KEY")
