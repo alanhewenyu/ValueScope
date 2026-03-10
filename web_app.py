@@ -1337,15 +1337,15 @@ with st.sidebar:
     if ticker_input and not oneclick_btn and not manual_btn and not _has_latched_btn:
         _prev_ticker = st.session_state.get('_prev_ticker_input', '')
         if ticker_input != _prev_ticker:
-            if _has_ai:
-                _show_mode_prompt = True   # Local: prompt user to pick a mode
+            if _any_ai:
+                _show_mode_prompt = True   # Prompt user to pick a mode
             else:
-                _ticker_enter = True       # Web: Enter triggers manual valuation
+                _ticker_enter = True       # No AI available: Enter triggers manual valuation
     if ticker_input:
         st.session_state._prev_ticker_input = ticker_input
 
-    # Show mode-selection prompt (local only — web auto-triggers on Enter)
-    if _show_mode_prompt and _has_ai:
+    # Show mode-selection prompt when AI is available (local or cloud)
+    if _show_mode_prompt and _any_ai:
         st.markdown(
             '<div style="text-align:center; padding:8px 12px; margin:4px 0; '
             'border-radius:8px; background:color-mix(in srgb, var(--vx-accent) 10%, transparent); '
