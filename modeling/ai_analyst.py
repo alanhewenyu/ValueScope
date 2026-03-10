@@ -1447,6 +1447,16 @@ def _warn_if_out_of_range(key, value):
 import requests as _requests
 
 
+class SerperCreditError(Exception):
+    """Raised when Serper.dev API credits are exhausted or auth fails."""
+    pass
+
+
+class DeepSeekCreditError(Exception):
+    """Raised when DeepSeek API credits are exhausted or auth fails."""
+    pass
+
+
 def _serper_search(query, api_key, num_results=5):
     """Run a Google search via Serper.dev API. Returns list of {title, snippet, link}."""
     resp = _requests.post(
@@ -1455,6 +1465,10 @@ def _serper_search(query, api_key, num_results=5):
         json={"q": query, "num": num_results},
         timeout=15,
     )
+    if resp.status_code in (401, 402, 403):
+        raise SerperCreditError(
+            f"Serper API error {resp.status_code}: credits exhausted or invalid API key"
+        )
     resp.raise_for_status()
     data = resp.json()
     results = []
@@ -1491,6 +1505,10 @@ def _serper_scrape(url, api_key, max_chars=6000):
             json={"url": url, "includeMarkdown": True},
             timeout=20,
         )
+        if resp.status_code in (401, 402, 403):
+            raise SerperCreditError(
+                f"Serper API error {resp.status_code}: credits exhausted or invalid API key"
+            )
         resp.raise_for_status()
         data = resp.json()
         # Prefer markdown content, fall back to text
@@ -1498,6 +1516,8 @@ def _serper_scrape(url, api_key, max_chars=6000):
         if content and len(content) > max_chars:
             content = content[:max_chars] + "\n...(truncated)"
         return content
+    except SerperCreditError:
+        raise  # Propagate credit errors to caller
     except Exception:
         return ""
 
@@ -1527,6 +1547,10 @@ def _deepseek_chat(prompt, api_key, model="deepseek-reasoner"):
         json=payload,
         timeout=300,  # reasoner needs more time for CoT
     )
+    if resp.status_code in (401, 402, 403):
+        raise DeepSeekCreditError(
+            f"DeepSeek API error {resp.status_code}: credits exhausted or invalid API key"
+        )
     resp.raise_for_status()
     data = resp.json()
     return data["choices"][0]["message"]["content"]
@@ -1722,6 +1746,8 @@ def cloud_ai_analyze(template_args, serper_key, deepseek_key, lang='zh',
             progress_callback('searching', query)
         try:
             all_results[i] = _serper_search(query, serper_key)
+        except SerperCreditError:
+            raise  # Propagate credit errors immediately
         except Exception as e:
             all_results[i] = [{"title": "Search Error", "snippet": str(e), "link": ""}]
 
@@ -1785,6 +1811,8 @@ def cloud_gap_analyze(template_args, serper_key, deepseek_key, lang='zh',
             progress_callback('searching', query)
         try:
             all_results[i] = _serper_search(query, serper_key)
+        except SerperCreditError:
+            raise  # Propagate credit errors immediately
         except Exception as e:
             all_results[i] = [{"title": "Search Error", "snippet": str(e), "link": ""}]
 

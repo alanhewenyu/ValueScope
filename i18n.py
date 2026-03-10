@@ -89,8 +89,9 @@ _STRINGS = {
         'summary_wacc': 'WACC',
 
         # ── AI quota ──
-        'ai_quota_remaining': '\U0001f916 Free quota: {n}/{limit} remaining today',
-        'ai_quota_exceeded': 'Today\'s free AI quota is used up ({limit}/day). Try again tomorrow, or run ValuX locally for unlimited access.',
+        'ai_quota_remaining': '\U0001f916 Free AI quota: {n}/{limit} remaining today',
+        'ai_quota_exceeded': 'Today\'s free AI quota is used up ({limit}/day). Try again tomorrow or contact the admin.',
+        'ai_quota_exceeded_contact': '[Contact admin]({email}) for more quota, or run ValuX locally for unlimited access.',
 
         # ── Section headers ──
         'section_hist_data': 'Historical Financial Data (in millions)',
@@ -269,6 +270,8 @@ _STRINGS = {
         'err_fetch_failed_a': 'Failed to fetch A-share data. Data source temporarily unavailable — please try again later.',
         'err_ai_parse': 'AI Analysis succeeded but failed to parse parameters. The model might have returned an invalid format.',
         'err_ai_failed': 'AI Analysis failed: {msg}',
+        'err_serper_credits': '⚠️ Search service (Serper) credits exhausted or API key invalid. AI analysis requires an active Serper subscription. Please contact the admin or run ValuX locally.',
+        'err_deepseek_credits': '⚠️ AI service (DeepSeek) credits exhausted or API key invalid. Please contact the admin or run ValuX locally.',
         'err_gap_failed': 'Gap analysis failed: {msg}',
         'warn_ai_no_params': 'AI could not produce parameters. Please switch to Manual Input.',
         'fetching_data': 'Fetching data for {ticker}...',
@@ -391,8 +394,9 @@ _STRINGS = {
         'summary_wacc': 'WACC',
 
         # ── AI quota ──
-        'ai_quota_remaining': '\U0001f916 \u514d\u8d39\u989d\u5ea6\uff1a\u4eca\u65e5\u5269\u4f59 {n}/{limit} \u6b21',
-        'ai_quota_exceeded': '\u4eca\u65e5\u514d\u8d39 AI \u989d\u5ea6\u5df2\u7528\u5b8c\uff08{limit}\u6b21/\u5929\uff09\u3002\u8bf7\u660e\u5929\u518d\u8bd5\uff0c\u6216\u672c\u5730\u8fd0\u884c ValuX \u53ef\u65e0\u9650\u4f7f\u7528\u3002',
+        'ai_quota_remaining': '\U0001f916 \u514d\u8d39AI\u989d\u5ea6\uff1a\u4eca\u65e5\u5269\u4f59 {n}/{limit} \u6b21',
+        'ai_quota_exceeded': '\u4eca\u65e5\u514d\u8d39AI\u989d\u5ea6\u5df2\u7528\u5b8c\uff08{limit}\u6b21/\u5929\uff09\u3002\u8bf7\u660e\u5929\u518d\u8bd5\u6216\u8054\u7cfb\u7ba1\u7406\u5458\u3002',
+        'ai_quota_exceeded_contact': '[\u8054\u7cfb\u7ba1\u7406\u5458]({email})\u83b7\u53d6\u66f4\u591a\u989d\u5ea6\uff0c\u6216\u672c\u5730\u8fd0\u884c ValuX \u53ef\u65e0\u9650\u4f7f\u7528\u3002',
 
         # ── Section headers ──
         'section_hist_data': '\u5386\u53f2\u8d22\u52a1\u6570\u636e\uff08\u767e\u4e07\uff09',
@@ -571,6 +575,8 @@ _STRINGS = {
         'err_fetch_failed_a': '获取 A 股数据失败。数据源暂时不可用，请稍后重试。',
         'err_ai_parse': 'AI \u5206\u6790\u6210\u529f\u4f46\u53c2\u6570\u89e3\u6790\u5931\u8d25\u3002\u6a21\u578b\u53ef\u80fd\u8fd4\u56de\u4e86\u65e0\u6548\u683c\u5f0f\u3002',
         'err_ai_failed': 'AI \u5206\u6790\u5931\u8d25\uff1a{msg}',
+        'err_serper_credits': '\u26a0\ufe0f \u641c\u7d22\u670d\u52a1\uff08Serper\uff09\u989d\u5ea6\u5df2\u7528\u5b8c\u6216 API Key \u65e0\u6548\u3002AI \u5206\u6790\u9700\u8981\u6709\u6548\u7684 Serper \u8ba2\u9605\u3002\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458\u6216\u672c\u5730\u8fd0\u884c ValuX\u3002',
+        'err_deepseek_credits': '\u26a0\ufe0f AI \u670d\u52a1\uff08DeepSeek\uff09\u989d\u5ea6\u5df2\u7528\u5b8c\u6216 API Key \u65e0\u6548\u3002\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458\u6216\u672c\u5730\u8fd0\u884c ValuX\u3002',
         'err_gap_failed': '\u5dee\u5f02\u5206\u6790\u5931\u8d25\uff1a{msg}',
         'warn_ai_no_params': 'AI \u65e0\u6cd5\u751f\u6210\u53c2\u6570\u3002\u8bf7\u5207\u6362\u5230\u624b\u52a8\u8f93\u5165\u3002',
         'fetching_data': '\u6b63\u5728\u83b7\u53d6 {ticker} \u7684\u6570\u636e\u2026',
