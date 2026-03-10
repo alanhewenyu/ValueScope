@@ -1259,8 +1259,19 @@ with st.sidebar:
     })();
     </script>""", height=0)
 
+    # Pre-fill ticker from URL query param (?ticker=XXX)
+    _url_ticker = ''
+    if '_url_ticker_consumed' not in st.session_state:
+        try:
+            _url_ticker = st.query_params.get('ticker', '')
+            if _url_ticker:
+                st.session_state._url_ticker_consumed = True
+        except Exception:
+            pass
+
     ticker_input = st.text_input(
         t('sidebar_ticker_label_web') if not (_has_ai or _has_cloud_ai) else t('sidebar_ticker_label'),
+        value=_url_ticker,
         placeholder=t('sidebar_ticker_placeholder_web') if not (_has_ai or _has_cloud_ai) else t('sidebar_ticker_placeholder'),
         label_visibility="visible",
     )
