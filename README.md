@@ -23,7 +23,7 @@ ValueScope is an AI-powered stock valuation tool built on a **standardized DCF e
 - 🔧 **Standardized DCF Engine** — A fixed valuation framework (10-year FCFF, WACC, terminal value) ensures every valuation is reproducible and comparable across companies and time periods. No more guessing which method the AI used this time.
 - 📊 **Structured Data Pipeline** — Automatically fetches historical financials, calculates TTM metrics, WACC, and historical reference ranges. A-shares and HK stock data are free for everyone.
 - 🖥️ **Terminal + Local Web GUI** — Two ways to run locally: a feature-rich **terminal CLI** with AI copilot, or a **local web dashboard** for visual, interactive parameter tuning with sliders and real-time charts — accessible at `http://localhost:8501` in your browser. Both share the same valuation engine and data pipeline.
-- 🌐 **Cloud Web App** — Don't want to install anything? Try the lightweight cloud version at [valuescope.streamlit.app](https://valuescope.streamlit.app) — no installation, no API key needed. Supports A-shares and HK stocks in manual mode. (AI features are not available in the cloud version.)
+- 🌐 **Cloud Web App** — Don't want to install anything? Try it at [valuescope.streamlit.app](https://valuescope.streamlit.app) — no installation, no API key needed. Supports A-shares and HK stocks. The cloud version features **Cloud AI** powered by DeepSeek R1 with Serper web search, providing the same AI-driven valuation experience without any local setup.
 
 Think of it as having an equity research analyst sitting next to you: AI searches for earnings guidance, analyst consensus, and industry benchmarks, then suggests valuation parameters — but the underlying model is always rigorous, transparent, and under your control.
 
@@ -31,14 +31,16 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 
 ## Key Features
 
-- **Multi-Engine AI Copilot** — Supports three AI engines: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Gemini CLI](https://github.com/google-gemini/gemini-cli), and [Qwen Code](https://github.com/QwenLM/qwen-code). Auto-detects installed engines (priority: Claude > Gemini > Qwen), or specify one with `--engine`. AI analyzes the company, searches the web for analyst forecasts and earnings guidance, and suggests DCF parameters with detailed reasoning. You review and adjust each parameter interactively.
-- **Manual Mode** — Prefer full control? Use `--manual` to input all parameters yourself. No AI engine or API key required.
-- **Auto Mode** — Use `--auto` for a fully automated pipeline: AI analysis, parameter acceptance, and Excel export with no interaction.
+- **Multi-Engine AI Copilot** — Supports three local AI engines: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Gemini CLI](https://github.com/google-gemini/gemini-cli), and [Qwen Code](https://github.com/QwenLM/qwen-code). Auto-detects installed engines (priority: Claude > Gemini > Qwen), or specify one with `--engine`. AI analyzes the company, searches the web for analyst forecasts and earnings guidance, and suggests DCF parameters with detailed reasoning. You review and adjust each parameter interactively.
+- **Cloud AI** — The cloud web app at [valuescope.streamlit.app](https://valuescope.streamlit.app) features built-in AI powered by **DeepSeek R1** with **Serper** web search and page scraping. No local AI installation needed — deep reasoning analysis runs entirely in the cloud, searching for earnings guidance, analyst consensus, and industry data to suggest valuation parameters.
+- **Custom Valuation Mode** — Prefer full control? Click "📝 Custom Valuation" in the web app, or use `--manual` in the terminal to input all parameters yourself. No AI engine or API key required.
+- **Auto Mode** — Use `--auto` for a fully automated terminal pipeline: AI analysis, parameter acceptance, and Excel export with no interaction.
+- **Verdict & Summary Cards** — After valuation, a prominent verdict banner (BUY / HOLD / SELL) shows intrinsic value vs market price and margin of safety at a glance, with 4 summary metric cards for key assumptions.
 - **Gap Analysis** — After valuation, AI compares your DCF result against the current stock price, searches for analyst price targets, explains potential reasons for the discrepancy, and provides a revised valuation.
 - **Sensitivity Analysis** — Generates sensitivity tables for Revenue Growth vs EBIT Margin and WACC, showing the range of possible per-share valuations.
 - **Excel Export** — Exports valuation results, historical data, financial statements, and AI gap analysis to a formatted Excel workbook.
 - **Global Coverage** — Supports China A-shares, Hong Kong, US, Japan, and other global markets, with automatic WACC calculation based on country-specific risk-free rates and equity risk premiums.
-- **Free Tier for A-shares & HK Stocks** — A-shares and HK stocks use free data sources (akshare / yfinance), no API key required. Combined with manual mode, you get a fully free valuation workflow.
+- **Free for A-shares & HK Stocks** — A-shares and HK stocks use free data sources (akshare / yfinance), no API key required. Combined with custom valuation mode, you get a fully free valuation workflow.
 
 ---
 
@@ -114,7 +116,21 @@ ValueScope uses different data sources depending on the market, optimizing for d
 
 ## AI Engines
 
-ValueScope supports three AI engines. On startup, it auto-detects installed CLI tools (priority: Claude > Gemini > Qwen). You can also force a specific engine with `--engine`.
+### Cloud AI (Web App)
+
+The cloud web app at [valuescope.streamlit.app](https://valuescope.streamlit.app) uses built-in Cloud AI — no installation required:
+
+| Component | Details |
+|-----------|---------|
+| **Reasoning Model** | [DeepSeek R1](https://www.deepseek.com/) — deep chain-of-thought reasoning for financial analysis |
+| **Web Search** | [Serper](https://serper.dev/) — Google search API for earnings guidance, analyst forecasts, and industry data |
+| **Page Scraping** | [Serper Scrape](https://serper.dev/) — extracts full-text content from top search results |
+
+Cloud AI runs 6 targeted searches (earnings guidance, analyst consensus, EBIT margins, WACC, quarterly results, and competitive landscape), scrapes the top results, then feeds all context to DeepSeek R1 for deep reasoning analysis.
+
+### Local AI Engines (Terminal CLI & Local Web)
+
+For local use, ValueScope supports three AI CLI tools. On startup, it auto-detects installed engines (priority: Claude > Gemini > Qwen). You can also force a specific engine with `--engine`.
 
 | Engine | CLI Tool | Install | Notes |
 |--------|----------|---------|-------|
@@ -122,21 +138,32 @@ ValueScope supports three AI engines. On startup, it auto-detects installed CLI 
 | **Gemini** | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `npm install -g @google/gemini-cli` | Free with Google account login. |
 | **Qwen** | [Qwen Code](https://github.com/QwenLM/qwen-code) | `npm install -g @anthropic-ai/qwen-code` | Free with qwen.ai account login. |
 
-If no AI engine is detected, ValueScope automatically falls back to manual mode.
+If no AI engine is detected, ValueScope automatically falls back to custom valuation mode (manual input).
 
 ---
 
 ## Running Modes
 
+### Terminal CLI
+
 | Mode | Command | AI Required | Description |
 |------|---------|-------------|-------------|
 | **Copilot** (default) | `python main.py` | Yes | AI suggests each parameter with reasoning; you review and adjust interactively. |
-| **Manual** | `python main.py --manual` | No | You input all valuation parameters yourself. Works without any AI engine or API key. |
+| **Custom** | `python main.py --manual` | No | You input all valuation parameters yourself. Works without any AI engine or API key. |
 | **Auto** | `python main.py --auto` | Yes | Fully automated: AI analysis → auto-accept parameters → auto-export Excel. No user interaction. |
 
 Additional flags:
 - `--engine claude|gemini|qwen` — Force a specific AI engine instead of auto-detection.
 - `--apikey YOUR_KEY` — Pass FMP API key directly (alternative to `FMP_API_KEY` env variable).
+
+### Web App
+
+The web app (both local and cloud) offers two valuation modes:
+
+| Mode | Button | AI Required | Description |
+|------|--------|-------------|-------------|
+| **AI Quick Valuation** | 🤖 AI Quick Valuation | Yes | AI searches the web, analyzes the company, and suggests all DCF parameters with one click. |
+| **Custom Valuation** | 📝 Custom Valuation | No | Interactive sliders and inputs for manual parameter tuning with real-time chart updates. |
 
 ---
 
@@ -174,9 +201,11 @@ set FMP_API_KEY=your_api_key_here
 $env:FMP_API_KEY="your_api_key_here"
 ```
 
-### 4. Set Up AI Engine (Optional)
+### 4. Set Up AI Engine (Optional — Local Only)
 
-Install any one of the supported AI CLI tools:
+> **Using the cloud web app?** Skip this step — Cloud AI (DeepSeek R1) is built in at [valuescope.streamlit.app](https://valuescope.streamlit.app).
+
+For local use, install any one of the supported AI CLI tools:
 
 ```bash
 # Option 1: Claude Code (recommended)
@@ -189,7 +218,7 @@ npm install -g @google/gemini-cli
 npm install -g @anthropic-ai/qwen-code
 ```
 
-If no AI engine is available, ValueScope falls back to manual mode automatically.
+If no AI engine is available, ValueScope falls back to custom valuation mode automatically.
 
 ### 5. Run
 
@@ -220,11 +249,11 @@ Opens automatically in your browser at `http://localhost:8501`. Features interac
 
 ## Usage
 
-1. **Enter stock symbol** — e.g., `AAPL`, `600519.SS` (Moutai), `0700.HK` (Tencent), `7203.T` (Toyota)
+1. **Enter stock symbol** — e.g., `AAPL`, `0700.HK` (Tencent), `600519.SS` (Moutai), `7203.T` (Toyota)
 2. **Review annual historical data** — The program fetches and displays the annual financial summary with TTM data (if available).
 3. **View quarterly data** (optional) — Choose to view quarterly financial data as a reference before valuation.
-4. **AI parameter generation** (or manual input) — AI suggests each parameter with reasoning; press Enter to accept or type a new value.
-5. **View DCF results** — Intrinsic value per share and the full calculation breakdown.
+4. **Choose valuation mode** — Click "🤖 AI Quick Valuation" for AI-driven analysis, or "📝 Custom Valuation" to input parameters yourself. In the terminal, AI suggests each parameter with reasoning; press Enter to accept or type a new value.
+5. **View DCF results** — Intrinsic value per share, verdict banner (BUY/HOLD/SELL), and full calculation breakdown.
 6. **Sensitivity analysis** — Two tables: Revenue Growth vs EBIT Margin, and WACC sensitivity.
 7. **Gap analysis** (optional) — AI analyzes why DCF value differs from market price.
 8. **Export to Excel** (optional) — Saves everything to a formatted `.xlsx` file.
