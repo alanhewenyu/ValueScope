@@ -1653,6 +1653,40 @@ def _collect_top_links(all_results, max_links=3):
     return links
 
 
+def _call_deepseek_with_live_progress(prompt, api_key, model, progress_callback):
+    """Call DeepSeek in a background thread, firing progress_callback every 3s.
+
+    This prevents the UI timer from freezing during long blocking API calls
+    (DeepSeek R1 can take 60-180s for chain-of-thought reasoning).
+    """
+    import threading as _threading
+
+    if progress_callback:
+        progress_callback('generating', None)
+
+    _result = [None]
+    _error = [None]
+
+    def _api_call():
+        try:
+            _result[0] = _deepseek_chat(prompt, api_key, model=model)
+        except Exception as e:
+            _error[0] = e
+
+    _t = _threading.Thread(target=_api_call, daemon=True)
+    _t.start()
+
+    # Poll every 3s, re-firing callback so the UI elapsed timer stays alive
+    while _t.is_alive():
+        _t.join(timeout=3)
+        if _t.is_alive() and progress_callback:
+            progress_callback('generating', None)
+
+    if _error[0]:
+        raise _error[0]
+    return _result[0]
+
+
 def cloud_ai_analyze(template_args, serper_key, deepseek_key, lang='zh',
                      progress_callback=None):
     """Cloud AI analysis: run Serper searches, scrape top pages, call DeepSeek Reasoner.
@@ -1709,9 +1743,9 @@ def cloud_ai_analyze(template_args, serper_key, deepseek_key, lang='zh',
     prompt = _build_cloud_analysis_prompt(template_args, search_context, lang)
 
     # Step 4: Call DeepSeek Reasoner (R1 with chain-of-thought)
-    if progress_callback:
-        progress_callback('generating', None)
-    text = _deepseek_chat(prompt, deepseek_key, model="deepseek-reasoner")
+    # Run in background thread so progress_callback keeps firing → live timer
+    text = _call_deepseek_with_live_progress(
+        prompt, deepseek_key, "deepseek-reasoner", progress_callback)
 
     return text
 
@@ -1770,8 +1804,7 @@ def cloud_gap_analyze(template_args, serper_key, deepseek_key, lang='zh',
         progress_callback('analyzing', None)
     prompt = _build_cloud_gap_prompt(template_args, search_context, lang)
 
-    if progress_callback:
-        progress_callback('generating', None)
-    text = _deepseek_chat(prompt, deepseek_key, model="deepseek-reasoner")
+    text = _call_deepseek_with_live_progress(
+        prompt, deepseek_key, "deepseek-reasoner", progress_callback)
 
     return text
