@@ -1220,12 +1220,12 @@ with st.sidebar:
     # ── Language switch: two tiny buttons styled as text ──
     _lc1, _lc2 = st.columns(2)
     with _lc1:
-        if st.button("EN", key="_lang_en_btn", use_container_width=True,
+        if st.button("English", key="_lang_en_btn", use_container_width=True,
                       type="primary" if _cur == 'en' else "secondary"):
             st.session_state._lang = 'en'
             st.rerun()
     with _lc2:
-        if st.button("CN", key="_lang_cn_btn", use_container_width=True,
+        if st.button("\u4e2d\u6587", key="_lang_cn_btn", use_container_width=True,
                       type="primary" if _cur == 'zh' else "secondary"):
             st.session_state._lang = 'zh'
             st.rerun()
