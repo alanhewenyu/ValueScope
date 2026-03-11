@@ -1577,7 +1577,7 @@ with st.sidebar:
     with st.container(key="vs_sidebar_footer"):
         st.markdown('<hr style="margin:4px 0; border:none; border-top:1px solid var(--vx-border, #d0d7de);">',
                     unsafe_allow_html=True)
-        with st.popover(t('sidebar_sponsor'), use_container_width=True):
+        with st.expander(t('sidebar_sponsor'), expanded=False):
             st.image('assets/wechat-reward.jpg', use_container_width=True)
             st.caption(t('sponsor_guide'))
         st.markdown(
@@ -3963,10 +3963,3 @@ st.markdown(f"""
     {t('footer_tagline_web') if not (_has_ai or _has_cloud_ai) else t('footer_tagline')}
 </div>
 """, unsafe_allow_html=True)
-
-# ── Signal parent frame (valuescope.app landing page) that the app is ready ──
-import streamlit.components.v1 as _components
-_components.html(
-    '<script>try{window.parent.postMessage("vs-ready","*")}catch(e){}'
-    'try{window.parent.parent.postMessage("vs-ready","*")}catch(e){}</script>',
-    height=0)
