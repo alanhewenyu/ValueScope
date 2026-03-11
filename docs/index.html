@@ -4,9 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <!-- ── Instant redirect for human visitors ── -->
-    <meta http-equiv="refresh" content="0; url=https://valuescope.streamlit.app">
-
     <!-- ── Search Engine Verification ── -->
     <meta name="google-site-verification" content="4mcNP75rC_oaDhSwvwS-vVV9mSylXl1CGLl45Y_CSoM">
     <meta name="baidu-site-verification" content="codeva-8CrbIdgNjp" />
@@ -73,12 +70,34 @@
     }
     </script>
 
-    <!-- ── JS redirect (faster than meta refresh) ── -->
-    <script>window.location.replace("https://valuescope.streamlit.app");</script>
+    <!-- ── Styles ── -->
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; width: 100%; overflow: hidden; }
+        iframe {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+            display: block;
+            z-index: 2;
+            background: #f8f9fa;
+        }
+        .seo-content {
+            position: absolute;
+            width: 1px; height: 1px;
+            padding: 0; margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+    </style>
 </head>
 <body>
     <!-- SEO content: in DOM for crawlers, visually hidden from users -->
-    <main style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);" aria-hidden="true">
+    <main class="seo-content" aria-hidden="true">
         <h1>ValueScope — AI 智能 DCF 股票估值工具</h1>
         <p>免费在线 DCF（现金流折现）估值工具，AI 一键估值 + 手动参数调节 + 敏感性分析 + Excel 导出。</p>
         <p>Free AI-powered DCF (Discounted Cash Flow) valuation tool with one-click AI analysis, real-time parameter tuning, sensitivity analysis, and Excel export.</p>
@@ -104,9 +123,16 @@
         <p>ValueScope is a free, AI-powered DCF stock valuation tool. It uses DeepSeek R1 for intelligent one-click valuation with deep reasoning, supports real-time parameter adjustment, sensitivity analysis, and Excel export. Available in both Chinese and English.</p>
     </main>
 
+    <iframe
+        src="https://valuescope.streamlit.app/?embed=true"
+        title="ValueScope — AI 智能 DCF 股票估值工具"
+        allow="clipboard-read; clipboard-write"
+        loading="eager"
+    ></iframe>
+
     <noscript>
-        <p>正在跳转到 ValueScope 应用...</p>
-        <p><a href="https://valuescope.streamlit.app">点击这里直接访问 ValueScope</a></p>
+        <p>ValueScope 需要 JavaScript 才能运行。请启用 JavaScript 后刷新页面。</p>
+        <p>ValueScope requires JavaScript to run. Please enable JavaScript and refresh the page.</p>
     </noscript>
 </body>
 </html>
