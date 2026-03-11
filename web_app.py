@@ -346,15 +346,16 @@ st.markdown("""
 section.main > div.block-container { padding-top: 0 !important; padding-left: 1.5rem !important; padding-right: 1.5rem !important; }
 div[data-testid="stMainBlockContainer"] { padding-top: 0 !important; padding-left: 1.5rem !important; padding-right: 1.5rem !important; max-width: 100% !important; }
 section[data-testid="stMain"] > div { padding-top: 0 !important; }
-#MainMenu { display: none !important; }
-div[data-testid="stDecoration"] { display: none !important; }
-div[data-testid="stToolbar"] { display: none !important; }
+/* Hide Streamlit chrome but keep sidebar expand button visible */
 header[data-testid="stHeader"] {
-    height: 0 !important; min-height: 0 !important;
-    padding: 0 !important; overflow: visible !important;
     background: transparent !important;
+    height: auto !important;
 }
-header[data-testid="stHeader"] button { visibility: visible !important; }
+#MainMenu,
+[data-testid="stStatusWidget"],
+[data-testid="stHeader"] [data-testid="stDecoration"],
+[data-testid="stToolbarActions"],
+[data-testid="stAppDeployButton"] { display: none !important; }
 
 /* ── Sticky header ── */
 div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hdr),
