@@ -170,10 +170,17 @@
     (function(){
         var logo = document.querySelector('.loading-logo');
         var iframe = document.querySelector('iframe');
-        function hide(){ logo.classList.add('hide'); }
-        // Hide logo once iframe finishes loading (+1.5s for Streamlit init)
-        iframe.addEventListener('load', function(){ setTimeout(hide, 1500); });
-        // Safety fallback: hide after 20s no matter what
+        var done = false;
+        function hide(){ if(done) return; done = true; logo.classList.add('hide'); }
+        var start = Date.now();
+        var MIN = 5000; // logo shows at least 5s
+        // After iframe loads, wait for Streamlit to init, but respect minimum
+        iframe.addEventListener('load', function(){
+            var elapsed = Date.now() - start;
+            var wait = Math.max(3000, MIN - elapsed); // at least 3s after load, or fill up to 5s
+            setTimeout(hide, wait);
+        });
+        // Safety fallback
         setTimeout(hide, 20000);
     })();
     </script>
