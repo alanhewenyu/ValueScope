@@ -1578,7 +1578,7 @@ with st.sidebar:
         st.markdown('<hr style="margin:4px 0; border:none; border-top:1px solid var(--vx-border, #d0d7de);">',
                     unsafe_allow_html=True)
         with st.expander(t('sidebar_sponsor'), expanded=False):
-            st.image('assets/wechat-reward.jpg', use_container_width=True)
+            st.image('assets/wechat-reward.jpg', width="stretch")
             st.caption(t('sponsor_guide'))
         st.markdown(
             '<div style="text-align:center; font-size:0.72rem; color:#555; line-height:1.7; padding:4px 0;">'
