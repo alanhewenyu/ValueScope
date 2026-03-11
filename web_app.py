@@ -939,13 +939,91 @@ div[data-testid="InputInstructions"] { display: none !important; }
     .ai-live-section .section-value { font-size: 0.78rem; }
     .ai-live-section .section-text { font-size: 0.78rem; }
 
-    /* Force single-column layout on mobile */
-    div[data-testid="stHorizontalBlock"] {
+    /* Force single-column layout on mobile — main content only (not sidebar) */
+    [data-testid="stMainBlockContainer"] div[data-testid="stHorizontalBlock"] {
         flex-direction: column !important;
     }
-    div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+    [data-testid="stMainBlockContainer"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
         width: 100% !important;
         flex: 1 1 100% !important;
+    }
+
+    /* ── Sidebar: keep language buttons in a row ── */
+    section[data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] {
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        justify-content: center !important;
+        gap: 0 !important;
+    }
+    section[data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+        width: 5rem !important;
+        max-width: 5rem !important;
+        min-width: 0 !important;
+        flex: 0 0 auto !important;
+    }
+    section[data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] button {
+        width: auto !important;
+        min-width: 0 !important;
+    }
+
+    /* ── Sidebar: full-width overlay on mobile ── */
+    section[data-testid="stSidebar"] {
+        width: 100vw !important;
+        min-width: 100vw !important;
+        max-width: 100vw !important;
+    }
+    /* Fully hide sidebar when collapsed (Streamlit uses translateX(-300px) by default) */
+    section[data-testid="stSidebar"][aria-expanded="false"] {
+        transform: translateX(-100vw) !important;
+    }
+
+    /* ── Sidebar collapse button (✕): replace Material Symbols icon ── */
+    [data-testid="stSidebarCollapseButton"] button {
+        width: 44px !important;
+        height: 44px !important;
+        overflow: hidden !important;
+        font-size: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    [data-testid="stSidebarCollapseButton"] button * {
+        display: none !important;
+    }
+    [data-testid="stSidebarCollapseButton"] button::after {
+        content: "✕";
+        display: block !important;
+        font-size: 1.3rem;
+        font-family: system-ui, -apple-system, sans-serif;
+        color: var(--vx-text-secondary, #666);
+    }
+
+    /* ── Sidebar expand button (☰): large & visible when collapsed ── */
+    [data-testid="stExpandSidebarButton"] {
+        position: fixed !important;
+        top: 12px !important;
+        left: 12px !important;
+        z-index: 999999 !important;
+        width: 44px !important;
+        height: 44px !important;
+        border-radius: 10px !important;
+        background: var(--vx-accent, #0969da) !important;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2) !important;
+        overflow: hidden !important;
+        font-size: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    [data-testid="stExpandSidebarButton"] * {
+        display: none !important;
+    }
+    [data-testid="stExpandSidebarButton"]::after {
+        content: "☰";
+        display: block !important;
+        font-size: 1.3rem;
+        font-family: system-ui, -apple-system, sans-serif;
+        color: #fff;
     }
 
     /* Touch targets — Apple HIG minimum 44px */
@@ -1201,7 +1279,7 @@ with st.sidebar:
             row.style.cssText = 'gap:0!important;margin-top:-8px!important;margin-bottom:-8px!important;justify-content:center!important;align-items:center!important;';
             var cols = row.querySelectorAll('[data-testid="stColumn"]');
             for (var i = 0; i < cols.length; i++)
-                cols[i].style.cssText = 'width:auto!important;flex:0 0 auto!important;';
+                cols[i].style.cssText = 'width:5rem!important;max-width:5rem!important;min-width:0!important;flex:0 0 auto!important;display:inline-flex!important;';
             var btns = row.querySelectorAll('button');
             for (var j = 0; j < btns.length; j++) {
                 var b = btns[j], isPri = b.getAttribute('data-testid') === 'stBaseButton-primary';
