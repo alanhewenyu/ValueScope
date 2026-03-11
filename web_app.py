@@ -3182,7 +3182,7 @@ if 'summary_df' not in st.session_state:
         if st.session_state.get('_needs_mode_select', False):
             st.info(t('main_mode_prompt'))
         st.markdown(f"""
-        <div class="vx-welcome" style="text-align:center; padding:80px 20px 60px 20px; max-width:560px; margin:0 auto;">
+        <div class="vx-welcome" style="text-align:center; padding:80px 20px 60px 20px; max-width:720px; margin:0 auto;">
             <p style="font-size:3rem; margin-bottom:8px; line-height:1;">📊</p>
             <p style="font-size:1.5rem; font-weight:700; margin-bottom:6px; color:var(--vx-text, #1f2328);
                        background:linear-gradient(135deg, #00d2ff 0%, #7b2ff7 100%);
@@ -3213,6 +3213,37 @@ if 'summary_df' not in st.session_state:
             <p style="font-size:0.78rem; color:var(--vx-text-muted, #8b949e);">
                 {t('welcome_api_note')}
             </p>
+            <!-- Mission / Philosophy -->
+            <hr style="border:none; border-top:1px solid color-mix(in srgb, var(--vx-text-muted, #8b949e) 25%, transparent); margin:28px 0 24px 0;">
+            <div style="display:flex; gap:16px; flex-wrap:wrap; justify-content:center; max-width:640px; margin:0 auto;">
+                <div style="flex:1; min-width:160px; max-width:200px; padding:16px 14px; border-radius:12px; text-align:center;
+                            background:color-mix(in srgb, var(--vx-accent, #0969da) 4%, transparent);
+                            border:1px solid color-mix(in srgb, var(--vx-accent, #0969da) 12%, transparent);">
+                    <p style="font-size:1.5rem; margin-bottom:6px; line-height:1;">🌐</p>
+                    <p style="font-size:0.82rem; font-weight:600; color:var(--vx-text, #1f2328); margin-bottom:6px;">
+                        {t('mission_pillar1_title')}</p>
+                    <p style="font-size:0.72rem; color:var(--vx-text-secondary, #656d76); line-height:1.55;">
+                        {t('mission_pillar1_desc')}</p>
+                </div>
+                <div style="flex:1; min-width:160px; max-width:200px; padding:16px 14px; border-radius:12px; text-align:center;
+                            background:color-mix(in srgb, var(--vx-accent, #0969da) 4%, transparent);
+                            border:1px solid color-mix(in srgb, var(--vx-accent, #0969da) 12%, transparent);">
+                    <p style="font-size:1.5rem; margin-bottom:6px; line-height:1;">🧱</p>
+                    <p style="font-size:0.82rem; font-weight:600; color:var(--vx-text, #1f2328); margin-bottom:6px;">
+                        {t('mission_pillar2_title')}</p>
+                    <p style="font-size:0.72rem; color:var(--vx-text-secondary, #656d76); line-height:1.55;">
+                        {t('mission_pillar2_desc')}</p>
+                </div>
+                <div style="flex:1; min-width:160px; max-width:200px; padding:16px 14px; border-radius:12px; text-align:center;
+                            background:color-mix(in srgb, var(--vx-accent, #0969da) 4%, transparent);
+                            border:1px solid color-mix(in srgb, var(--vx-accent, #0969da) 12%, transparent);">
+                    <p style="font-size:1.5rem; margin-bottom:6px; line-height:1;">🎯</p>
+                    <p style="font-size:0.82rem; font-weight:600; color:var(--vx-text, #1f2328); margin-bottom:6px;">
+                        {t('mission_pillar3_title')}</p>
+                    <p style="font-size:0.72rem; color:var(--vx-text-secondary, #656d76); line-height:1.55;">
+                        {t('mission_pillar3_desc')}</p>
+                </div>
+            </div>
         </div>
         """, unsafe_allow_html=True)
         st.stop()

@@ -58,6 +58,14 @@ _STRINGS = {
         'welcome_api_note': 'HK &amp; A-shares do not require an API key.',
         'welcome_empty_warning': '\u26a0\ufe0f Please enter a stock symbol in the sidebar first, then click a valuation button.',
 
+        # ── Mission pillars ──
+        'mission_pillar1_title': 'Democratize Valuation',
+        'mission_pillar1_desc': 'Professional-grade tools should not be locked away inside elite firms. ValueScope brings institutional-quality DCF analysis to every investor, for free.',
+        'mission_pillar2_title': 'First Principles',
+        'mission_pillar2_desc': 'Discounted Cash Flow is the bedrock of value investing \u2014 estimating what a business is truly worth based on the cash it will generate.',
+        'mission_pillar3_title': 'Roughly Right > Precisely Wrong',
+        'mission_pillar3_desc': 'Inspired by Damodaran: focus on growth, margins, and reinvestment \u2014 the drivers that matter \u2014 rather than false precision in complex spreadsheets.',
+
         # ── Header buttons ──
         'btn_collapse_fin': '\U0001f4cb Collapse\nFinancial Data',
         'btn_view_fin': '\U0001f4cb View Historical\nFinancial Data',
@@ -377,6 +385,14 @@ _STRINGS = {
         'welcome_jp': '\U0001f1ef\U0001f1f5 \u65e5\u80a1 \u2014 \u4f8b\u5982 7203.T',
         'welcome_api_note': '\u6e2f\u80a1\u548c A \u80a1\u65e0\u9700 API \u5bc6\u94a5\u3002',
         'welcome_empty_warning': '\u26a0\ufe0f \u8bf7\u5148\u5728\u4fa7\u8fb9\u680f\u8f93\u5165\u80a1\u7968\u4ee3\u7801\uff0c\u7136\u540e\u70b9\u51fb\u4f30\u503c\u6309\u94ae\u3002',
+
+        # ── Mission pillars ──
+        'mission_pillar1_title': '\u6280\u672f\u5e73\u6743',
+        'mission_pillar1_desc': '\u4e13\u4e1a\u7ea7\u4f30\u503c\u5de5\u5177\u4e0d\u5e94\u53ea\u5c5e\u4e8e\u7cbe\u82f1\u673a\u6784\u3002ValueScope \u8ba9\u6bcf\u4f4d\u6295\u8d44\u8005\u90fd\u80fd\u514d\u8d39\u4f7f\u7528\u673a\u6784\u7ea7 DCF \u5206\u6790\u3002',
+        'mission_pillar2_title': '\u7b2c\u4e00\u6027\u539f\u7406',
+        'mission_pillar2_desc': '\u73b0\u91d1\u6d41\u6298\u73b0\u662f\u4ef7\u503c\u6295\u8d44\u7684\u57fa\u77f3 \u2014\u2014 \u57fa\u4e8e\u4f01\u4e1a\u672a\u6765\u4ea7\u751f\u7684\u73b0\u91d1\u6d41\uff0c\u4f30\u7b97\u5176\u771f\u6b63\u7684\u5185\u5728\u4ef7\u503c\u3002',
+        'mission_pillar3_title': '\u6a21\u7cca\u7684\u6b63\u786e > \u7cbe\u786e\u7684\u9519\u8bef',
+        'mission_pillar3_desc': '\u6e90\u81ea Damodaran \u7684\u4f30\u503c\u7406\u5ff5\uff1a\u805a\u7126\u589e\u957f\u3001\u5229\u6da6\u7387\u4e0e\u518d\u6295\u8d44\u7b49\u6838\u5fc3\u9a71\u52a8\u56e0\u5b50\uff0c\u800c\u975e\u8ffd\u6c42\u590d\u6742\u62a5\u8868\u4e2d\u7684\u865a\u5047\u7cbe\u5ea6\u3002',
 
         # ── Header buttons ──
         'btn_collapse_fin': '\U0001f4cb \u6536\u8d77\n\u8d22\u52a1\u6570\u636e',
