@@ -1370,12 +1370,14 @@ with st.sidebar:
     # Show mode-selection prompt when AI is available (local or cloud)
     if _show_mode_prompt and _any_ai:
         st.markdown(
-            '<div style="text-align:center; padding:8px 12px; margin:4px 0; '
-            'border-radius:8px; background:color-mix(in srgb, var(--vx-accent) 10%, transparent); '
-            'border:1px solid color-mix(in srgb, var(--vx-accent) 25%, transparent); '
-            'font-size:0.82rem; color:var(--vx-accent, #0969da); line-height:1.4;">'
+            '<div style="text-align:center; padding:10px 12px; margin:6px 0; '
+            'border-radius:8px; background:linear-gradient(135deg, #fff3cd 0%, #ffeeba 100%); '
+            'border:1px solid #ffc107; '
+            'font-size:0.88rem; color:#856404; font-weight:600; line-height:1.4; '
+            'animation:pulse-prompt 1.5s ease-in-out 2;">'
             f'{t("sidebar_mode_prompt")}'
-            '</div>',
+            '</div>'
+            '<style>@keyframes pulse-prompt{0%,100%{transform:scale(1)}50%{transform:scale(1.02)}}</style>',
             unsafe_allow_html=True)
         # Brief scale-pulse on both buttons to draw attention
         _stc.html("""<script>
@@ -3172,6 +3174,8 @@ if 'summary_df' not in st.session_state:
     else:
         if _empty_ticker_warning:
             st.warning(t('welcome_empty_warning'))
+        if st.session_state.get('_needs_mode_select', False):
+            st.info(t('main_mode_prompt'))
         st.markdown(f"""
         <div class="vx-welcome" style="text-align:center; padding:80px 20px 60px 20px; max-width:560px; margin:0 auto;">
             <p style="font-size:3rem; margin-bottom:8px; line-height:1;">📊</p>
