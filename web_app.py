@@ -3963,3 +3963,10 @@ st.markdown(f"""
     {t('footer_tagline_web') if not (_has_ai or _has_cloud_ai) else t('footer_tagline')}
 </div>
 """, unsafe_allow_html=True)
+
+# ── Signal parent frame (valuescope.app landing page) that the app is ready ──
+import streamlit.components.v1 as _components
+_components.html(
+    '<script>try{window.parent.postMessage("vs-ready","*")}catch(e){}'
+    'try{window.parent.parent.postMessage("vs-ready","*")}catch(e){}</script>',
+    height=0)

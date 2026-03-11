@@ -125,12 +125,25 @@
     </style>
 </head>
 <body>
-    <!-- Loading screen: z-index 3, above iframe. Fades out via onload when iframe content is ready. -->
+    <!-- Loading screen: z-index 3, above iframe. Hidden when Streamlit app sends 'vs-ready' postMessage. -->
     <div class="loading-screen" id="loading">
         <div class="loading-logo">ValueScope</div>
         <div class="loading-spinner"></div>
         <p class="loading-text">Loading...</p>
     </div>
+
+    <script>
+    // Hide loading screen only when Streamlit app signals it's fully rendered
+    window.addEventListener('message', function(e) {
+        if (e.data === 'vs-ready') {
+            document.getElementById('loading').classList.add('hidden');
+        }
+    });
+    // Fallback: hide after 20s in case postMessage never arrives
+    setTimeout(function() {
+        document.getElementById('loading').classList.add('hidden');
+    }, 20000);
+    </script>
 
     <!-- SEO content: in DOM for crawlers, visually hidden from users -->
     <main class="seo-content" aria-hidden="true">
@@ -164,7 +177,6 @@
         title="ValueScope — AI 智能 DCF 股票估值工具"
         allow="clipboard-read; clipboard-write"
         loading="eager"
-        onload="document.getElementById('loading').classList.add('hidden')"
     ></iframe>
 
     <noscript>
