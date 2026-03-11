@@ -457,9 +457,12 @@ div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hero) div[data-testid="stEl
 section[data-testid="stSidebar"] > div { padding-top: 0 !important; }
 [data-testid="stSidebarContent"] { padding-top: 0 !important; }
 [data-testid="stSidebarUserContent"] { padding-top: 0 !important; }
-[data-testid="stSidebarHeader"] { display: none !important; }
+[data-testid="stSidebarHeader"] {
+    display: flex !important; min-height: 28px; justify-content: flex-end;
+    padding: 2px 4px 0 0 !important;
+}
 @media (max-width: 768px) {
-    [data-testid="stSidebarHeader"] { display: flex !important; min-height: 44px; }
+    [data-testid="stSidebarHeader"] { min-height: 44px; padding: 4px 8px 0 0 !important; }
 }
 
 /* ── Sidebar labels ── */
@@ -3182,17 +3185,17 @@ if 'summary_df' not in st.session_state:
         if st.session_state.get('_needs_mode_select', False):
             st.info(t('main_mode_prompt'))
         st.markdown(f"""
-        <div class="vx-welcome" style="text-align:center; padding:48px 20px 60px 20px; max-width:720px; margin:0 auto;">
+        <div class="vx-welcome" style="text-align:center; padding:20px 20px 24px 20px; max-width:720px; margin:0 auto;">
             <p style="font-size:3rem; margin-bottom:8px; line-height:1;">📊</p>
             <p style="font-size:1.5rem; font-weight:700; margin-bottom:6px; color:var(--vx-text, #1f2328);
                        background:linear-gradient(135deg, #00d2ff 0%, #7b2ff7 100%);
                        -webkit-background-clip:text; -webkit-text-fill-color:transparent;">
                 ValueScope
             </p>
-            <p style="font-size:1.05rem; color:var(--vx-text-secondary, #656d76); line-height:1.6; margin-bottom:20px;">
+            <p style="font-size:1.05rem; color:var(--vx-text-secondary, #656d76); line-height:1.6; margin-bottom:14px;">
                 {t('welcome_instruction_web') if not (_has_ai or _has_cloud_ai) else t('welcome_instruction')}
             </p>
-            <div style="display:flex; justify-content:center; gap:8px; flex-wrap:nowrap; margin-bottom:20px;">
+            <div style="display:flex; justify-content:center; gap:8px; flex-wrap:nowrap; margin-bottom:14px;">
                 <span style="font-size:0.78rem; padding:4px 10px; border-radius:20px; white-space:nowrap;
                              background:color-mix(in srgb, var(--vx-accent, #0969da) 8%, transparent);
                              color:var(--vx-accent, #0969da); border:1px solid color-mix(in srgb, var(--vx-accent) 20%, transparent);">
@@ -3214,11 +3217,11 @@ if 'summary_df' not in st.session_state:
                 {t('welcome_api_note')}
             </p>
             <!-- Mission / Philosophy -->
-            <hr style="border:none; border-top:1px solid color-mix(in srgb, var(--vx-text-muted, #8b949e) 25%, transparent); margin:28px 0 20px 0;">
-            <p style="font-size:0.88rem; font-weight:600; color:var(--vx-text-secondary, #656d76); margin-bottom:18px; letter-spacing:0.03em;">
+            <hr style="border:none; border-top:1px solid color-mix(in srgb, var(--vx-text-muted, #8b949e) 25%, transparent); margin:18px 0 14px 0;">
+            <p style="font-size:0.88rem; font-weight:600; color:var(--vx-text-secondary, #656d76); margin-bottom:14px; letter-spacing:0.03em;">
                 {t('mission_heading')}</p>
             <div style="display:flex; gap:16px; flex-wrap:wrap; justify-content:center; max-width:660px; margin:0 auto;">
-                <div style="flex:1; min-width:170px; max-width:210px; padding:18px 16px; border-radius:12px; text-align:center;
+                <div style="flex:1; min-width:170px; max-width:210px; padding:14px 14px; border-radius:12px; text-align:center;
                             background:color-mix(in srgb, var(--vx-accent, #0969da) 4%, transparent);
                             border:1px solid color-mix(in srgb, var(--vx-accent, #0969da) 12%, transparent);">
                     <p style="font-size:1.6rem; margin-bottom:8px; line-height:1;">🌐</p>
@@ -3227,7 +3230,7 @@ if 'summary_df' not in st.session_state:
                     <p style="font-size:0.8rem; color:var(--vx-text-secondary, #656d76); line-height:1.6;">
                         {t('mission_pillar1_desc')}</p>
                 </div>
-                <div style="flex:1; min-width:170px; max-width:210px; padding:18px 16px; border-radius:12px; text-align:center;
+                <div style="flex:1; min-width:170px; max-width:210px; padding:14px 14px; border-radius:12px; text-align:center;
                             background:color-mix(in srgb, var(--vx-accent, #0969da) 4%, transparent);
                             border:1px solid color-mix(in srgb, var(--vx-accent, #0969da) 12%, transparent);">
                     <p style="font-size:1.6rem; margin-bottom:8px; line-height:1;">🧱</p>
@@ -3236,7 +3239,7 @@ if 'summary_df' not in st.session_state:
                     <p style="font-size:0.8rem; color:var(--vx-text-secondary, #656d76); line-height:1.6;">
                         {t('mission_pillar2_desc')}</p>
                 </div>
-                <div style="flex:1; min-width:170px; max-width:210px; padding:18px 16px; border-radius:12px; text-align:center;
+                <div style="flex:1; min-width:170px; max-width:210px; padding:14px 14px; border-radius:12px; text-align:center;
                             background:color-mix(in srgb, var(--vx-accent, #0969da) 4%, transparent);
                             border:1px solid color-mix(in srgb, var(--vx-accent, #0969da) 12%, transparent);">
                     <p style="font-size:1.6rem; margin-bottom:8px; line-height:1;">🎯</p>
