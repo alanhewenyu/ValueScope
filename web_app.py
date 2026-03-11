@@ -1573,17 +1573,18 @@ with st.sidebar:
         )
         st.caption(t('sidebar_fmp_hint'))
 
-    # ── Copyright & contact ──
-    st.markdown('<hr style="margin:4px 0; border:none; border-top:1px solid var(--vx-border, #d0d7de);">', unsafe_allow_html=True)
-    st.markdown("""
-    <div style="text-align:center; font-size:0.72rem; color:#555; line-height:1.7; padding:4px 0;">
-        <div>© 2026 Alan He · <a href="https://opensource.org/licenses/MIT" target="_blank" style="color:#58a6ff;text-decoration:none;">MIT License</a></div>
-        <div><a href="https://jianshan.co" target="_blank" style="color:#58a6ff;text-decoration:none;">见山笔记</a>
-        · <a href="https://github.com/alanhewenyu/ValueScope" target="_blank" style="color:#58a6ff;text-decoration:none;">GitHub</a>
-        · <a href="https://jianshan.co/wechat/" target="_blank" style="color:#58a6ff;text-decoration:none;">公众号</a>
-        · <a href="mailto:alanhe@icloud.com" style="color:#58a6ff;text-decoration:none;">alanhe@icloud.com</a></div>
-    </div>
-    """, unsafe_allow_html=True)
+    # ── Copyright & contact (keyed container prevents duplication on rapid reruns) ──
+    with st.container(key="vs_sidebar_footer"):
+        st.markdown(
+            '<hr style="margin:4px 0; border:none; border-top:1px solid var(--vx-border, #d0d7de);">'
+            '<div style="text-align:center; font-size:0.72rem; color:#555; line-height:1.7; padding:4px 0;">'
+            '    <div>© 2026 Alan He · <a href="https://opensource.org/licenses/MIT" target="_blank" style="color:#58a6ff;text-decoration:none;">MIT License</a></div>'
+            '    <div><a href="https://jianshan.co" target="_blank" style="color:#58a6ff;text-decoration:none;">见山笔记</a>'
+            '    · <a href="https://github.com/alanhewenyu/ValueScope" target="_blank" style="color:#58a6ff;text-decoration:none;">GitHub</a>'
+            '    · <a href="https://jianshan.co/wechat/" target="_blank" style="color:#58a6ff;text-decoration:none;">公众号</a>'
+            '    · <a href="mailto:alanhe@icloud.com" style="color:#58a6ff;text-decoration:none;">alanhe@icloud.com</a></div>'
+            '</div>',
+            unsafe_allow_html=True)
 
 
 # ────────────────────────────────────────────────────────────────
