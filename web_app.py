@@ -3184,10 +3184,6 @@ if 'summary_df' not in st.session_state:
             else:
                 st.stop()  # Let the error from _fetch_data stay visible
     else:
-        if _empty_ticker_warning:
-            st.warning(t('welcome_empty_warning'))
-        if st.session_state.get('_needs_mode_select', False):
-            st.info(t('main_mode_prompt'))
         st.markdown(f"""
         <div class="vx-welcome" style="text-align:center; padding:20px 20px 24px 20px; max-width:720px; margin:0 auto;">
             <p style="font-size:3rem; margin-bottom:8px; line-height:1;">📊</p>

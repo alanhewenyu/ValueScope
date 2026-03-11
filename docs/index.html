@@ -73,7 +73,28 @@
     <!-- ── Styles ── -->
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        html, body { height: 100%; width: 100%; overflow: hidden; }
+        html, body { height: 100%; width: 100%; overflow: hidden; background: #0e1117; }
+        /* Loading placeholder — behind iframe, visible while iframe loads */
+        .loading-logo {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .loading-logo .name {
+            font-size: 2rem;
+            font-weight: 700;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-style: italic;
+            background: linear-gradient(135deg, #00d2ff 0%, #7b2ff7 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .loading-logo .icon { font-size: 3rem; }
         iframe {
             position: absolute;
             top: 0; left: 0;
@@ -82,7 +103,7 @@
             border: none;
             display: block;
             z-index: 2;
-            background: #f8f9fa;
+            background: transparent;
         }
         .seo-content {
             position: absolute;
@@ -96,6 +117,11 @@
     </style>
 </head>
 <body>
+    <!-- Loading placeholder — shown behind iframe while Streamlit loads -->
+    <div class="loading-logo" aria-hidden="true">
+        <div class="icon">📊</div>
+        <div class="name">ValueScope</div>
+    </div>
     <!-- SEO content: in DOM for crawlers, visually hidden from users -->
     <main class="seo-content" aria-hidden="true">
         <h1>ValueScope — AI 智能 DCF 股票估值工具</h1>
