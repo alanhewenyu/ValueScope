@@ -133,16 +133,19 @@
     </div>
 
     <script>
-    // Hide loading screen only when Streamlit app signals it's fully rendered
-    window.addEventListener('message', function(e) {
-        if (e.data === 'vs-ready') {
-            document.getElementById('loading').classList.add('hidden');
-        }
-    });
-    // Fallback: hide after 20s in case postMessage never arrives
-    setTimeout(function() {
+    var _hide = function() {
         document.getElementById('loading').classList.add('hidden');
-    }, 20000);
+    };
+    // Method 1: postMessage from Streamlit app (fastest if it works)
+    window.addEventListener('message', function(e) {
+        if (e.data === 'vs-ready') _hide();
+    });
+    // Method 2: iframe onload + 2s delay (reliable — fires when Streamlit shell loads)
+    document.querySelector('iframe').addEventListener('load', function() {
+        setTimeout(_hide, 2000);
+    });
+    // Method 3: hard timeout as last resort
+    setTimeout(_hide, 15000);
     </script>
 
     <!-- SEO content: in DOM for crawlers, visually hidden from users -->
