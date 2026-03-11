@@ -42,6 +42,7 @@ _STRINGS = {
         'sidebar_fmp_label': 'Financial Modeling Prep (FMP) API Key',
         'sidebar_fmp_placeholder': 'Enter your FMP key (Required for US stocks)',
         'sidebar_fmp_hint': '\U0001f4a1 HK & A-shares do not require an API key.',
+        'sidebar_sponsor': 'Buy Me a Coffee',
         'sidebar_fmp_expander': 'API Key (for US stocks)',
         'sidebar_engine_not_installed': '**{engine}** is not installed.',
 
@@ -360,6 +361,7 @@ _STRINGS = {
         'sidebar_fmp_label': 'FMP API 密钥',
         'sidebar_fmp_placeholder': '输入 FMP 密钥（美股必填）',
         'sidebar_fmp_hint': '\U0001f4a1 \u6e2f\u80a1\u548c A \u80a1\u65e0\u9700 API \u5bc6\u94a5\u3002',
+        'sidebar_sponsor': '请我喝杯咖啡',
         'sidebar_fmp_expander': 'API \u5bc6\u94a5\uff08\u7f8e\u80a1\u9700\u8981\uff09',
         'sidebar_engine_not_installed': '**{engine}** \u672a\u5b89\u88c5\u3002',
 
