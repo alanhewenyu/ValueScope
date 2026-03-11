@@ -82,6 +82,7 @@
             border: none;
             display: block;
             z-index: 2;
+            background: #f8f9fa;
         }
         /* SEO content: in DOM for crawlers, visually hidden from users */
         .seo-content {
@@ -93,18 +94,23 @@
             white-space: nowrap;
             border: 0;
         }
-        /* Loading screen: behind iframe, visible only while iframe is transparent/loading */
+        /* Loading screen: above iframe, hidden via onload once iframe is ready */
         .loading-screen {
             position: absolute;
             top: 0; left: 0;
             width: 100%; height: 100%;
-            z-index: 1;
+            z-index: 3;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             background: #f8f9fa;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            transition: opacity 0.3s ease-out;
+        }
+        .loading-screen.hidden {
+            opacity: 0;
+            pointer-events: none;
         }
         .loading-logo { font-size: 28px; font-weight: 700; color: #4a90d9; font-style: italic; margin-bottom: 16px; }
         .loading-spinner {
@@ -119,8 +125,8 @@
     </style>
 </head>
 <body>
-    <!-- Loading screen: z-index 1, behind iframe (z-index 2). Visible while iframe loads. -->
-    <div class="loading-screen">
+    <!-- Loading screen: z-index 3, above iframe. Fades out via onload when iframe content is ready. -->
+    <div class="loading-screen" id="loading">
         <div class="loading-logo">ValueScope</div>
         <div class="loading-spinner"></div>
         <p class="loading-text">Loading...</p>
@@ -158,6 +164,7 @@
         title="ValueScope — AI 智能 DCF 股票估值工具"
         allow="clipboard-read; clipboard-write"
         loading="eager"
+        onload="document.getElementById('loading').classList.add('hidden')"
     ></iframe>
 
     <noscript>
