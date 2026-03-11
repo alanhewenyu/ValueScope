@@ -461,6 +461,9 @@ section[data-testid="stSidebar"] > div { padding-top: 0 !important; }
     display: flex !important; min-height: 28px; justify-content: flex-end;
     padding: 2px 4px 0 0 !important;
 }
+[data-testid="stSidebarCollapseButton"] { visibility: visible !important; }
+[data-testid="stSidebarCollapseButton"] button { visibility: visible !important; }
+[data-testid="stLogoSpacer"] { display: none !important; }
 @media (max-width: 768px) {
     [data-testid="stSidebarHeader"] { min-height: 44px; padding: 4px 8px 0 0 !important; }
 }
