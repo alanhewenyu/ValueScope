@@ -1010,9 +1010,10 @@ div[data-testid="InputInstructions"] { display: none !important; }
 
     /* Welcome page compact on mobile */
     .vx-welcome {
-        padding: 40px 16px 30px 16px !important;
+        padding: 20px 12px 20px 12px !important;
     }
     .vx-welcome p:first-child { font-size: 2.4rem !important; }
+    .vx-welcome p:nth-child(3) { font-size: 0.92rem !important; }  /* instruction text */
 }
 
 /* ── Tablet (769px – 1024px) ── */
@@ -3195,7 +3196,7 @@ if 'summary_df' not in st.session_state:
             <p style="font-size:1.05rem; color:var(--vx-text-secondary, #656d76); line-height:1.6; margin-bottom:14px;">
                 {t('welcome_instruction_web') if not (_has_ai or _has_cloud_ai) else t('welcome_instruction')}
             </p>
-            <div style="display:flex; justify-content:center; gap:8px; flex-wrap:nowrap; margin-bottom:14px;">
+            <div style="display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin-bottom:14px;">
                 <span style="font-size:0.78rem; padding:4px 10px; border-radius:20px; white-space:nowrap;
                              background:color-mix(in srgb, var(--vx-accent, #0969da) 8%, transparent);
                              color:var(--vx-accent, #0969da); border:1px solid color-mix(in srgb, var(--vx-accent) 20%, transparent);">
