@@ -169,18 +169,13 @@
     <script>
     (function(){
         var logo = document.querySelector('.loading-logo');
-        var iframe = document.querySelector('iframe');
         var done = false;
         function hide(){ if(done) return; done = true; logo.classList.add('hide'); }
-        var start = Date.now();
-        var MIN = 5000; // logo shows at least 5s
-        // After iframe loads, wait for Streamlit to init, but respect minimum
-        iframe.addEventListener('load', function(){
-            var elapsed = Date.now() - start;
-            var wait = Math.max(3000, MIN - elapsed); // at least 3s after load, or fill up to 5s
-            setTimeout(hide, wait);
+        // Streamlit app sends postMessage when fully rendered — hide immediately
+        window.addEventListener('message', function(e){
+            if (e.data === 'streamlit-ready') hide();
         });
-        // Safety fallback
+        // Safety fallback if postMessage never arrives
         setTimeout(hide, 20000);
     })();
     </script>

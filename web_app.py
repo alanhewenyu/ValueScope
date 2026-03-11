@@ -3999,3 +3999,6 @@ st.markdown(f"""
     {t('footer_tagline_web') if not (_has_ai or _has_cloud_ai) else t('footer_tagline')}
 </div>
 """, unsafe_allow_html=True)
+
+# ── Signal parent iframe wrapper that Streamlit has finished rendering ──
+_stc.html('<script>try{window.top.postMessage("streamlit-ready","*")}catch(e){}</script>', height=0)
