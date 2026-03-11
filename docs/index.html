@@ -169,14 +169,19 @@
     <script>
     (function(){
         var logo = document.querySelector('.loading-logo');
+        var iframe = document.querySelector('iframe');
         var done = false;
         function hide(){ if(done) return; done = true; logo.classList.add('hide'); }
-        // Streamlit app sends postMessage when fully rendered — hide immediately
+        // Best case: Streamlit sends postMessage when rendered
         window.addEventListener('message', function(e){
             if (e.data === 'streamlit-ready') hide();
         });
-        // Safety fallback if postMessage never arrives
-        setTimeout(hide, 20000);
+        // Primary fallback: iframe load event + buffer for Streamlit to render
+        iframe.addEventListener('load', function(){
+            setTimeout(hide, 2500);
+        });
+        // Safety fallback
+        setTimeout(hide, 15000);
     })();
     </script>
 </body>
