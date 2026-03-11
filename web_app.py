@@ -163,7 +163,7 @@ _seo_components.html("""
     p('og:title', 'ValueScope — AI-Powered DCF Stock Valuation');
     p('og:description', 'Standardized DCF engine with AI copilot. Real-time parameter tuning, sensitivity analysis, Excel export. Free for A-shares & HK stocks.');
     p('og:type', 'website');
-    p('og:url', 'https://valuescope.streamlit.app');
+    p('og:url', 'https://valuescope.app');
     // Twitter Card
     m('twitter:card', 'summary');
     m('twitter:title', 'ValueScope — AI-Powered DCF Stock Valuation');
@@ -171,7 +171,7 @@ _seo_components.html("""
     // Canonical URL
     var link = doc.createElement('link');
     link.setAttribute('rel', 'canonical');
-    link.setAttribute('href', 'https://valuescope.streamlit.app');
+    link.setAttribute('href', 'https://valuescope.app');
     head.appendChild(link);
     // JSON-LD structured data
     var ld = doc.createElement('script');
@@ -181,7 +181,7 @@ _seo_components.html("""
         "@type": "SoftwareApplication",
         "name": "ValueScope",
         "description": "AI-powered interactive DCF stock valuation tool with standardized model, real-time parameter tuning, and sensitivity analysis.",
-        "url": "https://valuescope.streamlit.app",
+        "url": "https://valuescope.app",
         "applicationCategory": "FinanceApplication",
         "operatingSystem": "Web",
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },

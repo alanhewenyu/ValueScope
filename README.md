@@ -8,7 +8,7 @@
 
 **AI-powered interactive DCF valuation for global stocks — standardized model, real-time parameter tuning, reproducible results. A-shares & HK stocks free, no API key needed.**
 
-[![Try Online](https://img.shields.io/badge/🌐_Try_Online-valuescope.streamlit.app-2563eb?style=for-the-badge)](https://valuescope.streamlit.app)
+[![Try Online](https://img.shields.io/badge/🌐_Try_Online-valuescope.app-2563eb?style=for-the-badge)](https://valuescope.app)
 [![Demo](https://img.shields.io/badge/▶_Watch_Demo-blue?style=for-the-badge)](#demo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
@@ -24,7 +24,7 @@ ValueScope is an AI-powered stock valuation tool built on a **standardized DCF e
 - 🔧 **Standardized DCF Engine** — A fixed valuation framework (10-year FCFF, WACC, terminal value) ensures every valuation is reproducible and comparable across companies and time periods. No more guessing which method the AI used this time.
 - 📊 **Structured Data Pipeline** — Automatically fetches historical financials, calculates TTM metrics, WACC, and historical reference ranges. A-shares and HK stock data are free for everyone.
 - 🖥️ **Terminal + Local Web GUI** — Two ways to run locally: a feature-rich **terminal CLI** with AI copilot, or a **local web dashboard** for visual, interactive parameter tuning with sliders and real-time charts — accessible at `http://localhost:8501` in your browser. Both share the same valuation engine and data pipeline.
-- 🌐 **Cloud Web App** — Don't want to install anything? Try it at [valuescope.streamlit.app](https://valuescope.streamlit.app) — no installation, no API key needed. Supports A-shares and HK stocks. The cloud version features **Cloud AI** powered by DeepSeek R1 with Serper web search, providing the same AI-driven valuation experience without any local setup.
+- 🌐 **Cloud Web App** — Don't want to install anything? Try it at [valuescope.app](https://valuescope.app) — no installation, no API key needed. Supports A-shares and HK stocks. The cloud version features **Cloud AI** powered by DeepSeek R1 with Serper web search, providing the same AI-driven valuation experience without any local setup.
 
 Think of it as having an equity research analyst sitting next to you: AI searches for earnings guidance, analyst consensus, and industry benchmarks, then suggests valuation parameters — but the underlying model is always rigorous, transparent, and under your control.
 
@@ -33,7 +33,7 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 ## Key Features
 
 - **Multi-Engine AI Copilot** — Supports three local AI engines: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Gemini CLI](https://github.com/google-gemini/gemini-cli), and [Qwen Code](https://github.com/QwenLM/qwen-code). Auto-detects installed engines (priority: Claude > Gemini > Qwen), or specify one with `--engine`. AI analyzes the company, searches the web for analyst forecasts and earnings guidance, and suggests DCF parameters with detailed reasoning. You review and adjust each parameter interactively.
-- **Cloud AI** — The cloud web app at [valuescope.streamlit.app](https://valuescope.streamlit.app) features built-in AI powered by **DeepSeek R1** with **Serper** web search and page scraping. No local AI installation needed — deep reasoning analysis runs entirely in the cloud, searching for earnings guidance, analyst consensus, and industry data to suggest valuation parameters.
+- **Cloud AI** — The cloud web app at [valuescope.app](https://valuescope.app) features built-in AI powered by **DeepSeek R1** with **Serper** web search and page scraping. No local AI installation needed — deep reasoning analysis runs entirely in the cloud, searching for earnings guidance, analyst consensus, and industry data to suggest valuation parameters.
 - **Custom Valuation Mode** — Prefer full control? Click "📝 Custom Valuation" in the web app, or use `--manual` in the terminal to input all parameters yourself. No AI engine or API key required.
 - **Auto Mode** — Use `--auto` for a fully automated terminal pipeline: AI analysis, parameter acceptance, and Excel export with no interaction.
 - **Verdict & Summary Cards** — After valuation, a prominent verdict banner (BUY / HOLD / SELL) shows intrinsic value vs market price and margin of safety at a glance, with 4 summary metric cards for key assumptions.
@@ -119,7 +119,7 @@ ValueScope uses different data sources depending on the market, optimizing for d
 
 ### Cloud AI (Web App)
 
-The cloud web app at [valuescope.streamlit.app](https://valuescope.streamlit.app) uses built-in Cloud AI — no installation required:
+The cloud web app at [valuescope.app](https://valuescope.app) uses built-in Cloud AI — no installation required:
 
 | Component | Details |
 |-----------|---------|
@@ -204,7 +204,7 @@ $env:FMP_API_KEY="your_api_key_here"
 
 ### 4. Set Up AI Engine (Optional — Local Only)
 
-> **Using the cloud web app?** Skip this step — Cloud AI (DeepSeek R1) is built in at [valuescope.streamlit.app](https://valuescope.streamlit.app).
+> **Using the cloud web app?** Skip this step — Cloud AI (DeepSeek R1) is built in at [valuescope.app](https://valuescope.app).
 
 For local use, install any one of the supported AI CLI tools:
 

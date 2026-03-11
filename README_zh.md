@@ -8,7 +8,7 @@
 
 **AI 驱动的交互式 DCF 股票估值工具 — 标准化模型、实时调参、可复现结果。A 股、港股免费使用，无需 API Key。**
 
-[![在线使用](https://img.shields.io/badge/🌐_在线使用-valuescope.streamlit.app-2563eb?style=for-the-badge)](https://valuescope.streamlit.app)
+[![在线使用](https://img.shields.io/badge/🌐_在线使用-valuescope.app-2563eb?style=for-the-badge)](https://valuescope.app)
 [![Demo](https://img.shields.io/badge/▶_观看演示-blue?style=for-the-badge)](#演示)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
@@ -24,7 +24,7 @@ ValueScope 是一个基于**标准化 DCF 引擎**的 AI 股票估值工具 — 
 - 🔧 **标准化 DCF 引擎** — 固定的估值框架（10 年 FCFF、WACC、终值），确保每次估值可复现、跨公司可比较。不用再猜 AI 这次用了什么方法。
 - 📊 **结构化数据管道** — 自动拉取历史财务数据，计算 TTM、WACC、历史参考区间。A 股和港股数据完全免费，人人可用。
 - 🖥️ **终端 + 本地网页双模式** — 两种本地运行方式：功能完整的**终端 CLI**（含 AI Copilot），或**本地网页可视化界面**，通过滑块调参、实时图表，在浏览器中打开 `http://localhost:8501` 即可使用。两者共享同一套估值引擎和数据管道。
-- 🌐 **在线网页版** — 不想安装？直接访问 [valuescope.streamlit.app](https://valuescope.streamlit.app) — 无需安装、无需 API Key，支持 A 股和港股。在线版内置 **Cloud AI**，使用 DeepSeek R1 深度推理 + Serper 联网搜索，无需本地配置即可体验 AI 驱动的估值分析。
+- 🌐 **在线网页版** — 不想安装？直接访问 [valuescope.app](https://valuescope.app) — 无需安装、无需 API Key，支持 A 股和港股。在线版内置 **Cloud AI**，使用 DeepSeek R1 深度推理 + Serper 联网搜索，无需本地配置即可体验 AI 驱动的估值分析。
 
 你可以把它想象成一位坐在身边的股权研究分析师：AI 帮你搜索业绩指引、分析师一致预期和行业数据，然后给出估值参数建议 — 而底层模型始终是严谨、透明、由你掌控的。
 
@@ -33,7 +33,7 @@ ValueScope 是一个基于**标准化 DCF 引擎**的 AI 股票估值工具 — 
 ## 核心功能
 
 - **多引擎 AI Copilot** — 支持三种本地 AI 引擎：[Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Gemini CLI](https://github.com/google-gemini/gemini-cli)、[Qwen Code](https://github.com/QwenLM/qwen-code)。启动时自动检测已安装的引擎（优先级：Claude > Gemini > Qwen），也可通过 `--engine` 指定。AI 分析公司基本面，搜索分析师预期和业绩指引，为每个 DCF 参数给出建议值和详细分析。你逐项审核，按 Enter 接受或输入新值覆盖。
-- **Cloud AI（在线版）** — 在线网页版 [valuescope.streamlit.app](https://valuescope.streamlit.app) 内置 Cloud AI，使用 **DeepSeek R1** 深度推理模型 + **Serper** 联网搜索与网页抓取。无需本地安装任何 AI 工具，自动搜索业绩指引、分析师预期和行业数据，为估值参数给出建议。
+- **Cloud AI（在线版）** — 在线网页版 [valuescope.app](https://valuescope.app) 内置 Cloud AI，使用 **DeepSeek R1** 深度推理模型 + **Serper** 联网搜索与网页抓取。无需本地安装任何 AI 工具，自动搜索业绩指引、分析师预期和行业数据，为估值参数给出建议。
 - **自定义估值模式** — 想完全自己掌控？在网页版点击「📝 自定义估值」，或在终端使用 `--manual` 手动输入所有参数。无需 AI 引擎或 API Key。
 - **全自动模式** — 使用 `--auto` 实现全自动终端流程：AI 分析、自动采纳参数、自动导出 Excel，无需任何交互。
 - **估值判定与摘要卡片** — 估值完成后，醒目的判定横幅（买入/持有/卖出）一目了然显示内在价值 vs 市场价格和安全边际，配合 4 张核心假设摘要卡片。
@@ -119,7 +119,7 @@ ValueScope 根据不同市场使用不同数据源，兼顾数据质量和使用
 
 ### Cloud AI（在线网页版）
 
-在线网页版 [valuescope.streamlit.app](https://valuescope.streamlit.app) 内置 Cloud AI，无需安装：
+在线网页版 [valuescope.app](https://valuescope.app) 内置 Cloud AI，无需安装：
 
 | 组件 | 说明 |
 |------|------|
@@ -197,7 +197,7 @@ export FMP_API_KEY='your_api_key_here'
 
 ### 4. 安装 AI 引擎（可选 — 仅本地使用）
 
-> **使用在线版？** 跳过此步骤 — Cloud AI（DeepSeek R1）已内置于 [valuescope.streamlit.app](https://valuescope.streamlit.app)。
+> **使用在线版？** 跳过此步骤 — Cloud AI（DeepSeek R1）已内置于 [valuescope.app](https://valuescope.app)。
 
 本地使用时，安装任一支持的 AI CLI 工具：
 
