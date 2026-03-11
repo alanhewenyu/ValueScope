@@ -205,7 +205,7 @@ _seo_components.html("""
 if '_lang' not in st.session_state:
     st.session_state._lang = 'en'
 
-# ── Force sidebar open + mobile floating toggle button ──
+# ── Force sidebar open on first load ──
 import streamlit.components.v1 as _components
 _components.html("""
 <script>
@@ -223,54 +223,6 @@ _components.html("""
                 || doc.querySelector('[data-testid="collapsedControl"] button');
         if (btn) btn.click();
     }
-
-    // ── Mobile floating sidebar toggle ──
-    if (doc.getElementById('vx-sidebar-fab')) return;  // already injected
-    var fab = doc.createElement('button');
-    fab.id = 'vx-sidebar-fab';
-    fab.innerHTML = '☰';
-    fab.setAttribute('aria-label', 'Toggle sidebar');
-    fab.style.cssText = 'position:fixed; top:14px; left:14px; z-index:999999;'
-        + 'width:40px; height:40px; border-radius:10px; border:none; cursor:pointer;'
-        + 'font-size:20px; line-height:1; padding:0;'
-        + 'background:#0969da; color:#fff; box-shadow:0 2px 10px rgba(0,0,0,0.2);'
-        + 'display:none; align-items:center; justify-content:center;';
-
-    // Show only on narrow screens
-    function updateFabVisibility() {
-        fab.style.display = window.parent.innerWidth <= 768 ? 'flex' : 'none';
-    }
-    updateFabVisibility();
-    window.parent.addEventListener('resize', updateFabVisibility);
-
-    fab.addEventListener('click', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        var sb = doc.querySelector('[data-testid="stSidebar"]');
-        if (!sb) return;
-        var expanded = sb.getAttribute('aria-expanded') !== 'false';
-        // Try clicking Streamlit's own buttons first
-        var clicked = false;
-        var selectors = expanded
-            ? ['[data-testid="stSidebarCollapseButton"] button',
-               '[data-testid="stSidebarHeader"] button',
-               'section[data-testid="stSidebar"] button[kind="header"]']
-            : ['[data-testid="stSidebarCollapsedControl"] button',
-               '[data-testid="collapsedControl"] button'];
-        for (var i = 0; i < selectors.length; i++) {
-            var btn = expanded ? sb.querySelector(selectors[i]) : doc.querySelector(selectors[i]);
-            if (btn) { btn.click(); clicked = true; break; }
-        }
-        // Fallback: directly toggle aria-expanded (works in most Streamlit versions)
-        if (!clicked) {
-            sb.setAttribute('aria-expanded', expanded ? 'false' : 'true');
-        }
-    });
-
-    fab.addEventListener('touchstart', function() { fab.style.transform = 'scale(0.92)'; }, {passive:true});
-    fab.addEventListener('touchend', function() { fab.style.transform = 'scale(1)'; }, {passive:true});
-
-    doc.body.appendChild(fab);
 })();
 </script>
 """, height=0)
@@ -903,10 +855,9 @@ div[data-testid="InputInstructions"] { display: none !important; }
     .summary-cards { grid-template-columns: repeat(2, 1fr); gap: 8px; }
     .summary-card .sc-val { font-size: 1.1rem; }
 
-    /* Sticky header buttons smaller */
-    div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hdr) div[data-testid="stHorizontalBlock"] button,
-    div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hdr) div[data-testid="stHorizontalBlock"] a[data-testid="stDownloadButton"] button {
-        height: 36px !important; font-size: 0.58rem !important; padding: 2px 4px !important;
+    /* Hide sticky header action buttons on mobile — only show company name */
+    div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hdr) div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:not(:first-child) {
+        display: none !important;
     }
 
     /* Company name smaller */
