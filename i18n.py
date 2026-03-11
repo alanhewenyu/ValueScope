@@ -59,6 +59,7 @@ _STRINGS = {
         'welcome_empty_warning': '\u26a0\ufe0f Please enter a stock symbol in the sidebar first, then click a valuation button.',
 
         # ── Mission pillars ──
+        'mission_heading': 'Our Philosophy',
         'mission_pillar1_title': 'Democratize Valuation',
         'mission_pillar1_desc': 'Professional-grade tools should not be locked away inside elite firms. ValueScope brings institutional-quality DCF analysis to every investor, for free.',
         'mission_pillar2_title': 'First Principles',
@@ -387,6 +388,7 @@ _STRINGS = {
         'welcome_empty_warning': '\u26a0\ufe0f \u8bf7\u5148\u5728\u4fa7\u8fb9\u680f\u8f93\u5165\u80a1\u7968\u4ee3\u7801\uff0c\u7136\u540e\u70b9\u51fb\u4f30\u503c\u6309\u94ae\u3002',
 
         # ── Mission pillars ──
+        'mission_heading': '\u4f30\u503c\u7406\u5ff5',
         'mission_pillar1_title': '\u6280\u672f\u5e73\u6743',
         'mission_pillar1_desc': '\u4e13\u4e1a\u7ea7\u4f30\u503c\u5de5\u5177\u4e0d\u5e94\u53ea\u5c5e\u4e8e\u7cbe\u82f1\u673a\u6784\u3002ValueScope \u8ba9\u6bcf\u4f4d\u6295\u8d44\u8005\u90fd\u80fd\u514d\u8d39\u4f7f\u7528\u673a\u6784\u7ea7 DCF \u5206\u6790\u3002',
         'mission_pillar2_title': '\u7b2c\u4e00\u6027\u539f\u7406',
