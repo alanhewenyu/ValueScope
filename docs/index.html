@@ -132,22 +132,6 @@
         <p class="loading-text">Loading...</p>
     </div>
 
-    <script>
-    var _hide = function() {
-        document.getElementById('loading').classList.add('hidden');
-    };
-    // Method 1: postMessage from Streamlit app (fastest if it works)
-    window.addEventListener('message', function(e) {
-        if (e.data === 'vs-ready') _hide();
-    });
-    // Method 2: iframe onload + 2s delay (reliable — fires when Streamlit shell loads)
-    document.querySelector('iframe').addEventListener('load', function() {
-        setTimeout(_hide, 2000);
-    });
-    // Method 3: hard timeout as last resort
-    setTimeout(_hide, 15000);
-    </script>
-
     <!-- SEO content: in DOM for crawlers, visually hidden from users -->
     <main class="seo-content" aria-hidden="true">
         <h1>ValueScope — AI 智能 DCF 股票估值工具</h1>
@@ -181,6 +165,22 @@
         allow="clipboard-read; clipboard-write"
         loading="eager"
     ></iframe>
+
+    <script>
+    var _hide = function() {
+        document.getElementById('loading').classList.add('hidden');
+    };
+    // Method 1: postMessage from Streamlit app (fastest if it works)
+    window.addEventListener('message', function(e) {
+        if (e.data === 'vs-ready') _hide();
+    });
+    // Method 2: iframe onload + 2s delay (reliable — fires when Streamlit shell loads)
+    document.querySelector('iframe').addEventListener('load', function() {
+        setTimeout(_hide, 2000);
+    });
+    // Method 3: hard timeout as last resort
+    setTimeout(_hide, 15000);
+    </script>
 
     <noscript>
         <p>ValueScope 需要 JavaScript 才能运行。请启用 JavaScript 后刷新页面。</p>
