@@ -8,6 +8,7 @@
 
 **AI-powered interactive DCF valuation for global stocks — standardized model, real-time parameter tuning, reproducible results. A-shares & HK stocks free, no API key needed.**
 
+[![Try Online](https://img.shields.io/badge/🌐_Try_Online-valuescope.streamlit.app-2563eb?style=for-the-badge)](https://valuescope.streamlit.app)
 [![Demo](https://img.shields.io/badge/▶_Watch_Demo-blue?style=for-the-badge)](#demo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)

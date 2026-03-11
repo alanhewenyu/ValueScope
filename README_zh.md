@@ -8,6 +8,7 @@
 
 **AI 驱动的交互式 DCF 股票估值工具 — 标准化模型、实时调参、可复现结果。A 股、港股免费使用，无需 API Key。**
 
+[![在线使用](https://img.shields.io/badge/🌐_在线使用-valuescope.streamlit.app-2563eb?style=for-the-badge)](https://valuescope.streamlit.app)
 [![Demo](https://img.shields.io/badge/▶_观看演示-blue?style=for-the-badge)](#演示)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
