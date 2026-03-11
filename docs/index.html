@@ -1,32 +1,140 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ValueScope — AI-Powered DCF Valuation Tool</title>
-    <meta name="description" content="Free AI-powered DCF stock valuation tool. Calculate intrinsic value for A-shares, HK stocks, and US stocks with one click.">
-    <meta property="og:title" content="ValueScope — AI-Powered DCF Valuation Tool">
-    <meta property="og:description" content="Free AI-powered DCF stock valuation tool. Calculate intrinsic value with DeepSeek R1 deep reasoning.">
+
+    <!-- ── Primary SEO ── -->
+    <title>ValueScope — AI 智能 DCF 股票估值工具 | Free AI-Powered Valuation</title>
+    <meta name="description" content="免费 AI 驱动的 DCF 股票估值工具。支持 A 股、港股、美股，一键 AI 估值，实时参数调节，敏感性分析，Excel 导出。Free AI-powered DCF stock valuation for A-shares, HK & US stocks.">
+    <meta name="keywords" content="DCF估值,股票估值,内在价值,现金流折现,AI估值,一键估值,A股估值,港股估值,美股估值,WACC,免费估值工具,DCF计算器,stock valuation,intrinsic value,free cash flow,AI valuation">
+
+    <!-- ── Canonical & hreflang ── -->
+    <link rel="canonical" href="https://valuescope.app">
+    <link rel="alternate" hreflang="zh" href="https://valuescope.app">
+    <link rel="alternate" hreflang="en" href="https://valuescope.app">
+    <link rel="alternate" hreflang="x-default" href="https://valuescope.app">
+
+    <!-- ── Open Graph ── -->
+    <meta property="og:title" content="ValueScope — AI 智能 DCF 股票估值工具">
+    <meta property="og:description" content="免费 AI 驱动的 DCF 股票估值工具。支持 A 股、港股、美股，一键 AI 估值，实时参数调节，敏感性分析，Excel 导出。">
     <meta property="og:url" content="https://valuescope.app">
     <meta property="og:type" content="website">
-    <link rel="canonical" href="https://valuescope.app">
+    <meta property="og:image" content="https://valuescope.app/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="zh_CN">
+    <meta property="og:locale:alternate" content="en_US">
+    <meta property="og:site_name" content="ValueScope">
+
+    <!-- ── Twitter Card ── -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="ValueScope — AI 智能 DCF 股票估值工具">
+    <meta name="twitter:description" content="免费 AI 驱动的 DCF 估值工具。支持 A 股、港股、美股，一键估值 + 敏感性分析 + Excel 导出。">
+    <meta name="twitter:image" content="https://valuescope.app/og-image.png">
+
+    <!-- ── JSON-LD Structured Data ── -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "ValueScope",
+        "alternateName": "ValueScope AI 估值工具",
+        "description": "免费 AI 驱动的 DCF 股票估值工具，支持 A 股、港股、美股。提供一键 AI 估值、实时参数调节、敏感性分析和 Excel 导出。",
+        "url": "https://valuescope.app",
+        "applicationCategory": "FinanceApplication",
+        "operatingSystem": "Web",
+        "browserRequirements": "Requires JavaScript",
+        "inLanguage": ["zh-CN", "en"],
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+        },
+        "author": {
+            "@type": "Person",
+            "name": "Alan He"
+        },
+        "featureList": [
+            "AI 一键 DCF 估值 (DeepSeek R1)",
+            "A 股 / 港股 / 美股 / 日股支持",
+            "实时参数调节",
+            "敏感性分析 (Sensitivity Analysis)",
+            "Excel 导出",
+            "中英文双语界面"
+        ]
+    }
+    </script>
+
+    <!-- ── Styles ── -->
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { height: 100%; width: 100%; overflow: hidden; }
         iframe {
+            position: absolute;
+            top: 0; left: 0;
             width: 100%;
             height: 100%;
             border: none;
             display: block;
+            z-index: 2;
         }
+        /* SEO content: visible to crawlers, behind iframe for users */
+        .seo-content {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%;
+            padding: 40px 20px;
+            z-index: 1;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: #333;
+            background: #fff;
+        }
+        .seo-content h1 { font-size: 24px; margin-bottom: 12px; }
+        .seo-content h2 { font-size: 18px; margin: 16px 0 8px; color: #555; }
+        .seo-content p { font-size: 14px; line-height: 1.6; margin-bottom: 8px; color: #666; }
+        .seo-content ul { padding-left: 20px; margin-bottom: 12px; }
+        .seo-content li { font-size: 14px; line-height: 1.8; color: #666; }
     </style>
 </head>
 <body>
+    <!-- SEO content: crawlers see this; users see the iframe on top -->
+    <main class="seo-content">
+        <h1>ValueScope — AI 智能 DCF 股票估值工具</h1>
+        <p>免费在线 DCF（现金流折现）估值工具，AI 一键估值 + 手动参数调节 + 敏感性分析 + Excel 导出。</p>
+        <p>Free AI-powered DCF (Discounted Cash Flow) valuation tool with one-click AI analysis, real-time parameter tuning, sensitivity analysis, and Excel export.</p>
+
+        <h2>支持市场 / Supported Markets</h2>
+        <ul>
+            <li>A 股（上证 .SS / 深证 .SZ）— 例如 600519.SS 贵州茅台</li>
+            <li>港股（.HK）— 例如 0700.HK 腾讯控股</li>
+            <li>美股（NYSE / NASDAQ）— 例如 AAPL 苹果公司</li>
+            <li>日股（.T）— 例如 7203.T 丰田汽车</li>
+        </ul>
+
+        <h2>核心功能 / Key Features</h2>
+        <ul>
+            <li>AI 一键估值：DeepSeek R1 深度推理，自动设定 DCF 参数并给出估值判断</li>
+            <li>标准化 DCF 模型：收入增长率、EBIT 利润率、WACC、退出乘数等参数可实时调节</li>
+            <li>敏感性分析：双变量敏感性矩阵，直观展示估值区间</li>
+            <li>Excel 导出：一键下载完整估值模型，方便进一步分析</li>
+            <li>中英文双语：支持中文和英文界面切换</li>
+        </ul>
+
+        <h2>About ValueScope</h2>
+        <p>ValueScope is a free, AI-powered DCF stock valuation tool. It uses DeepSeek R1 for intelligent one-click valuation with deep reasoning, supports real-time parameter adjustment, sensitivity analysis, and Excel export. Available in both Chinese and English.</p>
+    </main>
+
     <iframe
         src="https://valuescope.streamlit.app/?embed=true"
-        title="ValueScope"
+        title="ValueScope — AI 智能 DCF 股票估值工具"
         allow="clipboard-read; clipboard-write"
         loading="eager"
     ></iframe>
+
+    <noscript>
+        <p>ValueScope 需要 JavaScript 才能运行。请启用 JavaScript 后刷新页面。</p>
+        <p>ValueScope requires JavaScript to run. Please enable JavaScript and refresh the page.</p>
+    </noscript>
 </body>
 </html>

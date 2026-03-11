@@ -157,17 +157,22 @@ _seo_components.html("""
         head.appendChild(el);
     };
     // Basic meta
-    m('description', 'ValueScope — AI-powered DCF stock valuation tool. Standardized model, real-time parameter tuning, sensitivity analysis. Free for A-shares & HK stocks.');
-    m('keywords', 'DCF, stock valuation, intrinsic value, WACC, free cash flow, AI valuation, A-shares, HK stocks, 股票估值, 现金流折现');
+    m('description', 'ValueScope — 免费 AI 驱动的 DCF 股票估值工具。支持 A 股、港股、美股，一键 AI 估值，实时参数调节，敏感性分析，Excel 导出。Free AI-powered DCF stock valuation for A-shares, HK & US stocks.');
+    m('keywords', 'DCF估值,股票估值,内在价值,现金流折现,AI估值,一键估值,A股估值,港股估值,美股估值,WACC,免费估值工具,DCF计算器,stock valuation,intrinsic value,free cash flow,AI valuation');
     // Open Graph
-    p('og:title', 'ValueScope — AI-Powered DCF Stock Valuation');
-    p('og:description', 'Standardized DCF engine with AI copilot. Real-time parameter tuning, sensitivity analysis, Excel export. Free for A-shares & HK stocks.');
+    p('og:title', 'ValueScope — AI 智能 DCF 股票估值工具');
+    p('og:description', '免费 AI 驱动的 DCF 估值工具。支持 A 股、港股、美股，一键 AI 估值 + 实时参数调节 + 敏感性分析 + Excel 导出。');
     p('og:type', 'website');
     p('og:url', 'https://valuescope.app');
+    p('og:image', 'https://valuescope.app/og-image.png');
+    p('og:image:width', '1200');
+    p('og:image:height', '630');
+    p('og:locale', 'zh_CN');
     // Twitter Card
-    m('twitter:card', 'summary');
-    m('twitter:title', 'ValueScope — AI-Powered DCF Stock Valuation');
-    m('twitter:description', 'Standardized DCF engine with AI copilot. Free for A-shares & HK stocks.');
+    m('twitter:card', 'summary_large_image');
+    m('twitter:title', 'ValueScope — AI 智能 DCF 股票估值工具');
+    m('twitter:description', '免费 AI 驱动的 DCF 估值工具。支持 A 股、港股、美股，一键估值 + 敏感性分析 + Excel 导出。');
+    m('twitter:image', 'https://valuescope.app/og-image.png');
     // Canonical URL
     var link = doc.createElement('link');
     link.setAttribute('rel', 'canonical');
@@ -178,12 +183,14 @@ _seo_components.html("""
     ld.setAttribute('type', 'application/ld+json');
     ld.textContent = JSON.stringify({
         "@context": "https://schema.org",
-        "@type": "SoftwareApplication",
+        "@type": "WebApplication",
         "name": "ValueScope",
-        "description": "AI-powered interactive DCF stock valuation tool with standardized model, real-time parameter tuning, and sensitivity analysis.",
+        "alternateName": "ValueScope AI 估值工具",
+        "description": "免费 AI 驱动的 DCF 股票估值工具，支持 A 股、港股、美股。提供一键 AI 估值、实时参数调节、敏感性分析和 Excel 导出。",
         "url": "https://valuescope.app",
         "applicationCategory": "FinanceApplication",
         "operatingSystem": "Web",
+        "inLanguage": ["zh-CN", "en"],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
         "author": { "@type": "Person", "name": "Alan He" }
     });
