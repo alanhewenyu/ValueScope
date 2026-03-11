@@ -87,11 +87,11 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 
 ![DCF Result](assets/demo-3-dcf-result.png)
 
-### Local Web GUI
+### Cloud Web App
 
-**Interactive Sliders with Real-Time Valuation**
+**Verdict Section + Interactive Sliders with Real-Time Valuation**
 
-![Web GUI](assets/web-valuation.png)
+![Cloud Web App](assets/web-valuation.png)
 
 ---
 

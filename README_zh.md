@@ -87,11 +87,11 @@ ValueScope 是一个基于**标准化 DCF 引擎**的 AI 股票估值工具 — 
 
 ![DCF 结果](assets/demo-3-dcf-result.png)
 
-### 本地网页版
+### 在线网页版
 
-**滑块调参 + 实时估值**
+**估值判定 + 滑块调参 + 实时估值**
 
-![网页版](assets/web-valuation.png)
+![在线网页版](assets/web-valuation.png)
 
 ---
 
