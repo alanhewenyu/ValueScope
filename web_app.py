@@ -1578,6 +1578,7 @@ with st.sidebar:
         <div>© 2026 Alan He · <a href="https://opensource.org/licenses/MIT" target="_blank" style="color:#58a6ff;text-decoration:none;">MIT License</a></div>
         <div><a href="https://jianshan.co" target="_blank" style="color:#58a6ff;text-decoration:none;">见山笔记</a>
         · <a href="https://github.com/alanhewenyu/ValueScope" target="_blank" style="color:#58a6ff;text-decoration:none;">GitHub</a>
+        · <a href="https://jianshan.co/wechat/" target="_blank" style="color:#58a6ff;text-decoration:none;">公众号</a>
         · <a href="mailto:alanhe@icloud.com" style="color:#58a6ff;text-decoration:none;">alanhe@icloud.com</a></div>
     </div>
     """, unsafe_allow_html=True)
@@ -1933,6 +1934,11 @@ def _fetch_data(ticker_raw, apikey_val):
         return False
 
     ticker = _normalize_ticker(ticker_raw)
+
+    # ── Early check: US/Japan stocks require FMP API key ──
+    if not is_a_share(ticker) and not is_hk_stock(ticker) and not apikey_val.strip():
+        st.warning(t('err_no_fmp_key'))
+        return False
 
     # Fetch financial data and company profile in parallel
     from concurrent.futures import ThreadPoolExecutor
