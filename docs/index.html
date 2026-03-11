@@ -86,9 +86,9 @@
             gap: 12px;
             background: #0e1117;
             pointer-events: none;
-            animation: fadeOut 0.6s ease 3.5s forwards;
+            transition: opacity 0.6s ease;
         }
-        @keyframes fadeOut { to { opacity: 0; visibility: hidden; } }
+        .loading-logo.hide { opacity: 0; visibility: hidden; }
         .loading-logo .name {
             font-size: 2rem;
             font-weight: 700;
@@ -165,5 +165,17 @@
         <p>ValueScope 需要 JavaScript 才能运行。请启用 JavaScript 后刷新页面。</p>
         <p>ValueScope requires JavaScript to run. Please enable JavaScript and refresh the page.</p>
     </noscript>
+
+    <script>
+    (function(){
+        var logo = document.querySelector('.loading-logo');
+        var iframe = document.querySelector('iframe');
+        function hide(){ logo.classList.add('hide'); }
+        // Hide logo once iframe finishes loading (+1.5s for Streamlit init)
+        iframe.addEventListener('load', function(){ setTimeout(hide, 1500); });
+        // Safety fallback: hide after 20s no matter what
+        setTimeout(hide, 20000);
+    })();
+    </script>
 </body>
 </html>
