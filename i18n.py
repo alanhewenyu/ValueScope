@@ -269,6 +269,14 @@ _STRINGS = {
         'gap_no_price': 'Cannot get current stock price \u2014 skipping gap analysis.',
 
         # ── Error / warning messages ──
+        'err_no_fmp_key': (
+            '🔑 **FMP API Key Required**\n\n'
+            'US and Japan stocks require a [Financial Modeling Prep](https://financialmodelingprep.com/developer/docs) API key.\n\n'
+            '1. Register for free at [financialmodelingprep.com](https://site.financialmodelingprep.com/register)\n'
+            '2. Copy your API key\n'
+            '3. Paste it in the **FMP API Key** field in the sidebar\n\n'
+            '💡 **HK stocks and A-shares do not require an API key** — try tickers like `0700.HK` or `600519.SS`.'
+        ),
         'err_fetch_failed': 'Failed to fetch financial data. Please check your FMP API key and ticker symbol.',
         'err_fetch_failed_hk': 'Failed to fetch HK stock data. yfinance may be rate-limited — please wait a moment and try again.',
         'err_fetch_failed_a': 'Failed to fetch A-share data. Data source temporarily unavailable — please try again later.',
@@ -578,6 +586,14 @@ _STRINGS = {
         'gap_no_price': '\u65e0\u6cd5\u83b7\u53d6\u5f53\u524d\u80a1\u4ef7\u2014\u2014\u8df3\u8fc7\u5dee\u5f02\u5206\u6790\u3002',
 
         # ── Error / warning messages ──
+        'err_no_fmp_key': (
+            '🔑 **需要 FMP API 密钥**\n\n'
+            '美股和日股需要 [Financial Modeling Prep](https://financialmodelingprep.com/developer/docs) API 密钥才能获取数据。\n\n'
+            '1. 在 [financialmodelingprep.com](https://site.financialmodelingprep.com/register) 免费注册\n'
+            '2. 复制你的 API 密钥\n'
+            '3. 粘贴到左侧边栏的 **FMP API 密钥** 输入框\n\n'
+            '💡 **港股和 A 股无需 API 密钥** — 可以直接使用，如 `0700.HK` 或 `600519.SS`。'
+        ),
         'err_fetch_failed': '获取财务数据失败。请检查 FMP API 密钥和股票代码。',
         'err_fetch_failed_hk': '获取港股数据失败。yfinance 可能被限流，请稍等片刻后重试。',
         'err_fetch_failed_a': '获取 A 股数据失败。数据源暂时不可用，请稍后重试。',
