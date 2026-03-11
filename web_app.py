@@ -1579,7 +1579,7 @@ with st.sidebar:
         st.markdown(
             '<hr style="margin:4px 0; border:none; border-top:1px solid var(--vx-border, #d0d7de);">'
             '<div style="text-align:center; font-size:0.72rem; color:#555; line-height:1.7; padding:4px 0;">'
-            f'    <div><a href="https://buymeacoffee.com/alanhewenyp" target="_blank" style="color:#e8a023;text-decoration:none;font-weight:600;">☕ {_sponsor_label}</a></div>'
+            f'    <div><a href="https://buymeacoffee.com/alanhewenyu" target="_blank" style="color:#e8a023;text-decoration:none;font-weight:600;">☕ {_sponsor_label}</a></div>'
             '    <div>© 2026 Alan He · <a href="https://opensource.org/licenses/MIT" target="_blank" style="color:#58a6ff;text-decoration:none;">MIT License</a></div>'
             '    <div><a href="https://jianshan.co" target="_blank" style="color:#58a6ff;text-decoration:none;">见山笔记</a>'
             '    · <a href="https://github.com/alanhewenyu/ValueScope" target="_blank" style="color:#58a6ff;text-decoration:none;">GitHub</a>'
