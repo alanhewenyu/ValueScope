@@ -452,6 +452,8 @@ div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hero) div[data-testid="stEl
 section[data-testid="stSidebar"] > div { padding-top: 0 !important; }
 [data-testid="stSidebarContent"] { padding-top: 0 !important; }
 [data-testid="stSidebarUserContent"] { padding-top: 0 !important; }
+/* Compact sidebar vertical spacing */
+section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] { gap: 0.45rem !important; }
 [data-testid="stSidebarHeader"] {
     display: flex !important; min-height: 28px; justify-content: flex-end;
     padding: 2px 4px 0 0 !important;
