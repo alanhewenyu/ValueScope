@@ -10,7 +10,6 @@ from pathlib import Path
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from streamlit_searchbox import st_searchbox
 
 # ── Load environment variables (.env + shell profile fallback) ──
 try:
@@ -160,14 +159,6 @@ def _search_ticker_fmp(query: str, _apikey: str) -> list:
         return results
     except Exception:
         return []
-
-
-def _ticker_search_fn(query: str) -> list:
-    """Wrapper that resolves the current FMP key and calls cached search."""
-    fmp_key = st.session_state.get('_fmp_key_val', '') or os.environ.get("FMP_API_KEY", "")
-    if not fmp_key:
-        return []
-    return _search_ticker_fmp(query, fmp_key)
 
 
 # ── Google Analytics ──
@@ -487,8 +478,17 @@ section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {
 div[data-baseweb="tooltip"], div[data-baseweb="popover"] > div { max-width: 260px !important; white-space: normal !important; word-wrap: break-word !important; }
 div[data-baseweb="tooltip"] div[role="tooltip"], div[data-baseweb="popover"] div[data-testid="stTooltipContent"] { max-width: 260px !important; white-space: normal !important; }
 
-/* ── Ticker searchbox — Google-style pill with autocomplete ── */
-section[data-testid="stSidebar"] [data-testid="stSearchbox"] input {
+/* ── Ticker input — Google-style pill with soft shadow ── */
+/* Suppress Streamlit's default input wrapper styling */
+section[data-testid="stSidebar"] div[data-testid="stTextInput"] > div,
+section[data-testid="stSidebar"] div[data-testid="stTextInput"] [data-baseweb="base-input"],
+section[data-testid="stSidebar"] div[data-testid="stTextInput"] [data-baseweb="input"] {
+    border-color: transparent !important; background: transparent !important;
+}
+section[data-testid="stSidebar"] div[data-testid="stTextInput"] div:focus-within {
+    border-color: transparent !important; box-shadow: none !important;
+}
+section[data-testid="stSidebar"] div[data-testid="stTextInput"] input {
     border: 1px solid var(--vx-border-light, #e0e0e0) !important;
     border-radius: 22px !important;
     font-size: 1.1rem !important; font-weight: 600 !important;
@@ -502,53 +502,48 @@ section[data-testid="stSidebar"] [data-testid="stSearchbox"] input {
     color: var(--vx-text, #1f2328) !important;
     transition: box-shadow 0.2s ease, border-color 0.2s ease !important;
 }
-section[data-testid="stSidebar"] [data-testid="stSearchbox"] input:hover {
+section[data-testid="stSidebar"] div[data-testid="stTextInput"] input:hover {
     box-shadow: 0 1px 4px rgba(0,0,0,0.08) !important;
     border-color: #ccc !important;
 }
-section[data-testid="stSidebar"] [data-testid="stSearchbox"] input:focus {
+section[data-testid="stSidebar"] div[data-testid="stTextInput"] input:focus {
     border-color: transparent !important;
     box-shadow: 0 1px 6px rgba(0,0,0,0.12) !important;
 }
-/* Searchbox wrapper — suppress react-select chrome */
-section[data-testid="stSidebar"] [data-testid="stSearchbox"] > div > div {
-    border: none !important; box-shadow: none !important; background: transparent !important;
+section[data-testid="stSidebar"] div[data-testid="stTextInput"] input::placeholder {
+    color: var(--vx-text-muted, #8b949e) !important; font-weight: 400 !important;
+    font-size: 0.92rem !important;
 }
-/* Dropdown menu styling */
-section[data-testid="stSidebar"] [data-testid="stSearchbox"] [class*="menu"] {
-    border-radius: 12px !important;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.12) !important;
-    border: 1px solid var(--vx-border-light, #e0e0e0) !important;
-    overflow: hidden !important;
+/* Suggestion buttons — compact, muted style */
+section[data-testid="stSidebar"] button[key^="_sug_"],
+section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(button[key^="_sug_"]) button {
+    font-size: 0.78rem !important; padding: 4px 10px !important;
+    border: 1px solid var(--vx-border-light, #e8e8e8) !important;
+    border-radius: 6px !important; background: transparent !important;
+    color: var(--vx-text, #1f2328) !important; font-weight: 500 !important;
+    text-align: left !important; white-space: nowrap !important;
+    overflow: hidden !important; text-overflow: ellipsis !important;
+    margin-bottom: -6px !important;
 }
-section[data-testid="stSidebar"] [data-testid="stSearchbox"] [class*="option"] {
-    font-size: 0.88rem !important; padding: 8px 14px !important;
+section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(button[key^="_sug_"]) button:hover {
+    background: color-mix(in srgb, var(--vx-accent) 8%, transparent) !important;
+    border-color: var(--vx-accent, #0969da) !important;
 }
 
-/* ── Expander text inputs — normal style ── */
-section[data-testid="stSidebar"] details[data-testid="stExpander"] div[data-testid="stTextInput"] > div,
-section[data-testid="stSidebar"] details[data-testid="stExpander"] div[data-testid="stTextInput"] [data-baseweb="base-input"],
-section[data-testid="stSidebar"] details[data-testid="stExpander"] div[data-testid="stTextInput"] [data-baseweb="input"] {
-    border-color: transparent !important; background: transparent !important;
-}
-section[data-testid="stSidebar"] details[data-testid="stExpander"] div[data-testid="stTextInput"] div:focus-within {
-    border-color: transparent !important; box-shadow: none !important;
-}
+/* ── Expander text inputs — reset to normal rectangular style ── */
 section[data-testid="stSidebar"] details[data-testid="stExpander"] div[data-testid="stTextInput"] input {
-    padding-left: 10px !important;
+    padding: 6px 10px !important; padding-left: 10px !important;
     border-radius: 6px !important;
     border: 1.5px solid var(--vx-border, #d0d7de) !important;
-    font-size: 0.85rem !important; padding: 6px 10px !important;
-    border-width: 1.5px !important;
+    font-size: 0.85rem !important; min-height: auto !important;
+    background-image: none !important;
+}
+section[data-testid="stSidebar"] details[data-testid="stExpander"] div[data-testid="stTextInput"] input:hover {
+    box-shadow: none !important; border-color: var(--vx-border, #d0d7de) !important;
 }
 section[data-testid="stSidebar"] details[data-testid="stExpander"] div[data-testid="stTextInput"] input:focus {
     border-color: var(--vx-accent, #0969da) !important;
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--vx-accent) 15%, transparent) !important;
-}
-section[data-testid="stSidebar"] div[data-testid="stTextInput"] input::placeholder,
-section[data-testid="stSidebar"] [data-testid="stSearchbox"] input::placeholder {
-    color: var(--vx-text-muted, #8b949e) !important; font-weight: 400 !important;
-    font-size: 0.92rem !important;
 }
 div[data-testid="stSidebarCollapsedControl"] {
     z-index: 999999 !important;
@@ -1441,27 +1436,29 @@ with st.sidebar:
 
     _ticker_label = t('sidebar_ticker_label_web') if not (_has_ai or _has_cloud_ai) else t('sidebar_ticker_label')
     _ticker_ph = t('sidebar_ticker_placeholder_web') if not (_has_ai or _has_cloud_ai) else t('sidebar_ticker_placeholder')
-    try:
-        st.markdown(f'<p style="font-size:1.05rem;font-weight:700;letter-spacing:0.3px;margin-bottom:4px;">{_ticker_label}</p>',
-                    unsafe_allow_html=True)
-        ticker_input = st_searchbox(
-            search_function=_ticker_search_fn,
-            key="ticker_searchbox",
-            placeholder=_ticker_ph,
-            default=_url_ticker or None,
-            default_use_searchterm=True,
-            clear_on_submit=False,
-            edit_after_submit="current",
-            rerun_on_update=False,
-            debounce=200,
-        )
-        ticker_input = ticker_input or ''
-    except Exception:
-        # Fallback to plain text input if searchbox fails
-        ticker_input = st.text_input(
-            _ticker_label, value=_url_ticker, placeholder=_ticker_ph,
-            label_visibility="visible",
-        )
+
+    # Use session state to support suggestion-click → pre-fill
+    if '_selected_ticker' in st.session_state:
+        _url_ticker = st.session_state.pop('_selected_ticker')
+
+    ticker_input = st.text_input(
+        _ticker_label, value=_url_ticker, placeholder=_ticker_ph,
+        label_visibility="visible", key="ticker_input_main",
+    )
+
+    # ── Autocomplete suggestions via FMP search ──
+    _fmp_search_key = st.session_state.get('_fmp_key_val', '') or os.environ.get("FMP_API_KEY", "")
+    if ticker_input and _fmp_search_key and len(ticker_input) >= 1:
+        _suggestions = _search_ticker_fmp(ticker_input, _fmp_search_key)
+        if _suggestions:
+            st.markdown(
+                '<div style="margin:-8px 0 4px 0; font-size:0.75rem; color:var(--vx-text-muted,#888);">'
+                f'{t("search_suggestions") if "search_suggestions" in _STRINGS.get(lang(), {}) else "Select:"}'
+                '</div>', unsafe_allow_html=True)
+            for _disp, _sym in _suggestions[:5]:
+                if st.button(_disp, key=f"_sug_{_sym}", use_container_width=True):
+                    st.session_state['_selected_ticker'] = _sym
+                    st.rerun()
 
     # ── Action buttons ──
     _any_ai = _has_ai or _cloud_ai_available()
