@@ -1439,18 +1439,28 @@ with st.sidebar:
         except Exception:
             pass
 
-    ticker_input = st_searchbox(
-        search_function=_ticker_search_fn,
-        key="ticker_searchbox",
-        label=t('sidebar_ticker_label_web') if not (_has_ai or _has_cloud_ai) else t('sidebar_ticker_label'),
-        placeholder=t('sidebar_ticker_placeholder_web') if not (_has_ai or _has_cloud_ai) else t('sidebar_ticker_placeholder'),
-        default=_url_ticker or None,
-        default_use_searchterm=True,
-        clear_on_submit=False,
-        edit_after_submit="current",
-        debounce=200,
-    )
-    ticker_input = ticker_input or ''  # Normalize None to empty string
+    _ticker_label = t('sidebar_ticker_label_web') if not (_has_ai or _has_cloud_ai) else t('sidebar_ticker_label')
+    _ticker_ph = t('sidebar_ticker_placeholder_web') if not (_has_ai or _has_cloud_ai) else t('sidebar_ticker_placeholder')
+    try:
+        st.markdown(f'<p style="font-size:1.05rem;font-weight:700;letter-spacing:0.3px;margin-bottom:4px;">{_ticker_label}</p>',
+                    unsafe_allow_html=True)
+        ticker_input = st_searchbox(
+            search_function=_ticker_search_fn,
+            key="ticker_searchbox",
+            placeholder=_ticker_ph,
+            default=_url_ticker or None,
+            default_use_searchterm=True,
+            clear_on_submit=False,
+            edit_after_submit="current",
+            debounce=200,
+        )
+        ticker_input = ticker_input or ''
+    except Exception:
+        # Fallback to plain text input if searchbox fails
+        ticker_input = st.text_input(
+            _ticker_label, value=_url_ticker, placeholder=_ticker_ph,
+            label_visibility="visible",
+        )
 
     # ── Action buttons ──
     _any_ai = _has_ai or _cloud_ai_available()
