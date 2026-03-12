@@ -10,6 +10,7 @@ from pathlib import Path
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from streamlit_searchbox import st_searchbox
 
 # ── Load environment variables (.env + shell profile fallback) ──
 try:
@@ -136,6 +137,38 @@ def _cloud_ai_available():
     """Check if cloud AI is available (admin keys OR user-provided keys)."""
     serper, deepseek, _ = _get_effective_cloud_keys()
     return bool(serper and deepseek)
+
+
+# ── Ticker autocomplete via FMP search API ──
+@st.cache_data(ttl=300, show_spinner=False)
+def _search_ticker_fmp(query: str, _apikey: str) -> list:
+    """Call FMP search API, return list of (display_label, symbol) tuples."""
+    if not query or not _apikey:
+        return []
+    try:
+        from urllib.request import urlopen
+        url = f"https://financialmodelingprep.com/api/v3/search?query={query}&limit=8&apikey={_apikey}"
+        resp = urlopen(url, timeout=5)
+        data = json.loads(resp.read().decode())
+        results = []
+        for item in data:
+            sym = item.get('symbol', '')
+            name = item.get('name', '')
+            exch = item.get('exchangeShortName', '')
+            label = f"{sym}  \u2014  {name}" + (f"  ({exch})" if exch else "")
+            results.append((label, sym))
+        return results
+    except Exception:
+        return []
+
+
+def _ticker_search_fn(query: str) -> list:
+    """Wrapper that resolves the current FMP key and calls cached search."""
+    fmp_key = st.session_state.get('_fmp_key_val', '') or os.environ.get("FMP_API_KEY", "")
+    if not fmp_key:
+        return []
+    return _search_ticker_fmp(query, fmp_key)
+
 
 # ── Google Analytics ──
 try:
@@ -454,56 +487,68 @@ section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {
 div[data-baseweb="tooltip"], div[data-baseweb="popover"] > div { max-width: 260px !important; white-space: normal !important; word-wrap: break-word !important; }
 div[data-baseweb="tooltip"] div[role="tooltip"], div[data-baseweb="popover"] div[data-testid="stTooltipContent"] { max-width: 260px !important; white-space: normal !important; }
 
-/* ── Ticker input ── */
-/* Suppress Streamlit's red/primary focus accent on the wrapper divs */
-section[data-testid="stSidebar"] div[data-testid="stTextInput"] > div,
-section[data-testid="stSidebar"] div[data-testid="stTextInput"] [data-baseweb="base-input"],
-section[data-testid="stSidebar"] div[data-testid="stTextInput"] [data-baseweb="input"] {
-    border-color: transparent !important; background: transparent !important;
-}
-section[data-testid="stSidebar"] div[data-testid="stTextInput"] div:focus-within {
-    border-color: transparent !important; box-shadow: none !important;
-}
-/* Our own clean input style — Google-style pill with soft shadow */
-section[data-testid="stSidebar"] div[data-testid="stTextInput"] input {
+/* ── Ticker searchbox — Google-style pill with autocomplete ── */
+section[data-testid="stSidebar"] [data-testid="stSearchbox"] input {
     border: 1px solid var(--vx-border-light, #e0e0e0) !important;
     border-radius: 22px !important;
-    font-size: 1.05rem !important; font-weight: 600 !important; padding: 10px 14px 10px 38px !important;
+    font-size: 1.1rem !important; font-weight: 600 !important;
+    padding: 12px 14px 12px 40px !important;
+    min-height: 48px !important;
     background: var(--vx-input-bg, #fff) !important;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239aa0a6' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E") !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%239aa0a6' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E") !important;
     background-repeat: no-repeat !important;
     background-position: 14px center !important;
-    background-size: 16px 16px !important;
+    background-size: 18px 18px !important;
     color: var(--vx-text, #1f2328) !important;
     transition: box-shadow 0.2s ease, border-color 0.2s ease !important;
 }
-section[data-testid="stSidebar"] div[data-testid="stTextInput"] input:hover {
+section[data-testid="stSidebar"] [data-testid="stSearchbox"] input:hover {
     box-shadow: 0 1px 4px rgba(0,0,0,0.08) !important;
     border-color: #ccc !important;
 }
-/* Expander inputs: reset pill style back to normal */
+section[data-testid="stSidebar"] [data-testid="stSearchbox"] input:focus {
+    border-color: transparent !important;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.12) !important;
+}
+/* Searchbox wrapper — suppress react-select chrome */
+section[data-testid="stSidebar"] [data-testid="stSearchbox"] > div > div {
+    border: none !important; box-shadow: none !important; background: transparent !important;
+}
+/* Dropdown menu styling */
+section[data-testid="stSidebar"] [data-testid="stSearchbox"] [class*="menu"] {
+    border-radius: 12px !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12) !important;
+    border: 1px solid var(--vx-border-light, #e0e0e0) !important;
+    overflow: hidden !important;
+}
+section[data-testid="stSidebar"] [data-testid="stSearchbox"] [class*="option"] {
+    font-size: 0.88rem !important; padding: 8px 14px !important;
+}
+
+/* ── Expander text inputs — normal style ── */
+section[data-testid="stSidebar"] details[data-testid="stExpander"] div[data-testid="stTextInput"] > div,
+section[data-testid="stSidebar"] details[data-testid="stExpander"] div[data-testid="stTextInput"] [data-baseweb="base-input"],
+section[data-testid="stSidebar"] details[data-testid="stExpander"] div[data-testid="stTextInput"] [data-baseweb="input"] {
+    border-color: transparent !important; background: transparent !important;
+}
+section[data-testid="stSidebar"] details[data-testid="stExpander"] div[data-testid="stTextInput"] div:focus-within {
+    border-color: transparent !important; box-shadow: none !important;
+}
 section[data-testid="stSidebar"] details[data-testid="stExpander"] div[data-testid="stTextInput"] input {
     padding-left: 10px !important;
-    background-image: none !important;
     border-radius: 6px !important;
     border: 1.5px solid var(--vx-border, #d0d7de) !important;
-}
-section[data-testid="stSidebar"] details[data-testid="stExpander"] div[data-testid="stTextInput"] input:hover {
-    box-shadow: none !important;
-    border-color: var(--vx-border, #d0d7de) !important;
+    font-size: 0.85rem !important; padding: 6px 10px !important;
+    border-width: 1.5px !important;
 }
 section[data-testid="stSidebar"] details[data-testid="stExpander"] div[data-testid="stTextInput"] input:focus {
     border-color: var(--vx-accent, #0969da) !important;
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--vx-accent) 15%, transparent) !important;
 }
-section[data-testid="stSidebar"] div[data-testid="stTextInput"] input:focus {
-    border-color: transparent !important;
-    box-shadow: 0 1px 6px rgba(0,0,0,0.12) !important;
-    background: var(--vx-input-bg, #fff) !important;
-}
-section[data-testid="stSidebar"] div[data-testid="stTextInput"] input::placeholder {
+section[data-testid="stSidebar"] div[data-testid="stTextInput"] input::placeholder,
+section[data-testid="stSidebar"] [data-testid="stSearchbox"] input::placeholder {
     color: var(--vx-text-muted, #8b949e) !important; font-weight: 400 !important;
-    font-size: 0.88rem !important;
+    font-size: 0.92rem !important;
 }
 div[data-testid="stSidebarCollapsedControl"] {
     z-index: 999999 !important;
@@ -1394,12 +1439,18 @@ with st.sidebar:
         except Exception:
             pass
 
-    ticker_input = st.text_input(
-        t('sidebar_ticker_label_web') if not (_has_ai or _has_cloud_ai) else t('sidebar_ticker_label'),
-        value=_url_ticker,
+    ticker_input = st_searchbox(
+        search_function=_ticker_search_fn,
+        key="ticker_searchbox",
+        label=t('sidebar_ticker_label_web') if not (_has_ai or _has_cloud_ai) else t('sidebar_ticker_label'),
         placeholder=t('sidebar_ticker_placeholder_web') if not (_has_ai or _has_cloud_ai) else t('sidebar_ticker_placeholder'),
-        label_visibility="visible",
+        default=_url_ticker or None,
+        default_use_searchterm=True,
+        clear_on_submit=False,
+        edit_after_submit="current",
+        debounce=200,
     )
+    ticker_input = ticker_input or ''  # Normalize None to empty string
 
     # ── Action buttons ──
     _any_ai = _has_ai or _cloud_ai_available()
@@ -1716,6 +1767,9 @@ with st.sidebar:
             placeholder=t('sidebar_fmp_placeholder'),
         )
         st.caption(t('sidebar_fmp_hint'))
+
+    # Store FMP key in session state so ticker search can access it
+    st.session_state['_fmp_key_val'] = apikey
 
     # ── Copyright & contact (keyed container prevents duplication on rapid reruns) ──
     with st.container(key="vs_sidebar_footer"):
