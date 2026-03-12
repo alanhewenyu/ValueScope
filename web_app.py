@@ -454,6 +454,9 @@ section[data-testid="stSidebar"] > div { padding-top: 0 !important; }
 [data-testid="stSidebarUserContent"] { padding-top: 0 !important; }
 /* Compact sidebar vertical spacing */
 section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] { gap: 0.75rem !important; }
+/* Auto-push footer to bottom of sidebar */
+section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] { min-height: 100%; display: flex; flex-direction: column; }
+section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"]:has(> div[data-testid="stVerticalBlock-vs_sidebar_footer"]) > div:last-child { margin-top: auto; padding-top: 12px; border-top: 1px solid #d0d7de; }
 [data-testid="stSidebarHeader"] {
     display: flex !important; min-height: 28px; justify-content: flex-end;
     padding: 2px 4px 0 0 !important;
@@ -1841,8 +1844,6 @@ tryInit();
 
     # ── Copyright & contact (keyed container prevents duplication on rapid reruns) ──
     with st.container(key="vs_sidebar_footer"):
-        st.markdown('<hr style="margin:10px 0 6px 0; border:none; border-top:1px solid var(--vx-border, #d0d7de);">',
-                    unsafe_allow_html=True)
         with st.expander(t('sidebar_sponsor'), expanded=False):
             st.image('assets/wechat-reward.jpg', width="stretch")
             st.caption(t('sponsor_guide'))
