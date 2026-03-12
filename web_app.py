@@ -138,9 +138,10 @@ def _cloud_ai_available():
     return bool(serper and deepseek)
 
 
-# ── Ticker autocomplete: static JSON served via Streamlit static files ──
-# .streamlit/static/tickers.json contains ~10K tickers (symbol, name, exchange)
-# JS loads it once, then searches client-side — no API key needed.
+# ── Ticker autocomplete: hybrid static JSON + FMP search API ──
+# Layer 1: static tickers.json (~10K US stocks) for instant local search
+# Layer 2: FMP search API for comprehensive global results (HK, CN, JP, etc.)
+_SEARCH_FMP_KEY = _get_secret("FMP_API_KEY") or os.environ.get("FMP_API_KEY", "")
 
 
 # ── Google Analytics ──
@@ -1437,38 +1438,50 @@ with st.sidebar:
         label_visibility="visible", key="ticker_input_main",
     )
 
-    # ── Real-time autocomplete via static tickers.json (no API key needed) ──
+    # ── Real-time autocomplete: static JSON (instant) + FMP API (global) ──
+    # Build FMP key for JS: user key > admin key; empty string if none
+    _ac_fmp_key = (st.session_state.get('_fmp_key_val', '')
+                   or _SEARCH_FMP_KEY)
+    _ac_key_js = json.dumps(_ac_fmp_key) if _ac_fmp_key else '""'
     _stc.html(
-        r"""<script>
-(function(){
-var D=200,M=8;
-var P=window.parent.document;
+        '<script>\n(function(){\nvar K=' + _ac_key_js + ',D=200,M=8;\n'
+        r"""var P=window.parent.document;
 var sb=P.querySelector('section[data-testid="stSidebar"]');
 if(!sb) return;
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
-// Load ticker data once, cache in window
-var tickerData=window._vsTickers;
-if(!tickerData){
-  tickerData=[];
-  window._vsTickers=tickerData;
+// Layer 1: static JSON for instant local search
+var TD=window._vsTickers;
+if(!TD){TD=[];window._vsTickers=TD;
   fetch('/app/static/tickers.json').then(function(r){return r.json();}).then(function(d){
-    tickerData.push.apply(tickerData,d);
-    window._vsTickers=tickerData;
-  }).catch(function(){});
+    TD.push.apply(TD,d);window._vsTickers=TD;
+  }).catch(function(){});}
+
+function localSearch(q){
+  if(!TD.length) return [];
+  var ql=q.toLowerCase(),exact=[],starts=[],has=[];
+  for(var i=0;i<TD.length;i++){
+    var t=TD[i],sl=t.s.toLowerCase(),nl=t.n.toLowerCase();
+    if(sl===ql) exact.push(t);
+    else if(sl.indexOf(ql)===0) starts.push(t);
+    else if(nl.indexOf(ql)!==-1||sl.indexOf(ql)!==-1) has.push(t);
+    if(exact.length+starts.length+has.length>50) break;
+  }
+  return exact.concat(starts,has).slice(0,M);
 }
 
-function search(q){
-  if(!tickerData.length) return [];
-  var ql=q.toLowerCase(),results=[],exact=[],starts=[],contains=[];
-  for(var i=0;i<tickerData.length;i++){
-    var t=tickerData[i],sl=t.s.toLowerCase(),nl=t.n.toLowerCase();
-    if(sl===ql){exact.push(t);}
-    else if(sl.indexOf(ql)===0){starts.push(t);}
-    else if(nl.indexOf(ql)!==-1||sl.indexOf(ql)!==-1){contains.push(t);}
-    if(exact.length+starts.length+contains.length>50) break;
-  }
-  return exact.concat(starts,contains).slice(0,M);
+// Layer 2: FMP API for global search (HK, CN, JP, etc.)
+var fmpSeq=0;
+function fmpSearch(q,cb){
+  if(!K||!q){cb([]);return;}
+  var seq=++fmpSeq;
+  fetch('https://financialmodelingprep.com/api/v3/search?query='+encodeURIComponent(q)+'&limit='+M+'&apikey='+K)
+  .then(function(r){return r.json();})
+  .then(function(data){
+    if(seq!==fmpSeq){return;}  // stale
+    if(!data||!data.length||data.Error){cb([]);return;}
+    cb(data.map(function(it){return {s:it.symbol||'',n:it.name||'',x:it.exchangeShortName||''};}));
+  }).catch(function(){cb([]);});
 }
 
 function tryInit(){
@@ -1480,10 +1493,9 @@ function tryInit(){
   dd.style.cssText='position:absolute;top:100%;left:0;right:0;background:#ffffff;border:1px solid #e0e0e0;border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,0.12);z-index:999999;display:none;max-height:300px;overflow-y:auto;margin-top:4px;';
   var wrap=inp.closest('div[data-testid="stTextInput"]');
   if(wrap){wrap.style.position='relative';wrap.style.overflow='visible';wrap.appendChild(dd);}
-  var timer=null,ai=-1,picking=false;
-  function doSearch(q){
-    if(!q||q.length<1){dd.style.display='none';return;}
-    var data=search(q);
+  var timer=null,ai=-1,picking=false,curQuery='';
+
+  function renderResults(data){
     if(!data.length){dd.style.display='none';return;}
     dd.innerHTML='';ai=-1;
     data.forEach(function(it,i){
@@ -1503,6 +1515,25 @@ function tryInit(){
     if(dd.childNodes.length===1) dd.firstChild.style.borderRadius='12px';
     dd.style.display='block';
   }
+
+  function doSearch(q){
+    if(!q||q.length<1){dd.style.display='none';return;}
+    curQuery=q;
+    // Instant: show local results first
+    var local=localSearch(q);
+    if(local.length) renderResults(local);
+    // Then enhance with FMP API results (merges/replaces)
+    fmpSearch(q,function(remote){
+      if(curQuery!==q) return; // stale
+      if(!remote.length) return; // keep local results
+      // Merge: deduplicate by symbol, FMP results take priority
+      var seen={},merged=[];
+      remote.forEach(function(r){if(r.s){seen[r.s]=1;merged.push(r);}});
+      local.forEach(function(l){if(l.s&&!seen[l.s]){merged.push(l);}});
+      renderResults(merged.slice(0,M));
+    });
+  }
+
   function pick(sym){
     picking=true;clearTimeout(timer);
     var setter=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;
