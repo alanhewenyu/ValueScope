@@ -464,18 +464,18 @@ section[data-testid="stSidebar"] div[data-testid="stTextInput"] [data-baseweb="i
 section[data-testid="stSidebar"] div[data-testid="stTextInput"] div:focus-within {
     border-color: transparent !important; box-shadow: none !important;
 }
-/* Our own clean input style — borderless with subtle bottom accent */
+/* Our own clean input style — flat underline, no box border */
 section[data-testid="stSidebar"] div[data-testid="stTextInput"] input {
     border: none !important; border-bottom: 2px solid var(--vx-border, #d0d7de) !important;
-    border-radius: 6px 6px 0 0 !important;
-    font-size: 1.05rem !important; font-weight: 600 !important; padding: 10px 12px 10px 36px !important;
-    background: color-mix(in srgb, var(--vx-bg, #fff) 94%, var(--vx-border, #d0d7de)) !important;
+    border-radius: 0 !important;
+    font-size: 1.05rem !important; font-weight: 600 !important; padding: 10px 12px 8px 36px !important;
+    background: transparent !important;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E") !important;
     background-repeat: no-repeat !important;
     background-position: 10px center !important;
     background-size: 16px 16px !important;
     color: var(--vx-text, #1f2328) !important;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+    transition: border-color 0.2s ease !important;
 }
 /* Expander inputs: reset search icon and restore normal padding */
 section[data-testid="stSidebar"] details[data-testid="stExpander"] div[data-testid="stTextInput"] input {
@@ -485,7 +485,7 @@ section[data-testid="stSidebar"] details[data-testid="stExpander"] div[data-test
 section[data-testid="stSidebar"] div[data-testid="stTextInput"] input:focus {
     border-bottom-color: var(--vx-accent, #0969da) !important;
     box-shadow: none !important;
-    background: color-mix(in srgb, var(--vx-bg, #fff) 90%, var(--vx-border, #d0d7de)) !important;
+    background: transparent !important;
 }
 section[data-testid="stSidebar"] div[data-testid="stTextInput"] input::placeholder {
     color: var(--vx-text-muted, #8b949e) !important; font-weight: 400 !important;
