@@ -108,55 +108,71 @@ def _prompt_ticker(auto_mode, apikey=None):
     """
     print(f"\n{S.title('Please enter the stock symbol to continue...')}\n")
     while True:
-        raw = input(f'{S.prompt("Enter stock symbol or search by name (e.g., AAPL, 茅台, Toyota): ")}').strip()
+        raw = input(f'{S.prompt("Enter stock symbol or search by name (e.g., AAPL, apple): ")}').strip()
         if not raw:
             continue
 
-        # If it already looks like a valid ticker, accept directly
         is_valid, _ = validate_ticker(raw)
+
+        # With FMP key: always search first so user can type lowercase
+        # tickers ("aapl") or company names ("apple") interchangeably.
+        # If the top result is an exact match for what the user typed,
+        # accept it automatically without showing the list.
+        if apikey:
+            results = _search_fmp(raw, apikey)
+            # Exact symbol match → accept directly (e.g. "aapl" → AAPL)
+            if results and results[0].get('symbol', '').upper() == raw.upper():
+                top = results[0]['symbol']
+                v, _ = validate_ticker(top)
+                if v:
+                    return _normalize_ticker(top)
+
+            if results:
+                # Display search results for user to pick
+                print()
+                for i, r in enumerate(results, 1):
+                    sym = r.get('symbol', '')
+                    name = r.get('name', '')
+                    exch = r.get('exchangeShortName', '')
+                    print(f"  {S.info(f'[{i}]')} {S.value(sym):16s} {name}" + (f"  ({exch})" if exch else ""))
+                print(f"  {S.muted('[0] Search again')}")
+                print()
+
+                choice = input(f'{S.prompt("Select a number (or 0 to search again): ")}').strip()
+                if choice == '0' or not choice:
+                    continue
+                try:
+                    idx = int(choice) - 1
+                    if 0 <= idx < len(results):
+                        selected = results[idx]['symbol']
+                        v2, err = validate_ticker(selected)
+                        if v2:
+                            return _normalize_ticker(selected)
+                        else:
+                            print(S.error(f"  {err}"))
+                    else:
+                        print(S.error("  Invalid selection."))
+                except ValueError:
+                    v3, err = validate_ticker(choice)
+                    if v3:
+                        return _normalize_ticker(choice)
+                    print(S.error(f"  {err}"))
+                continue
+
+            # No search results — fall through to direct validation
+            if is_valid:
+                return _normalize_ticker(raw)
+            _has_cjk = any('\u4e00' <= c <= '\u9fff' for c in raw)
+            if _has_cjk:
+                print(S.error(f"  No results for \"{raw}\". Chinese names are not supported — please search in English (e.g., \"moutai\")."))
+            else:
+                print(S.error(f"  No results found for \"{raw}\". Try a different keyword or enter the ticker directly."))
+            continue
+
+        # No FMP key — accept valid tickers directly
         if is_valid:
             return _normalize_ticker(raw)
-
-        # Otherwise try FMP search
-        if not apikey:
-            print(S.error(f"  Invalid symbol. Please enter a valid ticker (e.g., AAPL, 0700.HK, 600519.SS)."))
-            continue
-
-        results = _search_fmp(raw, apikey)
-        if not results:
-            print(S.error(f"  No results found for \"{raw}\". Try a different keyword or enter the ticker directly."))
-            continue
-
-        # Display search results
-        print()
-        for i, r in enumerate(results, 1):
-            sym = r.get('symbol', '')
-            name = r.get('name', '')
-            exch = r.get('exchangeShortName', '')
-            print(f"  {S.highlight(f'[{i}]')} {S.value(sym):16s} {name}" + (f"  ({exch})" if exch else ""))
-        print(f"  {S.muted('[0] Search again')}")
-        print()
-
-        choice = input(f'{S.prompt("Select a number (or 0 to search again): ")}').strip()
-        if choice == '0' or not choice:
-            continue
-        try:
-            idx = int(choice) - 1
-            if 0 <= idx < len(results):
-                selected = results[idx]['symbol']
-                is_valid, error_msg = validate_ticker(selected)
-                if is_valid:
-                    return _normalize_ticker(selected)
-                else:
-                    print(S.error(f"  {error_msg}"))
-            else:
-                print(S.error("  Invalid selection."))
-        except ValueError:
-            # User typed something else — treat as new ticker input
-            is_valid, error_msg = validate_ticker(choice)
-            if is_valid:
-                return _normalize_ticker(choice)
-            print(S.error(f"  {error_msg}"))
+        print(S.error(f"  Invalid symbol. Please enter a valid ticker (e.g., AAPL, 0700.HK, 600519.SS)."))
 
 
 def _show_quarterly_reference(ticker, apikey, company_name):
