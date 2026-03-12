@@ -73,7 +73,7 @@ _STRINGS = {
         'welcome_hk': '\U0001f1ed\U0001f1f0 HK \u2014 e.g. 0700.HK',
         'welcome_cn': '\U0001f1e8\U0001f1f3 A-shares \u2014 e.g. 600519.SS',
         'welcome_jp': '\U0001f1ef\U0001f1f5 Japan \u2014 e.g. 7203.T',
-        'welcome_api_note': 'HK &amp; A-shares do not require an API key.',
+        'welcome_api_note': 'HK &amp; A-shares do not require a financial data API key.',
         'welcome_empty_warning': '\u26a0\ufe0f Please enter a stock symbol in the sidebar first, then click a valuation button.',
 
         # ── Mission pillars ──
@@ -119,7 +119,7 @@ _STRINGS = {
 
         # ── AI quota ──
         'ai_quota_remaining': '\U0001f916 Free AI quota: {n}/{limit} remaining today',
-        'ai_quota_exceeded': 'Today\'s free AI quota is used up ({limit}/day). Try again tomorrow or contact the admin.',
+        'ai_quota_exceeded': 'Today\'s free AI quota is used up ({limit}/day). You can configure your own AI Engine API keys in the sidebar for unlimited access.',
         'ai_quota_exceeded_contact': '[Contact admin]({email}) for more quota, or run ValueScope locally for unlimited access.',
         'invite_code_label': 'Enter invite code',
         'invite_code_placeholder': 'Enter invite code, e.g. VIP-abc123',
@@ -395,7 +395,7 @@ _STRINGS = {
         ),
         'sidebar_sponsor': '☕ 赞赏支持',
         'sponsor_guide': '如果 ValueScope 对你有帮助，欢迎微信扫码赞赏 ❤️',
-        'sidebar_fmp_expander': '金融数据 API（美股）',
+        'sidebar_fmp_expander': '财务数据 API（美股）',
         'sidebar_engine_not_installed': '**{engine}** \u672a\u5b89\u88c5\u3002',
         # ── User Cloud AI API keys ──
         'sidebar_cloud_ai_expander': 'AI 引擎 API（可选）',
@@ -421,7 +421,7 @@ _STRINGS = {
         'welcome_hk': '\U0001f1ed\U0001f1f0 \u6e2f\u80a1 \u2014 \u4f8b\u5982 0700.HK',
         'welcome_cn': '\U0001f1e8\U0001f1f3 A \u80a1 \u2014 \u4f8b\u5982 600519.SS',
         'welcome_jp': '\U0001f1ef\U0001f1f5 \u65e5\u80a1 \u2014 \u4f8b\u5982 7203.T',
-        'welcome_api_note': '\u6e2f\u80a1\u548c A \u80a1\u65e0\u9700 API \u5bc6\u94a5\u3002',
+        'welcome_api_note': '港股和 A 股无需财务数据 API 密钥。',
         'welcome_empty_warning': '\u26a0\ufe0f \u8bf7\u5148\u5728\u4fa7\u8fb9\u680f\u8f93\u5165\u80a1\u7968\u4ee3\u7801\uff0c\u7136\u540e\u70b9\u51fb\u4f30\u503c\u6309\u94ae\u3002',
 
         # ── Mission pillars ──
@@ -467,8 +467,8 @@ _STRINGS = {
 
         # ── AI quota ──
         'ai_quota_remaining': '\U0001f916 \u514d\u8d39AI\u989d\u5ea6\uff1a\u4eca\u65e5\u5269\u4f59 {n}/{limit} \u6b21',
-        'ai_quota_exceeded': '\u4eca\u65e5\u514d\u8d39AI\u989d\u5ea6\u5df2\u7528\u5b8c\uff08{limit}\u6b21/\u5929\uff09\u3002\u8bf7\u660e\u5929\u518d\u8bd5\u6216\u8054\u7cfb\u7ba1\u7406\u5458\u3002',
-        'ai_quota_exceeded_contact': '[\u8054\u7cfb\u7ba1\u7406\u5458]({email})\u83b7\u53d6\u66f4\u591a\u989d\u5ea6\uff0c\u6216\u672c\u5730\u8fd0\u884c ValueScope \u53ef\u65e0\u9650\u4f7f\u7528\u3002',
+        'ai_quota_exceeded': '今日免费AI额度已用完（{limit}次/天）。可在侧边栏配置自己的 AI 引擎 API 密钥，即可无限使用。',
+        'ai_quota_exceeded_contact': '[联系管理员]({email})获取更多额度，或本地运行 ValueScope 可无限使用。',
         'invite_code_label': '\u8f93\u5165\u9080\u8bf7\u7801',
         'invite_code_placeholder': '\u8f93\u5165\u9080\u8bf7\u7801\uff0c\u4f8b\u5982 VIP-abc123',
         'invite_code_success': '\U0001f389 \u5151\u6362\u6210\u529f\uff01\u5df2\u589e\u52a0 {n} \u6b21 AI \u5206\u6790\u989d\u5ea6\u3002',
