@@ -464,11 +464,12 @@ section[data-testid="stSidebar"] div[data-testid="stTextInput"] [data-baseweb="i
 section[data-testid="stSidebar"] div[data-testid="stTextInput"] div:focus-within {
     border-color: transparent !important; box-shadow: none !important;
 }
-/* Our own clean blue input style */
+/* Our own clean input style — borderless with subtle bottom accent */
 section[data-testid="stSidebar"] div[data-testid="stTextInput"] input {
-    border: 2px solid var(--vx-accent, #0969da) !important; border-radius: 8px !important;
-    font-size: 1.05rem !important; font-weight: 600 !important; padding: 8px 12px 8px 36px !important;
-    background: var(--vx-input-bg, #fff) !important;
+    border: none !important; border-bottom: 2px solid var(--vx-border, #d0d7de) !important;
+    border-radius: 6px 6px 0 0 !important;
+    font-size: 1.05rem !important; font-weight: 600 !important; padding: 10px 12px 10px 36px !important;
+    background: color-mix(in srgb, var(--vx-bg, #fff) 94%, var(--vx-border, #d0d7de)) !important;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E") !important;
     background-repeat: no-repeat !important;
     background-position: 10px center !important;
@@ -482,8 +483,9 @@ section[data-testid="stSidebar"] details[data-testid="stExpander"] div[data-test
     background-image: none !important;
 }
 section[data-testid="stSidebar"] div[data-testid="stTextInput"] input:focus {
-    border-color: var(--vx-accent, #0969da) !important;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--vx-accent) 20%, transparent) !important;
+    border-bottom-color: var(--vx-accent, #0969da) !important;
+    box-shadow: none !important;
+    background: color-mix(in srgb, var(--vx-bg, #fff) 90%, var(--vx-border, #d0d7de)) !important;
 }
 section[data-testid="stSidebar"] div[data-testid="stTextInput"] input::placeholder {
     color: var(--vx-text-muted, #8b949e) !important; font-weight: 400 !important;
@@ -809,8 +811,9 @@ section[data-testid="stSidebar"] button[kind="primary"] {
     transition: all 0.2s ease !important;
 }
 section[data-testid="stSidebar"] button[kind="primary"]:hover {
-    background: #1a7ad4 !important;
-    border-color: #1a7ad4 !important;
+    background: transparent !important;
+    color: #2b8be8 !important;
+    border-color: #2b8be8 !important;
 }
 
 /* ── Reduce vertical gap between sidebar action buttons (or divider area) ── */
