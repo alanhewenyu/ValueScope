@@ -115,9 +115,27 @@ def _get_secret(key):
             val = ""
     return val or ""
 
-_SERPER_API_KEY = _get_secret("SERPER_API_KEY")
-_DEEPSEEK_API_KEY = _get_secret("DEEPSEEK_API_KEY")
-_has_cloud_ai = bool(_SERPER_API_KEY and _DEEPSEEK_API_KEY)
+_ADMIN_SERPER_KEY = _get_secret("SERPER_API_KEY")
+_ADMIN_DEEPSEEK_KEY = _get_secret("DEEPSEEK_API_KEY")
+_has_cloud_ai = bool(_ADMIN_SERPER_KEY and _ADMIN_DEEPSEEK_KEY)
+
+
+def _get_effective_cloud_keys():
+    """Return (serper_key, deepseek_key, is_user_keys).
+
+    User-provided keys (from sidebar) take priority over admin secrets.
+    """
+    user_serper = st.session_state.get('user_serper_key', '').strip()
+    user_deepseek = st.session_state.get('user_deepseek_key', '').strip()
+    if user_serper and user_deepseek:
+        return user_serper, user_deepseek, True
+    return _ADMIN_SERPER_KEY, _ADMIN_DEEPSEEK_KEY, False
+
+
+def _cloud_ai_available():
+    """Check if cloud AI is available (admin keys OR user-provided keys)."""
+    serper, deepseek, _ = _get_effective_cloud_keys()
+    return bool(serper and deepseek)
 
 # ── Google Analytics ──
 try:
@@ -1203,12 +1221,17 @@ def _check_ai_quota():
     """Returns (allowed: bool, used: int, limit: int).
 
     Admin users (via ?admin=<key>) bypass the limit entirely.
+    Users providing their own API keys bypass the limit entirely.
     Uses DB-backed tracking when VS_DB_PATH is set, otherwise falls back
     to session-state tracking (per-session, per-IP).
     The effective limit = base limit + any extra quota granted by admin.
     """
     if _is_admin():
         return True, 0, 0  # Admin = unlimited
+    # User-provided keys bypass quota
+    _, _, is_user_keys = _get_effective_cloud_keys()
+    if is_user_keys:
+        return True, 0, 0
     base_limit = int(_get_secret('VS_AI_DAILY_LIMIT') or '5')
     if base_limit <= 0:  # 0 or negative = unlimited
         return True, 0, 0
@@ -1228,8 +1251,11 @@ def _check_ai_quota():
 
 
 def _record_ai_usage(ticker=None):
-    """Record an AI usage event (DB + session-state fallback). Admin skips recording."""
+    """Record an AI usage event (DB + session-state fallback). Admin and user-key users skip recording."""
     if _is_admin():
+        return
+    _, _, is_user_keys = _get_effective_cloud_keys()
+    if is_user_keys:
         return
     # Always bump session counter
     _key = '_ai_usage_count'
@@ -1321,7 +1347,7 @@ with st.sidebar:
     )
 
     # ── Action buttons ──
-    _any_ai = _has_ai or _has_cloud_ai
+    _any_ai = _has_ai or _cloud_ai_available()
     if 'use_ai' not in st.session_state:
         st.session_state.use_ai = bool(_AI_ENGINE)
 
@@ -1609,6 +1635,28 @@ with st.sidebar:
             placeholder=t('sidebar_fmp_placeholder'),
         )
         st.caption(t('sidebar_fmp_hint'))
+
+    # ── User Cloud AI API keys (optional override) ──
+    # Show only in web/cloud mode — lets users bring their own Serper + DeepSeek keys
+    if not _has_ai:
+        with st.expander(t('sidebar_cloud_ai_expander'), expanded=False):
+            _user_serper = st.text_input(
+                t('sidebar_serper_label'),
+                type="password",
+                placeholder=t('sidebar_serper_placeholder'),
+                key='user_serper_key',
+            )
+            _user_deepseek = st.text_input(
+                t('sidebar_deepseek_label'),
+                type="password",
+                placeholder=t('sidebar_deepseek_placeholder'),
+                key='user_deepseek_key',
+            )
+            st.caption(t('sidebar_cloud_ai_hint'))
+            if _user_serper and _user_deepseek:
+                st.success(t('sidebar_cloud_ai_active'))
+            elif _user_serper or _user_deepseek:
+                st.warning(t('sidebar_cloud_ai_partial'))
 
     # ── Copyright & contact (keyed container prevents duplication on rapid reruns) ──
     with st.container(key="vs_sidebar_footer"):
@@ -2661,6 +2709,7 @@ def _run_cloud_ai_analysis():
     """Run cloud AI analysis (Serper + DeepSeek). Returns True on success."""
     s = st.session_state
     s._ai_running = True
+    _eff_serper, _eff_deepseek, _is_user_keys = _get_effective_cloud_keys()
     try:
         company_name = s.company_profile.get('companyName', s.ticker)
         _lang = s.get('_lang', 'en')
@@ -2759,7 +2808,7 @@ def _run_cloud_ai_analysis():
                                             t('cloud_generating'), elapsed)
 
             text = cloud_ai_analyze(
-                template_args, _SERPER_API_KEY, _DEEPSEEK_API_KEY,
+                template_args, _eff_serper, _eff_deepseek,
                 lang=_lang, progress_callback=_progress)
 
             elapsed = time.time() - start_time
@@ -2801,11 +2850,11 @@ def _run_cloud_ai_analysis():
         return True
     except SerperCreditError:
         s._ai_running = False
-        st.error(t('err_serper_credits'))
+        st.error(t('err_serper_credits_user') if _is_user_keys else t('err_serper_credits'))
         return False
     except DeepSeekCreditError:
         s._ai_running = False
-        st.error(t('err_deepseek_credits'))
+        st.error(t('err_deepseek_credits_user') if _is_user_keys else t('err_deepseek_credits'))
         return False
     except Exception as e:
         s._ai_running = False
@@ -2815,8 +2864,8 @@ def _run_cloud_ai_analysis():
 
 def _run_ai_analysis():
     """Run AI analysis; routes to cloud or CLI based on availability. Returns True on success."""
-    # Cloud AI path (Serper + DeepSeek) — used on Streamlit Cloud
-    if _has_cloud_ai and not _has_ai:
+    # Cloud AI path (Serper + DeepSeek) — used on Streamlit Cloud or with user-provided keys
+    if _cloud_ai_available() and not _has_ai:
         return _run_cloud_ai_analysis()
 
     # Local CLI path (Claude/Gemini/Qwen)
@@ -3017,7 +3066,8 @@ def _run_gap_analysis_streaming(ticker, company_profile, results, valuation_para
     )
 
     # ── Cloud AI path for gap analysis ──
-    if _has_cloud_ai and not _has_ai:
+    _eff_serper, _eff_deepseek, _is_user_keys = _get_effective_cloud_keys()
+    if _cloud_ai_available() and not _has_ai:
         import time as _time
         _t0 = _time.time()
         with st.status(t('gap_status_label'), expanded=True) as status:
@@ -3034,17 +3084,17 @@ def _run_gap_analysis_streaming(ticker, company_profile, results, valuation_para
 
             try:
                 analysis_text = cloud_gap_analyze(
-                    _gap_template_args, _SERPER_API_KEY, _DEEPSEEK_API_KEY,
+                    _gap_template_args, _eff_serper, _eff_deepseek,
                     lang=_lang, progress_callback=_gap_progress,
                 )
                 _elapsed = _time.time() - _t0
                 status.update(label=t('cloud_ai_complete').format(elapsed=_elapsed), state="complete")
             except SerperCreditError:
                 status.update(label="Error", state="error")
-                st.error(t('err_serper_credits'))
+                st.error(t('err_serper_credits_user') if _is_user_keys else t('err_serper_credits'))
             except DeepSeekCreditError:
                 status.update(label="Error", state="error")
-                st.error(t('err_deepseek_credits'))
+                st.error(t('err_deepseek_credits_user') if _is_user_keys else t('err_deepseek_credits'))
             except Exception as e:
                 status.update(label=f"Error: {e}", state="error")
                 return None
@@ -3338,7 +3388,8 @@ with _hdr_container:
 
     if _has_results:
         # Post-DCF: company name + Financials + [Gap (AI only)] + Excel
-        if _has_ai or _has_cloud_ai:
+        _gap_avail = _has_ai or _cloud_ai_available()
+        if _gap_avail:
             _hcols = st.columns([3.5, 1, 1, 1])
         else:
             _hcols = st.columns([4.5, 1, 1])
@@ -3350,7 +3401,7 @@ with _hdr_container:
         with _hcols[1]:
             _fin_toggled = st.button(_fin_btn_label, use_container_width=True,
                                       key="fin_data_toggle")
-        if _has_ai or _has_cloud_ai:
+        if _gap_avail:
             with _hcols[2]:
                 current_price = ss.company_profile.get('price', 0)
                 if current_price and current_price > 0:

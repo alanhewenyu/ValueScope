@@ -46,6 +46,21 @@ _STRINGS = {
         'sponsor_guide': 'If ValueScope is helpful, scan to support via WeChat Pay ❤️',
         'sidebar_fmp_expander': 'API Key (for US stocks)',
         'sidebar_engine_not_installed': '**{engine}** is not installed.',
+        # ── User Cloud AI API keys ──
+        'sidebar_cloud_ai_expander': '🔑 Use Your Own AI Keys (optional)',
+        'sidebar_serper_label': 'Serper API Key',
+        'sidebar_serper_placeholder': 'Enter your Serper key',
+        'sidebar_deepseek_label': 'DeepSeek API Key',
+        'sidebar_deepseek_placeholder': 'Enter your DeepSeek key',
+        'sidebar_cloud_ai_hint': (
+            'Bring your own keys to bypass daily quota limits.\n\n'
+            '• [Serper](https://serper.dev/) — free 2,500 searches\n\n'
+            '• [DeepSeek](https://platform.deepseek.com/) — pay-as-you-go'
+        ),
+        'sidebar_cloud_ai_active': '✅ Using your own API keys — no quota limit',
+        'sidebar_cloud_ai_partial': '⚠️ Both Serper and DeepSeek keys are required',
+        'err_serper_credits_user': '⚠️ Your Serper API key is invalid or credits exhausted. Please check your key at [serper.dev](https://serper.dev/), or clear the key fields in the sidebar to use the free quota.',
+        'err_deepseek_credits_user': '⚠️ Your DeepSeek API key is invalid or credits exhausted. Please check your key at [platform.deepseek.com](https://platform.deepseek.com/), or clear the key fields in the sidebar to use the free quota.',
 
         # ── Welcome page ──
         'welcome_instruction': 'Enter a stock symbol in the sidebar, then click<br>'
@@ -375,6 +390,21 @@ _STRINGS = {
         'sponsor_guide': '如果 ValueScope 对你有帮助，欢迎微信扫码赞赏 ❤️',
         'sidebar_fmp_expander': 'API \u5bc6\u94a5\uff08\u7f8e\u80a1\u9700\u8981\uff09',
         'sidebar_engine_not_installed': '**{engine}** \u672a\u5b89\u88c5\u3002',
+        # ── User Cloud AI API keys ──
+        'sidebar_cloud_ai_expander': '🔑 使用自己的 AI 密钥（可选）',
+        'sidebar_serper_label': 'Serper API 密钥',
+        'sidebar_serper_placeholder': '输入你的 Serper 密钥',
+        'sidebar_deepseek_label': 'DeepSeek API 密钥',
+        'sidebar_deepseek_placeholder': '输入你的 DeepSeek 密钥',
+        'sidebar_cloud_ai_hint': (
+            '填入自己的密钥可不受每日免费额度限制。\n\n'
+            '• [Serper](https://serper.dev/) — 免费 2,500 次搜索\n\n'
+            '• [DeepSeek](https://platform.deepseek.com/) — 按量付费'
+        ),
+        'sidebar_cloud_ai_active': '✅ 正在使用你自己的 API 密钥 — 无额度限制',
+        'sidebar_cloud_ai_partial': '⚠️ 需要同时填写 Serper 和 DeepSeek 密钥',
+        'err_serper_credits_user': '⚠️ 你的 Serper API 密钥无效或额度已用完。请到 [serper.dev](https://serper.dev/) 检查，或清空侧边栏的密钥输入框以使用免费额度。',
+        'err_deepseek_credits_user': '⚠️ 你的 DeepSeek API 密钥无效或额度已用完。请到 [platform.deepseek.com](https://platform.deepseek.com/) 检查，或清空侧边栏的密钥输入框以使用免费额度。',
 
         # ── Welcome page ──
         'welcome_instruction': '\u5728\u4fa7\u8fb9\u680f\u8f93\u5165\u80a1\u7968\u4ee3\u7801\uff0c\u7136\u540e\u70b9\u51fb<br>'
