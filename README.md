@@ -46,7 +46,7 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 
 - **AI Copilot** — AI searches the web for analyst forecasts, earnings guidance, and industry data, then suggests DCF parameters with detailed reasoning. You review and adjust interactively.
 - **Cloud Web App** — Try it at [valuescope.app](https://valuescope.app) with built-in Cloud AI (DeepSeek R1 + Serper web search). No installation needed.
-- **Terminal CLI** — Supports three local AI engines: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Qwen Code](https://github.com/QwenLM/qwen-code). Auto-detects installed engines or specify with `--engine`.
+- **Terminal CLI** — Supports three local AI engines. Auto-detects installed engines or specify with `--engine`.
 - **Custom Valuation** — Full manual control via sliders (web) or `--manual` (terminal). No AI or API key required.
 - **Verdict & Gap Analysis** — BUY/HOLD/SELL verdict with margin of safety. AI compares DCF result against market price and analyst targets.
 - **Sensitivity Analysis & Excel Export** — Revenue Growth × EBIT Margin and WACC sensitivity tables. Export everything to a formatted `.xlsx` workbook.
@@ -68,28 +68,101 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 
 ---
 
+## AI Engines
+
+### Cloud AI (Web App)
+
+The cloud web app at [valuescope.app](https://valuescope.app) uses built-in Cloud AI — no installation required:
+
+- **DeepSeek R1** — Deep chain-of-thought reasoning for financial analysis
+- **Serper** — Google search + page scraping for earnings guidance, analyst forecasts, and industry data
+
+### Local AI Engines (Terminal CLI & Local Web)
+
+ValueScope supports three local AI CLI tools. Auto-detects installed engines (priority: Claude > Gemini > Qwen), or force one with `--engine`.
+
+| Engine | Install | Notes |
+|--------|---------|-------|
+| **Claude** | `npm install -g @anthropic-ai/claude-code` | Default if available. Requires [Anthropic](https://docs.anthropic.com/en/docs/claude-code) account. |
+| **Gemini** | `npm install -g @google/gemini-cli` | Free with [Google](https://github.com/google-gemini/gemini-cli) account. |
+| **Qwen** | `npm install -g @anthropic-ai/qwen-code` | Free with [qwen.ai](https://github.com/QwenLM/qwen-code) account. |
+
+If no AI engine is detected, ValueScope falls back to custom valuation mode (manual input).
+
+---
+
+## Running Modes
+
+### Terminal CLI
+
+| Mode | Command | AI Required | Description |
+|------|---------|-------------|-------------|
+| **Copilot** (default) | `python main.py` | Yes | AI suggests each parameter; you review and adjust. |
+| **Custom** | `python main.py --manual` | No | Input all parameters yourself. No AI or API key needed. |
+| **Auto** | `python main.py --auto` | Yes | Fully automated: AI → accept → export Excel. |
+
+Additional flags: `--engine claude|gemini|qwen` to force an engine, `--apikey YOUR_KEY` to pass FMP key directly.
+
+### Web App
+
+| Mode | Description |
+|------|-------------|
+| **AI Quick Valuation** | AI searches the web and suggests all DCF parameters with one click. |
+| **Custom Valuation** | Interactive sliders for manual parameter tuning with real-time charts. |
+
+---
+
 ## Installation
 
+### 1. Clone and Install Dependencies
+
+Requires Python 3.8+.
+
 ```bash
-# 1. Clone and install
 git clone https://github.com/alanhewenyu/ValueScope.git
 cd ValueScope
 pip install -r requirements.txt
-
-# 2. Set FMP API Key (required for US/JP stocks)
-export FMP_API_KEY='your_key_here'
-
-# 3. (Optional) Install a local AI engine
-npm install -g @anthropic-ai/claude-code    # or @google/gemini-cli or @anthropic-ai/qwen-code
-
-# 4. Run
-python main.py                    # Terminal CLI (AI copilot)
-python main.py --manual           # Terminal CLI (manual input)
-python main.py --auto             # Terminal CLI (fully automated)
-streamlit run web_app.py          # Local web GUI
 ```
 
-> **Don't want to install?** Use the cloud version at [valuescope.app](https://valuescope.app) — Cloud AI (DeepSeek R1) is built in.
+### 2. Set Up FMP API Key
+
+Required for US and Japan stock data. A-shares use free data sources; HK annual data is also free.
+
+> 💡 **[Get FMP API Key →](https://site.financialmodelingprep.com/register)** — Buy through this link for a discounted price, and support ValueScope's development.
+
+```bash
+# macOS / Linux
+export FMP_API_KEY='your_api_key_here'
+
+# Windows CMD
+set FMP_API_KEY=your_api_key_here
+
+# Windows PowerShell
+$env:FMP_API_KEY="your_api_key_here"
+```
+
+### 3. Install AI Engine (Optional — Local Only)
+
+> **Using the cloud web app?** Skip this step — Cloud AI is built in at [valuescope.app](https://valuescope.app).
+
+Install any one of the supported AI CLI tools:
+
+```bash
+npm install -g @anthropic-ai/claude-code    # Option 1: Claude Code (recommended)
+npm install -g @google/gemini-cli           # Option 2: Gemini CLI (free with Google account)
+npm install -g @anthropic-ai/qwen-code      # Option 3: Qwen Code (free with qwen.ai account)
+```
+
+If no AI engine is available, ValueScope falls back to custom valuation mode automatically.
+
+### 4. Run
+
+```bash
+python main.py                    # Terminal CLI — AI copilot (default)
+python main.py --manual           # Terminal CLI — manual input
+python main.py --auto             # Terminal CLI — fully automated
+streamlit run web_app.py          # Local web GUI (opens at http://localhost:8501)
+```
 
 ---
 
