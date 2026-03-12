@@ -138,60 +138,9 @@ def _cloud_ai_available():
     return bool(serper and deepseek)
 
 
-# ── Server-side ticker search proxy (hides FMP key from client) ──
-_SEARCH_API_KEY = _get_secret("FMP_API_KEY") or os.environ.get("FMP_API_KEY", "")
-
-def _register_search_endpoint():
-    """Register a Tornado handler at /_vs/search so client-side JS can search
-    without ever seeing the FMP API key.  Only returns symbol/name/exchange."""
-    if not _SEARCH_API_KEY:
-        return
-    try:
-        from tornado.web import RequestHandler
-        from urllib.request import urlopen, Request as UrlReq
-        import functools
-
-        _cache: dict = {}   # simple in-memory LRU-ish cache
-
-        class _SearchHandler(RequestHandler):
-            def set_default_headers(self):
-                self.set_header("Content-Type", "application/json")
-                self.set_header("Cache-Control", "public, max-age=300")
-
-            def get(self):
-                q = self.get_argument("q", "").strip()
-                if not q:
-                    self.write("[]"); return
-                # Check cache
-                if q.lower() in _cache:
-                    self.write(_cache[q.lower()]); return
-                try:
-                    url = (f"https://financialmodelingprep.com/api/v3/search"
-                           f"?query={q}&limit=8&apikey={_SEARCH_API_KEY}")
-                    req = UrlReq(url, headers={"User-Agent": "ValueScope/1.0"})
-                    resp = urlopen(req, timeout=5)
-                    raw = json.loads(resp.read().decode())
-                    out = [{"s": it.get("symbol", ""),
-                            "n": it.get("name", ""),
-                            "x": it.get("exchangeShortName", "")}
-                           for it in (raw if isinstance(raw, list) else [])]
-                    result = json.dumps(out)
-                    # Keep cache bounded
-                    if len(_cache) > 500:
-                        _cache.clear()
-                    _cache[q.lower()] = result
-                    self.write(result)
-                except Exception:
-                    self.write("[]")
-
-        # Attach handler to Streamlit's running Tornado server
-        from streamlit.web.server.server import Server
-        srv = Server.get_current()
-        srv._app.add_handlers(r".*", [(r"/_vs/search", _SearchHandler)])
-    except Exception:
-        pass  # silently skip if Streamlit internals changed
-
-_register_search_endpoint()
+# ── Ticker autocomplete: static JSON served via Streamlit static files ──
+# .streamlit/static/tickers.json contains ~10K tickers (symbol, name, exchange)
+# JS loads it once, then searches client-side — no API key needed.
 
 
 # ── Google Analytics ──
@@ -489,7 +438,7 @@ section[data-testid="stSidebar"] > div { padding-top: 0 !important; }
 section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] { gap: 0.75rem !important; }
 /* Auto-push footer to bottom of sidebar */
 section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] { min-height: 100%; display: flex; flex-direction: column; }
-section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"]:has(> div[data-testid="stVerticalBlock-vs_sidebar_footer"]) > div:last-child { margin-top: auto; padding-top: 12px; border-top: 1px solid #d0d7de; }
+section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"]:has(> div[data-testid="stVerticalBlock-vs_sidebar_footer"]) > div:last-child { margin-top: auto; }
 [data-testid="stSidebarHeader"] {
     display: flex !important; min-height: 28px; justify-content: flex-end;
     padding: 2px 4px 0 0 !important;
@@ -877,6 +826,25 @@ section[data-testid="stSidebar"] button[kind="secondary"] {
 section[data-testid="stSidebar"] button[kind="secondary"]:hover {
     background: #1a3a5c !important;
     color: #fff !important;
+}
+/* Dark mode: brighten Custom button for visibility */
+@media (prefers-color-scheme: dark) {
+  section[data-testid="stSidebar"] button[kind="secondary"] {
+    border-color: #5b9bd5 !important; color: #5b9bd5 !important;
+  }
+  section[data-testid="stSidebar"] button[kind="secondary"]:hover {
+    background: #5b9bd5 !important; color: #fff !important;
+  }
+}
+[data-testid="stAppViewContainer"][data-theme="dark"] ~ * section[data-testid="stSidebar"] button[kind="secondary"],
+html[data-theme="dark"] section[data-testid="stSidebar"] button[kind="secondary"],
+:root[data-theme="dark"] section[data-testid="stSidebar"] button[kind="secondary"] {
+    border-color: #5b9bd5 !important; color: #5b9bd5 !important;
+}
+[data-testid="stAppViewContainer"][data-theme="dark"] ~ * section[data-testid="stSidebar"] button[kind="secondary"]:hover,
+html[data-theme="dark"] section[data-testid="stSidebar"] button[kind="secondary"]:hover,
+:root[data-theme="dark"] section[data-testid="stSidebar"] button[kind="secondary"]:hover {
+    background: #5b9bd5 !important; color: #fff !important;
 }
 /* AI button (primary): bright blue fill */
 section[data-testid="stSidebar"] button[kind="primary"] {
@@ -1469,16 +1437,40 @@ with st.sidebar:
         label_visibility="visible", key="ticker_input_main",
     )
 
-    # ── Real-time autocomplete via server-side proxy (no key in client JS) ──
-    if _SEARCH_API_KEY:
-        _stc.html(
-            r"""<script>
+    # ── Real-time autocomplete via static tickers.json (no API key needed) ──
+    _stc.html(
+        r"""<script>
 (function(){
-var D=280;
+var D=200,M=8;
 var P=window.parent.document;
 var sb=P.querySelector('section[data-testid="stSidebar"]');
 if(!sb) return;
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+// Load ticker data once, cache in window
+var tickerData=window._vsTickers;
+if(!tickerData){
+  tickerData=[];
+  window._vsTickers=tickerData;
+  fetch('/app/static/tickers.json').then(function(r){return r.json();}).then(function(d){
+    tickerData.push.apply(tickerData,d);
+    window._vsTickers=tickerData;
+  }).catch(function(){});
+}
+
+function search(q){
+  if(!tickerData.length) return [];
+  var ql=q.toLowerCase(),results=[],exact=[],starts=[],contains=[];
+  for(var i=0;i<tickerData.length;i++){
+    var t=tickerData[i],sl=t.s.toLowerCase(),nl=t.n.toLowerCase();
+    if(sl===ql){exact.push(t);}
+    else if(sl.indexOf(ql)===0){starts.push(t);}
+    else if(nl.indexOf(ql)!==-1||sl.indexOf(ql)!==-1){contains.push(t);}
+    if(exact.length+starts.length+contains.length>50) break;
+  }
+  return exact.concat(starts,contains).slice(0,M);
+}
+
 function tryInit(){
   var inp=sb.querySelector('div[data-testid="stTextInput"] input');
   if(!inp){setTimeout(tryInit,100);return;}
@@ -1491,30 +1483,25 @@ function tryInit(){
   var timer=null,ai=-1,picking=false;
   function doSearch(q){
     if(!q||q.length<1){dd.style.display='none';return;}
-    fetch('/_vs/search?q='+encodeURIComponent(q))
-    .then(function(r){return r.json();})
-    .then(function(data){
-      if(!data||!data.length){dd.style.display='none';return;}
-      dd.innerHTML='';ai=-1;
-      data.forEach(function(it,i){
-        var o=P.createElement('div');
-        var s=it.s||'',n=it.n||'',x=it.x||'';
-        o.innerHTML='<strong style="color:#1f2328;">'+esc(s)+'</strong>'
-          +'<span style="color:#666;margin-left:8px;font-size:0.82em;">'+esc(n)+'</span>'
-          +(x?'<span style="color:#999;margin-left:4px;font-size:0.75em;">('+esc(x)+')</span>':'');
-        o.style.cssText='padding:9px 14px;cursor:pointer;font-size:0.88rem;border-bottom:1px solid #f0f0f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background 0.1s;background:#fff;';
-        o.dataset.sym=s;
-        o.addEventListener('mouseenter',function(){o.style.background='#eef3ff';ai=i;});
-        o.addEventListener('mouseleave',function(){o.style.background='#fff';});
-        o.addEventListener('mousedown',function(e){e.preventDefault();pick(s);});
-        dd.appendChild(o);
-      });
-      if(dd.firstChild) dd.firstChild.style.borderRadius='12px 12px 0 0';
-      if(dd.lastChild){dd.lastChild.style.borderRadius='0 0 12px 12px';dd.lastChild.style.borderBottom='none';}
-      if(dd.childNodes.length===1) dd.firstChild.style.borderRadius='12px';
-      dd.style.display='block';
-    })
-    .catch(function(){dd.style.display='none';});
+    var data=search(q);
+    if(!data.length){dd.style.display='none';return;}
+    dd.innerHTML='';ai=-1;
+    data.forEach(function(it,i){
+      var o=P.createElement('div');
+      o.innerHTML='<strong style="color:#1f2328;">'+esc(it.s)+'</strong>'
+        +'<span style="color:#666;margin-left:8px;font-size:0.82em;">'+esc(it.n)+'</span>'
+        +(it.x?'<span style="color:#999;margin-left:4px;font-size:0.75em;">('+esc(it.x)+')</span>':'');
+      o.style.cssText='padding:9px 14px;cursor:pointer;font-size:0.88rem;border-bottom:1px solid #f0f0f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background 0.1s;background:#fff;';
+      o.dataset.sym=it.s;
+      o.addEventListener('mouseenter',function(){o.style.background='#eef3ff';ai=i;});
+      o.addEventListener('mouseleave',function(){o.style.background='#fff';});
+      o.addEventListener('mousedown',function(e){e.preventDefault();pick(it.s);});
+      dd.appendChild(o);
+    });
+    if(dd.firstChild) dd.firstChild.style.borderRadius='12px 12px 0 0';
+    if(dd.lastChild){dd.lastChild.style.borderRadius='0 0 12px 12px';dd.lastChild.style.borderBottom='none';}
+    if(dd.childNodes.length===1) dd.firstChild.style.borderRadius='12px';
+    dd.style.display='block';
   }
   function pick(sym){
     picking=true;clearTimeout(timer);
@@ -1552,8 +1539,8 @@ function tryInit(){
 tryInit();
 })();
 </script>""",
-            height=0,
-        )
+        height=0,
+    )
 
     # ── Action buttons ──
     _any_ai = _has_ai or _cloud_ai_available()
@@ -1874,6 +1861,8 @@ tryInit();
 
     # ── Copyright & contact (keyed container prevents duplication on rapid reruns) ──
     with st.container(key="vs_sidebar_footer"):
+        st.markdown('<hr style="margin:16px 0 10px 0; border:none; border-top:1px solid var(--vx-border, #d0d7de);">',
+                    unsafe_allow_html=True)
         with st.expander(t('sidebar_sponsor'), expanded=False):
             st.image('assets/wechat-reward.jpg', width="stretch")
             st.caption(t('sponsor_guide'))
