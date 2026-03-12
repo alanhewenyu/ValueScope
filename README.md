@@ -49,7 +49,8 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 - **Terminal CLI** — Supports three local AI engines. Auto-detects installed engines or specify with `--engine`.
 - **Custom Valuation** — Full manual control via sliders (web) or `--manual` (terminal). No AI or API key required.
 - **Verdict & Gap Analysis** — BUY/HOLD/SELL verdict with margin of safety. AI compares DCF result against market price and analyst targets.
-- **Sensitivity Analysis & Excel Export** — Revenue Growth × EBIT Margin and WACC sensitivity tables. Export everything to a formatted `.xlsx` workbook.
+- **Sensitivity Analysis** — Revenue Growth × EBIT Margin and WACC sensitivity tables, showing the range of possible per-share valuations.
+- **Excel Export** — Export valuation results, historical data, and AI analysis to a formatted `.xlsx` workbook.
 
 ---
 
