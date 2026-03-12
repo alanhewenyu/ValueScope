@@ -1437,9 +1437,8 @@ with st.sidebar:
     )
 
     # ── Real-time autocomplete via client-side JS + FMP search ──
-    _fmp_search_key = (st.session_state.get('_fmp_key_val', '')
-                       or os.environ.get("FMP_API_KEY", "")
-                       or _get_secret("FMP_API_KEY"))
+    # Only use user-entered key (from session state) — never embed admin key in client JS
+    _fmp_search_key = st.session_state.get('_fmp_key_val', '')
     if _fmp_search_key:
         _fmp_key_js = json.dumps(_fmp_search_key)  # safe JS string
         _stc.html(
