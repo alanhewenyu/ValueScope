@@ -786,17 +786,17 @@ div[data-testid="stSlider"] div[role="slider"]:hover {
 .expander-hint:hover { background: color-mix(in srgb, var(--vx-accent) 12%, transparent); }
 
 /* ── Sidebar action buttons — distinct colours for Custom vs AI ── */
-/* Custom button (secondary): teal outline, teal fill on hover */
+/* Custom button (secondary): muted slate outline, filled on hover */
 section[data-testid="stSidebar"] button[kind="secondary"] {
     font-weight: 600 !important; letter-spacing: 0.3px;
-    border: 2px solid #1a9e7a !important;
-    color: #1a9e7a !important;
+    border: 2px solid #57606a !important;
+    color: #57606a !important;
     background: transparent !important;
     border-radius: 8px !important;
     transition: all 0.2s ease !important;
 }
 section[data-testid="stSidebar"] button[kind="secondary"]:hover {
-    background: #1a9e7a !important;
+    background: #57606a !important;
     color: #fff !important;
 }
 /* AI button (primary): blue accent fill */
