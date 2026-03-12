@@ -1790,9 +1790,7 @@ tryInit();
                             _status = f"✅ {_ci['redeemed_by'][:12]}…" if _ci['redeemed_by'] else "🟡 unused"
                             st.caption(f"`{_ci['code']}` · {_ci['quota']}x · {_status}")
 
-    # ── API keys section divider ──
-    st.markdown('<hr style="margin:12px 0 8px 0; border:none; border-top:1px solid var(--vx-border-light, #e8e8e8);">',
-                unsafe_allow_html=True)
+    # ── API keys section (no divider — expanders provide visual separation) ──
 
     # ── User Cloud AI API keys (optional override) ──
     # Show only in web/cloud mode — lets users bring their own Serper + DeepSeek keys
@@ -1843,7 +1841,7 @@ tryInit();
 
     # ── Copyright & contact (keyed container prevents duplication on rapid reruns) ──
     with st.container(key="vs_sidebar_footer"):
-        st.markdown('<hr style="margin:4px 0; border:none; border-top:1px solid var(--vx-border, #d0d7de);">',
+        st.markdown('<hr style="margin:10px 0 6px 0; border:none; border-top:1px solid var(--vx-border, #d0d7de);">',
                     unsafe_allow_html=True)
         with st.expander(t('sidebar_sponsor'), expanded=False):
             st.image('assets/wechat-reward.jpg', width="stretch")
