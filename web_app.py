@@ -138,27 +138,60 @@ def _cloud_ai_available():
     return bool(serper and deepseek)
 
 
-# ── Ticker autocomplete via FMP search API ──
-@st.cache_data(ttl=300, show_spinner=False)
-def _search_ticker_fmp(query: str, _apikey: str) -> list:
-    """Call FMP search API, return list of (display_label, symbol) tuples."""
-    if not query or not _apikey:
-        return []
+# ── Server-side ticker search proxy (hides FMP key from client) ──
+_SEARCH_API_KEY = _get_secret("FMP_API_KEY") or os.environ.get("FMP_API_KEY", "")
+
+def _register_search_endpoint():
+    """Register a Tornado handler at /_vs/search so client-side JS can search
+    without ever seeing the FMP API key.  Only returns symbol/name/exchange."""
+    if not _SEARCH_API_KEY:
+        return
     try:
-        from urllib.request import urlopen
-        url = f"https://financialmodelingprep.com/api/v3/search?query={query}&limit=8&apikey={_apikey}"
-        resp = urlopen(url, timeout=5)
-        data = json.loads(resp.read().decode())
-        results = []
-        for item in data:
-            sym = item.get('symbol', '')
-            name = item.get('name', '')
-            exch = item.get('exchangeShortName', '')
-            label = f"{sym}  \u2014  {name}" + (f"  ({exch})" if exch else "")
-            results.append((label, sym))
-        return results
+        from tornado.web import RequestHandler
+        from urllib.request import urlopen, Request as UrlReq
+        import functools
+
+        _cache: dict = {}   # simple in-memory LRU-ish cache
+
+        class _SearchHandler(RequestHandler):
+            def set_default_headers(self):
+                self.set_header("Content-Type", "application/json")
+                self.set_header("Cache-Control", "public, max-age=300")
+
+            def get(self):
+                q = self.get_argument("q", "").strip()
+                if not q:
+                    self.write("[]"); return
+                # Check cache
+                if q.lower() in _cache:
+                    self.write(_cache[q.lower()]); return
+                try:
+                    url = (f"https://financialmodelingprep.com/api/v3/search"
+                           f"?query={q}&limit=8&apikey={_SEARCH_API_KEY}")
+                    req = UrlReq(url, headers={"User-Agent": "ValueScope/1.0"})
+                    resp = urlopen(req, timeout=5)
+                    raw = json.loads(resp.read().decode())
+                    out = [{"s": it.get("symbol", ""),
+                            "n": it.get("name", ""),
+                            "x": it.get("exchangeShortName", "")}
+                           for it in (raw if isinstance(raw, list) else [])]
+                    result = json.dumps(out)
+                    # Keep cache bounded
+                    if len(_cache) > 500:
+                        _cache.clear()
+                    _cache[q.lower()] = result
+                    self.write(result)
+                except Exception:
+                    self.write("[]")
+
+        # Attach handler to Streamlit's running Tornado server
+        from streamlit.web.server.server import Server
+        srv = Server.get_current()
+        srv._app.add_handlers(r".*", [(r"/_vs/search", _SearchHandler)])
     except Exception:
-        return []
+        pass  # silently skip if Streamlit internals changed
+
+_register_search_endpoint()
 
 
 # ── Google Analytics ──
@@ -1436,15 +1469,13 @@ with st.sidebar:
         label_visibility="visible", key="ticker_input_main",
     )
 
-    # ── Real-time autocomplete via client-side JS + FMP search ──
-    # Only use user-entered key (from session state) — never embed admin key in client JS
-    _fmp_search_key = st.session_state.get('_fmp_key_val', '')
-    if _fmp_search_key:
-        _fmp_key_js = json.dumps(_fmp_search_key)  # safe JS string
+    # ── Real-time autocomplete via server-side proxy (no key in client JS) ──
+    if _SEARCH_API_KEY:
         _stc.html(
-            '<script>\n(function(){\n'
-            'var K=' + _fmp_key_js + ',D=280,M=8;\n'
-            r"""var P=window.parent.document;
+            r"""<script>
+(function(){
+var D=280;
+var P=window.parent.document;
 var sb=P.querySelector('section[data-testid="stSidebar"]');
 if(!sb) return;
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
@@ -1460,14 +1491,14 @@ function tryInit(){
   var timer=null,ai=-1,picking=false;
   function doSearch(q){
     if(!q||q.length<1){dd.style.display='none';return;}
-    fetch('https://financialmodelingprep.com/api/v3/search?query='+encodeURIComponent(q)+'&limit='+M+'&apikey='+K)
+    fetch('/_vs/search?q='+encodeURIComponent(q))
     .then(function(r){return r.json();})
     .then(function(data){
-      if(!data||!data.length||data.Error){dd.style.display='none';return;}
+      if(!data||!data.length){dd.style.display='none';return;}
       dd.innerHTML='';ai=-1;
       data.forEach(function(it,i){
         var o=P.createElement('div');
-        var s=it.symbol||'',n=it.name||'',x=it.exchangeShortName||'';
+        var s=it.s||'',n=it.n||'',x=it.x||'';
         o.innerHTML='<strong style="color:#1f2328;">'+esc(s)+'</strong>'
           +'<span style="color:#666;margin-left:8px;font-size:0.82em;">'+esc(n)+'</span>'
           +(x?'<span style="color:#999;margin-left:4px;font-size:0.75em;">('+esc(x)+')</span>':'');
