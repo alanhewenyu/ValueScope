@@ -484,6 +484,7 @@ section[data-testid="stSidebar"] div[data-testid="stTextInput"] > div,
 section[data-testid="stSidebar"] div[data-testid="stTextInput"] [data-baseweb="base-input"],
 section[data-testid="stSidebar"] div[data-testid="stTextInput"] [data-baseweb="input"] {
     border-color: transparent !important; background: transparent !important;
+    overflow: visible !important; border-radius: 22px !important;
 }
 section[data-testid="stSidebar"] div[data-testid="stTextInput"] div:focus-within {
     border-color: transparent !important; box-shadow: none !important;
@@ -1447,14 +1448,10 @@ with st.sidebar:
     )
 
     # ── Autocomplete suggestions via FMP search ──
-    _fmp_search_key = st.session_state.get('_fmp_key_val', '') or os.environ.get("FMP_API_KEY", "")
+    _fmp_search_key = st.session_state.get('_fmp_key_val', '') or os.environ.get("FMP_API_KEY", "") or _get_secret("FMP_API_KEY")
     if ticker_input and _fmp_search_key and len(ticker_input) >= 1:
         _suggestions = _search_ticker_fmp(ticker_input, _fmp_search_key)
         if _suggestions:
-            st.markdown(
-                '<div style="margin:-8px 0 4px 0; font-size:0.75rem; color:var(--vx-text-muted,#888);">'
-                f'{t("search_suggestions") if "search_suggestions" in _STRINGS.get(lang(), {}) else "Select:"}'
-                '</div>', unsafe_allow_html=True)
             for _disp, _sym in _suggestions[:5]:
                 if st.button(_disp, key=f"_sug_{_sym}", use_container_width=True):
                     st.session_state['_selected_ticker'] = _sym
