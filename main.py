@@ -86,16 +86,77 @@ def _auto_accept_params(ai_result):
 # Input collection
 # ────────────────────────────────────────────────────────────────────
 
-def _prompt_ticker(auto_mode):
-    """Prompt for ticker symbol. Returns normalized ticker string."""
+def _search_fmp(query, apikey, limit=8):
+    """Search FMP API for matching tickers. Returns list of dicts or []."""
+    if not apikey or not query:
+        return []
+    try:
+        import urllib.request, json as _json
+        url = f"https://financialmodelingprep.com/api/v3/search?query={query}&limit={limit}&apikey={apikey}"
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            data = _json.loads(resp.read().decode())
+        return [r for r in data if r.get('symbol')] if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _prompt_ticker(auto_mode, apikey=None):
+    """Prompt for ticker symbol with FMP search support.
+
+    If *apikey* is available, non-ticker inputs trigger an FMP search so the
+    user can pick from matching results instead of typing the exact symbol.
+    """
     print(f"\n{S.title('Please enter the stock symbol to continue...')}\n")
     while True:
-        ticker = input(f'{S.prompt("Enter the stock symbol (e.g., AAPL, 0700.HK, 600519.SS, 5019.T): ")}').strip()
-        is_valid, error_msg = validate_ticker(ticker)
+        raw = input(f'{S.prompt("Enter stock symbol or search by name (e.g., AAPL, 茅台, Toyota): ")}').strip()
+        if not raw:
+            continue
+
+        # If it already looks like a valid ticker, accept directly
+        is_valid, _ = validate_ticker(raw)
         if is_valid:
-            break
-        print(S.error(f"  {error_msg}"))
-    return _normalize_ticker(ticker)
+            return _normalize_ticker(raw)
+
+        # Otherwise try FMP search
+        if not apikey:
+            print(S.error(f"  Invalid symbol. Please enter a valid ticker (e.g., AAPL, 0700.HK, 600519.SS)."))
+            continue
+
+        results = _search_fmp(raw, apikey)
+        if not results:
+            print(S.error(f"  No results found for \"{raw}\". Try a different keyword or enter the ticker directly."))
+            continue
+
+        # Display search results
+        print()
+        for i, r in enumerate(results, 1):
+            sym = r.get('symbol', '')
+            name = r.get('name', '')
+            exch = r.get('exchangeShortName', '')
+            print(f"  {S.highlight(f'[{i}]')} {S.value(sym):16s} {name}" + (f"  ({exch})" if exch else ""))
+        print(f"  {S.muted('[0] Search again')}")
+        print()
+
+        choice = input(f'{S.prompt("Select a number (or 0 to search again): ")}').strip()
+        if choice == '0' or not choice:
+            continue
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(results):
+                selected = results[idx]['symbol']
+                is_valid, error_msg = validate_ticker(selected)
+                if is_valid:
+                    return _normalize_ticker(selected)
+                else:
+                    print(S.error(f"  {error_msg}"))
+            else:
+                print(S.error("  Invalid selection."))
+        except ValueError:
+            # User typed something else — treat as new ticker input
+            is_valid, error_msg = validate_ticker(choice)
+            if is_valid:
+                return _normalize_ticker(choice)
+            print(S.error(f"  {error_msg}"))
 
 
 def _show_quarterly_reference(ticker, apikey, company_name):
@@ -324,7 +385,7 @@ def main(args):
 
     while True:
         # ── Ticker ──
-        ticker = _prompt_ticker(auto_mode)
+        ticker = _prompt_ticker(auto_mode, apikey=args.apikey)
         args.t = ticker
         args.period = 'annual'
 
