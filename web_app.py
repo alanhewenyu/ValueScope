@@ -809,6 +809,35 @@ section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(butto
     margin-bottom: -4px !important;
 }
 
+/* ── Sidebar expanders — subdued card style ── */
+section[data-testid="stSidebar"] details[data-testid="stExpander"] {
+    border: 1px solid var(--vx-border-light, #e8e8e8) !important;
+    border-radius: 8px !important;
+    background: color-mix(in srgb, var(--vx-bg, #fff) 97%, var(--vx-border, #d0d7de)) !important;
+}
+section[data-testid="stSidebar"] details[data-testid="stExpander"] summary {
+    font-size: 0.85rem !important;
+    font-weight: 600 !important;
+    padding: 6px 12px !important;
+    color: var(--vx-text-muted, #666) !important;
+}
+section[data-testid="stSidebar"] details[data-testid="stExpander"] summary:hover {
+    color: var(--vx-text, #1f2328) !important;
+}
+section[data-testid="stSidebar"] details[data-testid="stExpander"] label {
+    font-size: 0.85rem !important;
+    font-weight: 600 !important;
+}
+section[data-testid="stSidebar"] details[data-testid="stExpander"] input {
+    font-size: 0.85rem !important;
+    padding: 6px 10px !important;
+    border-width: 1.5px !important;
+}
+section[data-testid="stSidebar"] details[data-testid="stExpander"] .stCaption p {
+    font-size: 0.78rem !important;
+    font-weight: 400 !important;
+}
+
 /* ── Hide "press Enter to apply" hint ── */
 div[data-testid="InputInstructions"] { display: none !important; }
 
@@ -1614,27 +1643,9 @@ with st.sidebar:
                             _status = f"✅ {_ci['redeemed_by'][:12]}…" if _ci['redeemed_by'] else "🟡 unused"
                             st.caption(f"`{_ci['code']}` · {_ci['quota']}x · {_status}")
 
-    # ── API key ──
-    _fmp_env = os.environ.get("FMP_API_KEY", "")
-    if not _has_ai and _fmp_env:
-        # Web with pre-filled key: collapse into expander to declutter sidebar
-        with st.expander(t('sidebar_fmp_expander'), expanded=False):
-            apikey = st.text_input(
-                t('sidebar_fmp_label'),
-                type="password",
-                value=_fmp_env,
-                placeholder=t('sidebar_fmp_placeholder'),
-            )
-            st.caption(t('sidebar_fmp_hint'))
-    else:
-        # Local or no pre-filled key: show normally
-        apikey = st.text_input(
-            t('sidebar_fmp_label'),
-            type="password",
-            value=_fmp_env,
-            placeholder=t('sidebar_fmp_placeholder'),
-        )
-        st.caption(t('sidebar_fmp_hint'))
+    # ── API keys section divider ──
+    st.markdown('<hr style="margin:12px 0 8px 0; border:none; border-top:1px solid var(--vx-border-light, #e8e8e8);">',
+                unsafe_allow_html=True)
 
     # ── User Cloud AI API keys (optional override) ──
     # Show only in web/cloud mode — lets users bring their own Serper + DeepSeek keys
@@ -1657,6 +1668,28 @@ with st.sidebar:
                 st.success(t('sidebar_cloud_ai_active'))
             elif _user_serper or _user_deepseek:
                 st.warning(t('sidebar_cloud_ai_partial'))
+
+    # ── Financial data API key ──
+    _fmp_env = os.environ.get("FMP_API_KEY", "")
+    if not _has_ai and _fmp_env:
+        # Web with pre-filled key: collapse into expander to declutter sidebar
+        with st.expander(t('sidebar_fmp_expander'), expanded=False):
+            apikey = st.text_input(
+                t('sidebar_fmp_label'),
+                type="password",
+                value=_fmp_env,
+                placeholder=t('sidebar_fmp_placeholder'),
+            )
+            st.caption(t('sidebar_fmp_hint'))
+    else:
+        # Local or no pre-filled key: show normally
+        apikey = st.text_input(
+            t('sidebar_fmp_label'),
+            type="password",
+            value=_fmp_env,
+            placeholder=t('sidebar_fmp_placeholder'),
+        )
+        st.caption(t('sidebar_fmp_hint'))
 
     # ── Copyright & contact (keyed container prevents duplication on rapid reruns) ──
     with st.container(key="vs_sidebar_footer"):

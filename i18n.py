@@ -39,15 +39,19 @@ _STRINGS = {
                                'you just set the assumptions yourself.'),
         'sidebar_language': 'Language',
         'sidebar_language_help': 'Interface & AI output language. EN = English, CN = \u4e2d\u6587.',
-        'sidebar_fmp_label': 'Financial Modeling Prep (FMP) API Key',
-        'sidebar_fmp_placeholder': 'Enter your FMP key (Required for US stocks)',
-        'sidebar_fmp_hint': '\U0001f4a1 HK & A-shares do not require an API key.',
+        'sidebar_fmp_label': 'FMP API Key',
+        'sidebar_fmp_placeholder': 'Enter your FMP key',
+        'sidebar_fmp_hint': (
+            'Required for US & JP stocks. '
+            '[Get free API key](https://site.financialmodelingprep.com/register)\n\n'
+            'HK & A-shares do not need an API key.'
+        ),
         'sidebar_sponsor': '☕ Support the Author',
         'sponsor_guide': 'If ValueScope is helpful, scan to support via WeChat Pay ❤️',
-        'sidebar_fmp_expander': 'API Key (for US stocks)',
+        'sidebar_fmp_expander': '📊 Financial Data API',
         'sidebar_engine_not_installed': '**{engine}** is not installed.',
         # ── User Cloud AI API keys ──
-        'sidebar_cloud_ai_expander': '🔑 Use Your Own AI Keys (optional)',
+        'sidebar_cloud_ai_expander': '🤖 AI Engine API (optional)',
         'sidebar_serper_label': 'Serper API Key',
         'sidebar_serper_placeholder': 'Enter your Serper key',
         'sidebar_deepseek_label': 'DeepSeek API Key',
@@ -57,7 +61,7 @@ _STRINGS = {
             '• [Serper](https://serper.dev/) — free 2,500 searches\n\n'
             '• [DeepSeek](https://platform.deepseek.com/) — pay-as-you-go'
         ),
-        'sidebar_cloud_ai_active': '✅ Using your own API keys — no quota limit',
+        'sidebar_cloud_ai_active': '✅ Using your own keys — no quota limit',
         'sidebar_cloud_ai_partial': '⚠️ Both Serper and DeepSeek keys are required',
         'err_serper_credits_user': '⚠️ Your Serper API key is invalid or credits exhausted. Please check your key at [serper.dev](https://serper.dev/), or clear the key fields in the sidebar to use the free quota.',
         'err_deepseek_credits_user': '⚠️ Your DeepSeek API key is invalid or credits exhausted. Please check your key at [platform.deepseek.com](https://platform.deepseek.com/), or clear the key fields in the sidebar to use the free quota.',
@@ -384,14 +388,18 @@ _STRINGS = {
         'sidebar_language': '\u8bed\u8a00',
         'sidebar_language_help': '\u754c\u9762\u548c AI \u8f93\u51fa\u8bed\u8a00\u3002EN = English\uff0cCN = \u4e2d\u6587\u3002',
         'sidebar_fmp_label': 'FMP API 密钥',
-        'sidebar_fmp_placeholder': '输入 FMP 密钥（美股必填）',
-        'sidebar_fmp_hint': '\U0001f4a1 \u6e2f\u80a1\u548c A \u80a1\u65e0\u9700 API \u5bc6\u94a5\u3002',
+        'sidebar_fmp_placeholder': '输入 FMP 密钥',
+        'sidebar_fmp_hint': (
+            '美股和日股必填。'
+            '[免费注册获取](https://site.financialmodelingprep.com/register)\n\n'
+            '港股和 A 股无需 API 密钥。'
+        ),
         'sidebar_sponsor': '☕ 赞赏支持',
         'sponsor_guide': '如果 ValueScope 对你有帮助，欢迎微信扫码赞赏 ❤️',
-        'sidebar_fmp_expander': 'API \u5bc6\u94a5\uff08\u7f8e\u80a1\u9700\u8981\uff09',
+        'sidebar_fmp_expander': '📊 金融数据 API',
         'sidebar_engine_not_installed': '**{engine}** \u672a\u5b89\u88c5\u3002',
         # ── User Cloud AI API keys ──
-        'sidebar_cloud_ai_expander': '🔑 使用自己的 AI 密钥（可选）',
+        'sidebar_cloud_ai_expander': '🤖 AI 引擎 API（可选）',
         'sidebar_serper_label': 'Serper API 密钥',
         'sidebar_serper_placeholder': '输入你的 Serper 密钥',
         'sidebar_deepseek_label': 'DeepSeek API 密钥',
@@ -401,7 +409,7 @@ _STRINGS = {
             '• [Serper](https://serper.dev/) — 免费 2,500 次搜索\n\n'
             '• [DeepSeek](https://platform.deepseek.com/) — 按量付费'
         ),
-        'sidebar_cloud_ai_active': '✅ 正在使用你自己的 API 密钥 — 无额度限制',
+        'sidebar_cloud_ai_active': '✅ 正在使用你自己的密钥 — 无额度限制',
         'sidebar_cloud_ai_partial': '⚠️ 需要同时填写 Serper 和 DeepSeek 密钥',
         'err_serper_credits_user': '⚠️ 你的 Serper API 密钥无效或额度已用完。请到 [serper.dev](https://serper.dev/) 检查，或清空侧边栏的密钥输入框以使用免费额度。',
         'err_deepseek_credits_user': '⚠️ 你的 DeepSeek API 密钥无效或额度已用完。请到 [platform.deepseek.com](https://platform.deepseek.com/) 检查，或清空侧边栏的密钥输入框以使用免费额度。',
