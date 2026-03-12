@@ -786,31 +786,31 @@ div[data-testid="stSlider"] div[role="slider"]:hover {
 .expander-hint:hover { background: color-mix(in srgb, var(--vx-accent) 12%, transparent); }
 
 /* ── Sidebar action buttons — distinct colours for Custom vs AI ── */
-/* Custom button (secondary): muted slate outline, filled on hover */
+/* Custom button (secondary): deep navy outline, filled on hover */
 section[data-testid="stSidebar"] button[kind="secondary"] {
     font-weight: 600 !important; letter-spacing: 0.3px;
-    border: 2px solid #57606a !important;
-    color: #57606a !important;
+    border: 2px solid #1a3a5c !important;
+    color: #1a3a5c !important;
     background: transparent !important;
     border-radius: 8px !important;
     transition: all 0.2s ease !important;
 }
 section[data-testid="stSidebar"] button[kind="secondary"]:hover {
-    background: #57606a !important;
+    background: #1a3a5c !important;
     color: #fff !important;
 }
-/* AI button (primary): blue accent fill */
+/* AI button (primary): bright blue fill */
 section[data-testid="stSidebar"] button[kind="primary"] {
     font-weight: 600 !important; letter-spacing: 0.3px;
-    border: 2px solid var(--vx-accent, #0969da) !important;
-    background: var(--vx-accent, #0969da) !important;
+    border: 2px solid #2b8be8 !important;
+    background: #2b8be8 !important;
     color: #fff !important;
     border-radius: 8px !important;
     transition: all 0.2s ease !important;
 }
 section[data-testid="stSidebar"] button[kind="primary"]:hover {
-    background: color-mix(in srgb, var(--vx-accent, #0969da) 85%, #000) !important;
-    border-color: color-mix(in srgb, var(--vx-accent, #0969da) 85%, #000) !important;
+    background: #1a7ad4 !important;
+    border-color: #1a7ad4 !important;
 }
 
 /* ── Reduce vertical gap between sidebar action buttons (or divider area) ── */
