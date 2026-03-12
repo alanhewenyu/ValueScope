@@ -73,7 +73,7 @@ _STRINGS = {
         'welcome_hk': '\U0001f1ed\U0001f1f0 HK \u2014 e.g. 0700.HK',
         'welcome_cn': '\U0001f1e8\U0001f1f3 A-shares \u2014 e.g. 600519.SS',
         'welcome_jp': '\U0001f1ef\U0001f1f5 Japan \u2014 e.g. 7203.T',
-        'welcome_api_note': 'HK &amp; A-shares do not require a financial data API key.',
+        'welcome_api_note': '',
         'welcome_empty_warning': '\u26a0\ufe0f Please enter a stock symbol in the sidebar first, then click a valuation button.',
 
         # ── Mission pillars ──
@@ -421,7 +421,7 @@ _STRINGS = {
         'welcome_hk': '\U0001f1ed\U0001f1f0 \u6e2f\u80a1 \u2014 \u4f8b\u5982 0700.HK',
         'welcome_cn': '\U0001f1e8\U0001f1f3 A \u80a1 \u2014 \u4f8b\u5982 600519.SS',
         'welcome_jp': '\U0001f1ef\U0001f1f5 \u65e5\u80a1 \u2014 \u4f8b\u5982 7203.T',
-        'welcome_api_note': '港股和 A 股无需财务数据 API 密钥。',
+        'welcome_api_note': '',
         'welcome_empty_warning': '\u26a0\ufe0f \u8bf7\u5148\u5728\u4fa7\u8fb9\u680f\u8f93\u5165\u80a1\u7968\u4ee3\u7801\uff0c\u7136\u540e\u70b9\u51fb\u4f30\u503c\u6309\u94ae\u3002',
 
         # ── Mission pillars ──

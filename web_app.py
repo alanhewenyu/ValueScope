@@ -3525,9 +3525,6 @@ if 'summary_df' not in st.session_state:
                              color:var(--vx-accent, #0969da); border:1px solid color-mix(in srgb, var(--vx-accent) 20%, transparent);">
                     {t('welcome_jp')}</span>
             </div>
-            <p style="font-size:0.78rem; color:var(--vx-text-muted, #8b949e);">
-                {t('welcome_api_note')}
-            </p>
             <!-- Mission / Philosophy -->
             <hr style="border:none; border-top:1px solid color-mix(in srgb, var(--vx-text-muted, #8b949e) 25%, transparent); margin:18px 0 14px 0;">
             <p style="font-size:0.88rem; font-weight:600; color:var(--vx-text-secondary, #656d76); margin-bottom:14px; letter-spacing:0.03em;">

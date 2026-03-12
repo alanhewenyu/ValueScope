@@ -6,7 +6,7 @@
 
 # ValueScope
 
-**AI 驱动的交互式 DCF 股票估值工具 — 标准化模型、实时调参、可复现结果。A 股、港股免费使用，无需 API Key。**
+**AI 驱动的交互式 DCF 股票估值工具 — 标准化模型、实时调参、可复现结果。**
 
 [![在线使用](https://img.shields.io/badge/🌐_在线使用-valuescope.app-2563eb?style=for-the-badge)](https://valuescope.app)
 [![Demo](https://img.shields.io/badge/▶_观看演示-blue?style=for-the-badge)](#演示)
@@ -22,9 +22,9 @@ ValueScope 是一个基于**标准化 DCF 引擎**的 AI 股票估值工具 — 
 **ValueScope 相比直接用 AI 对话估值的优势：**
 
 - 🔧 **标准化 DCF 引擎** — 固定的估值框架（10 年 FCFF、WACC、终值），确保每次估值可复现、跨公司可比较。不用再猜 AI 这次用了什么方法。
-- 📊 **结构化数据管道** — 自动拉取历史财务数据，计算 TTM、WACC、历史参考区间。A 股和港股数据完全免费，人人可用。
+- 📊 **结构化数据管道** — 自动拉取历史财务数据，计算 TTM、WACC、历史参考区间。
 - 🖥️ **终端 + 本地网页双模式** — 两种本地运行方式：功能完整的**终端 CLI**（含 AI Copilot），或**本地网页可视化界面**，通过滑块调参、实时图表，在浏览器中打开 `http://localhost:8501` 即可使用。两者共享同一套估值引擎和数据管道。
-- 🌐 **在线网页版** — 不想安装？直接访问 [valuescope.app](https://valuescope.app) — 无需安装、无需 API Key，支持 A 股和港股。在线版内置 **Cloud AI**，使用 DeepSeek R1 深度推理 + Serper 联网搜索，无需本地配置即可体验 AI 驱动的估值分析。
+- 🌐 **在线网页版** — 不想安装？直接访问 [valuescope.app](https://valuescope.app) — 无需安装。在线版内置 **Cloud AI**，使用 DeepSeek R1 深度推理 + Serper 联网搜索，无需本地配置即可体验 AI 驱动的估值分析。
 
 你可以把它想象成一位坐在身边的股权研究分析师：AI 帮你搜索业绩指引、分析师一致预期和行业数据，然后给出估值参数建议 — 而底层模型始终是严谨、透明、由你掌控的。
 
@@ -41,8 +41,6 @@ ValueScope 是一个基于**标准化 DCF 引擎**的 AI 股票估值工具 — 
 - **敏感性分析** — 生成收入增长率 × EBIT 利润率、WACC 两组敏感性分析表，展示每股价值的可能范围。
 - **Excel 导出** — 将估值结果、历史数据、财务报表和 AI 差异分析导出为格式化的 Excel 工作簿。
 - **全球覆盖** — 支持 A 股、港股、美股、日股等全球市场，根据不同国家的无风险利率和股权风险溢价自动计算 WACC。
-- **A 股和港股免费使用** — A 股和港股使用免费数据源（akshare / yfinance），无需 API Key。配合自定义估值模式，可实现完全免费的估值计算。
-
 ---
 
 ## 工作流程
@@ -101,17 +99,15 @@ ValueScope 根据不同市场使用不同数据源，兼顾数据质量和使用
 
 | 市场 | 年度数据 | 季度数据 | API Key |
 |------|---------|---------|---------|
-| **A 股** | [akshare](https://github.com/akfamily/akshare) | akshare | **不需要**（免费） |
-| **港股** | [yfinance](https://github.com/ranaroussi/yfinance) | [FMP](https://financialmodelingprep.com/) | 年度：**免费**；季度：需要 FMP Key |
-| **美股** | [FMP](https://financialmodelingprep.com/)（stable API） | FMP | 需要 FMP Key |
-| **日股及其他** | [FMP](https://financialmodelingprep.com/)（legacy API） | FMP | 需要 FMP Key |
+| **A 股** | [akshare](https://github.com/akfamily/akshare) | akshare | 不需要（免费） |
+| **港股** | [yfinance](https://github.com/ranaroussi/yfinance) | [FMP](https://site.financialmodelingprep.com/register) | 年度：免费；季度：需 FMP Key |
+| **美股** | [FMP](https://site.financialmodelingprep.com/register)（stable API） | FMP | 需要 FMP Key |
+| **日股及其他** | [FMP](https://site.financialmodelingprep.com/register)（legacy API） | FMP | 需要 FMP Key |
 
 **为什么使用多个数据源？**
-- **akshare** — 免费，无需 API Key。A 股历史财务数据为原始报表数据，质量可靠，方便准确计算估值所需财务指标。
-- **yfinance** — 免费，无需 API Key。港股年度及 TTM 财务数据较全，质量可靠（但不提供季度和半年度数据）。
-- **FMP** — 付费，需要 API Key。美股和国际股票的主要数据源，提供财务报表、市场数据、公司信息和风险溢价等。此外，港股季度财务数据也由 FMP 提供。
-
-> **没有 FMP API Key？** 你仍然可以免费查询 A 股和港股年度数据。使用 `--manual` 模式（终端）或本地/在线网页版手动输入估值参数，即可获得完全免费的估值方案。
+- **akshare** — 免费，无需 API Key。A 股历史财务数据为原始报表数据，质量可靠。
+- **yfinance** — 免费，无需 API Key。港股年度及 TTM 财务数据较全，质量可靠（不提供季度数据）。
+- **[FMP（Financial Modeling Prep）](https://site.financialmodelingprep.com/register)** — 一家美国金融数据服务商，美股数据质量较高，定价合理。提供财务报表、市场数据、公司信息和风险溢价等全方位数据。通过上方链接注册可享受优惠价格，同时也是对 ValueScope 项目的一份支持。
 
 ---
 
@@ -185,11 +181,13 @@ cd ValueScope
 pip install -r requirements.txt
 ```
 
-### 3. 设置 FMP API Key（可选）
+### 3. 设置 FMP API Key
 
-FMP API 主要用于美股 DCF 估值，A 股和港股估值不需要 FMP API。
+美股、日股等国际市场数据需要 FMP API Key。A 股使用免费数据源，港股年度数据也是免费的。
 
-在 [Financial Modeling Prep](https://financialmodelingprep.com/) 注册账户并设置 API Key：
+[FMP（Financial Modeling Prep）](https://site.financialmodelingprep.com/register)是一家美国金融数据服务商，美股数据质量较高，定价合理。通过此链接注册可享受优惠价格，同时也是对 ValueScope 的支持。
+
+设置 API Key：
 
 ```bash
 export FMP_API_KEY='your_api_key_here'

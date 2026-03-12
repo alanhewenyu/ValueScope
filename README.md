@@ -6,7 +6,7 @@
 
 # ValueScope
 
-**AI-powered interactive DCF valuation for global stocks — standardized model, real-time parameter tuning, reproducible results. A-shares & HK stocks free, no API key needed.**
+**AI-powered interactive DCF valuation for global stocks — standardized model, real-time parameter tuning, reproducible results.**
 
 [![Try Online](https://img.shields.io/badge/🌐_Try_Online-valuescope.app-2563eb?style=for-the-badge)](https://valuescope.app)
 [![Demo](https://img.shields.io/badge/▶_Watch_Demo-blue?style=for-the-badge)](#demo)
@@ -22,9 +22,9 @@ ValueScope is an AI-powered stock valuation tool built on a **standardized DCF e
 **What sets ValueScope apart from raw AI chat?**
 
 - 🔧 **Standardized DCF Engine** — A fixed valuation framework (10-year FCFF, WACC, terminal value) ensures every valuation is reproducible and comparable across companies and time periods. No more guessing which method the AI used this time.
-- 📊 **Structured Data Pipeline** — Automatically fetches historical financials, calculates TTM metrics, WACC, and historical reference ranges. A-shares and HK stock data are free for everyone.
+- 📊 **Structured Data Pipeline** — Automatically fetches historical financials, calculates TTM metrics, WACC, and historical reference ranges.
 - 🖥️ **Terminal + Local Web GUI** — Two ways to run locally: a feature-rich **terminal CLI** with AI copilot, or a **local web dashboard** for visual, interactive parameter tuning with sliders and real-time charts — accessible at `http://localhost:8501` in your browser. Both share the same valuation engine and data pipeline.
-- 🌐 **Cloud Web App** — Don't want to install anything? Try it at [valuescope.app](https://valuescope.app) — no installation, no API key needed. Supports A-shares and HK stocks. The cloud version features **Cloud AI** powered by DeepSeek R1 with Serper web search, providing the same AI-driven valuation experience without any local setup.
+- 🌐 **Cloud Web App** — Don't want to install anything? Try it at [valuescope.app](https://valuescope.app) — no installation needed. The cloud version features **Cloud AI** powered by DeepSeek R1 with Serper web search, providing the same AI-driven valuation experience without any local setup.
 
 Think of it as having an equity research analyst sitting next to you: AI searches for earnings guidance, analyst consensus, and industry benchmarks, then suggests valuation parameters — but the underlying model is always rigorous, transparent, and under your control.
 
@@ -41,8 +41,6 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 - **Sensitivity Analysis** — Generates sensitivity tables for Revenue Growth vs EBIT Margin and WACC, showing the range of possible per-share valuations.
 - **Excel Export** — Exports valuation results, historical data, financial statements, and AI gap analysis to a formatted Excel workbook.
 - **Global Coverage** — Supports China A-shares, Hong Kong, US, Japan, and other global markets, with automatic WACC calculation based on country-specific risk-free rates and equity risk premiums.
-- **Free for A-shares & HK Stocks** — A-shares and HK stocks use free data sources (akshare / yfinance), no API key required. Combined with custom valuation mode, you get a fully free valuation workflow.
-
 ---
 
 ## How It Works
@@ -101,17 +99,15 @@ ValueScope uses different data sources depending on the market, optimizing for d
 
 | Market | Annual Data | Quarterly Data | API Key |
 |--------|------------|----------------|---------|
-| **China A-shares** | [akshare](https://github.com/akfamily/akshare) | akshare | **Not required** (free) |
-| **Hong Kong** | [yfinance](https://github.com/ranaroussi/yfinance) | [FMP](https://financialmodelingprep.com/) | Annual: **free**; Quarterly: FMP key required |
-| **US** | [FMP](https://financialmodelingprep.com/) (stable API) | FMP | FMP key required |
-| **Japan & Others** | [FMP](https://financialmodelingprep.com/) (legacy API) | FMP | FMP key required |
+| **China A-shares** | [akshare](https://github.com/akfamily/akshare) | akshare | Not required (free) |
+| **Hong Kong** | [yfinance](https://github.com/ranaroussi/yfinance) | [FMP](https://site.financialmodelingprep.com/register) | Annual: free; Quarterly: FMP key |
+| **US** | [FMP](https://site.financialmodelingprep.com/register) (stable API) | FMP | FMP key required |
+| **Japan & Others** | [FMP](https://site.financialmodelingprep.com/register) (legacy API) | FMP | FMP key required |
 
 **Why multiple data sources?**
-- **akshare** — Free, no API key needed. Provides original A-share financial statements with reliable data quality for accurate calculation of valuation metrics.
-- **yfinance** — Free, no API key needed. Provides comprehensive HK annual and TTM financial data with reliable quality (quarterly and semi-annual data not available).
-- **FMP** — Paid, API key required. Primary data source for US and international stocks, providing financial statements, market data, company profiles, and risk premiums. Also provides HK quarterly financial data.
-
-> **No FMP API key?** You can still query A-shares and HK annual data for free. Use `--manual` mode (terminal) or the local/cloud web app to input valuation parameters yourself — a fully free workflow.
+- **akshare** — Free, no API key needed. Provides original A-share financial statements with reliable data quality.
+- **yfinance** — Free, no API key needed. Provides comprehensive HK annual and TTM financial data (quarterly data not available).
+- **[FMP (Financial Modeling Prep)](https://site.financialmodelingprep.com/register)** — A US-based financial data provider with high-quality data, especially for US equities. Reasonably priced plans with reliable API coverage for financial statements, market data, company profiles, and risk premiums. Signing up through the link above helps support ValueScope's development.
 
 ---
 
@@ -185,11 +181,13 @@ Requires Python 3.8+.
 pip install -r requirements.txt
 ```
 
-### 3. Set Up FMP API Key (Optional)
+### 3. Set Up FMP API Key
 
-Primarily used for US stock DCF valuation. Not required for A-shares or HK stock valuation.
+Required for US, Japan, and other international stock data. A-shares use free data sources; HK annual data is also free.
 
-Register at [Financial Modeling Prep](https://financialmodelingprep.com/) and set your API key:
+[FMP (Financial Modeling Prep)](https://site.financialmodelingprep.com/register) is a US-based financial data provider known for high-quality US equity data and reasonable pricing. Signing up through this link also supports ValueScope's ongoing development.
+
+Set your API key:
 
 ```bash
 # macOS / Linux
