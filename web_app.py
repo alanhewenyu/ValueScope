@@ -515,22 +515,6 @@ section[data-testid="stSidebar"] div[data-testid="stTextInput"] input::placehold
     color: var(--vx-text-muted, #8b949e) !important; font-weight: 400 !important;
     font-size: 0.92rem !important;
 }
-/* Suggestion buttons — compact, muted style */
-section[data-testid="stSidebar"] button[key^="_sug_"],
-section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(button[key^="_sug_"]) button {
-    font-size: 0.78rem !important; padding: 4px 10px !important;
-    border: 1px solid var(--vx-border-light, #e8e8e8) !important;
-    border-radius: 6px !important; background: transparent !important;
-    color: var(--vx-text, #1f2328) !important; font-weight: 500 !important;
-    text-align: left !important; white-space: nowrap !important;
-    overflow: hidden !important; text-overflow: ellipsis !important;
-    margin-bottom: -6px !important;
-}
-section[data-testid="stSidebar"] div[data-testid="stElementContainer"]:has(button[key^="_sug_"]) button:hover {
-    background: color-mix(in srgb, var(--vx-accent) 8%, transparent) !important;
-    border-color: var(--vx-accent, #0969da) !important;
-}
-
 /* ── Expander text inputs — reset to normal rectangular style ── */
 section[data-testid="stSidebar"] details[data-testid="stExpander"] div[data-testid="stTextInput"] input {
     padding: 6px 10px !important; padding-left: 10px !important;
@@ -1447,15 +1431,91 @@ with st.sidebar:
         label_visibility="visible", key="ticker_input_main",
     )
 
-    # ── Autocomplete suggestions via FMP search ──
-    _fmp_search_key = st.session_state.get('_fmp_key_val', '') or os.environ.get("FMP_API_KEY", "") or _get_secret("FMP_API_KEY")
-    if ticker_input and _fmp_search_key and len(ticker_input) >= 1:
-        _suggestions = _search_ticker_fmp(ticker_input, _fmp_search_key)
-        if _suggestions:
-            for _disp, _sym in _suggestions[:5]:
-                if st.button(_disp, key=f"_sug_{_sym}", use_container_width=True):
-                    st.session_state['_selected_ticker'] = _sym
-                    st.rerun()
+    # ── Real-time autocomplete via client-side JS + FMP search ──
+    _fmp_search_key = (st.session_state.get('_fmp_key_val', '')
+                       or os.environ.get("FMP_API_KEY", "")
+                       or _get_secret("FMP_API_KEY"))
+    if _fmp_search_key:
+        _fmp_key_js = json.dumps(_fmp_search_key)  # safe JS string
+        _stc.html(
+            '<script>\n(function(){\n'
+            'var K=' + _fmp_key_js + ',D=280,M=8;\n'
+            r"""var P=window.parent.document;
+var sb=P.querySelector('section[data-testid="stSidebar"]');
+if(!sb) return;
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function tryInit(){
+  var inp=sb.querySelector('div[data-testid="stTextInput"] input');
+  if(!inp){setTimeout(tryInit,100);return;}
+  if(inp._acInit) return;
+  inp._acInit=true;
+  var dd=P.createElement('div');
+  dd.style.cssText='position:absolute;top:100%;left:0;right:0;background:var(--vx-bg,#fff);border:1px solid var(--vx-border-light,#e0e0e0);border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,0.10);z-index:999999;display:none;max-height:300px;overflow-y:auto;margin-top:4px;';
+  var wrap=inp.closest('div[data-testid="stTextInput"]');
+  if(wrap){wrap.style.position='relative';wrap.style.overflow='visible';wrap.appendChild(dd);}
+  var timer=null,ai=-1;
+  function doSearch(q){
+    if(!q||q.length<1){dd.style.display='none';return;}
+    fetch('https://financialmodelingprep.com/api/v3/search?query='+encodeURIComponent(q)+'&limit='+M+'&apikey='+K)
+    .then(function(r){return r.json();})
+    .then(function(data){
+      if(!data||!data.length||data.Error){dd.style.display='none';return;}
+      dd.innerHTML='';ai=-1;
+      data.forEach(function(it,i){
+        var o=P.createElement('div');
+        var s=it.symbol||'',n=it.name||'',x=it.exchangeShortName||'';
+        o.innerHTML='<strong style="color:var(--vx-text,#1f2328);">'+esc(s)+'</strong>'
+          +'<span style="color:var(--vx-text-muted,#666);margin-left:8px;font-size:0.82em;">'+esc(n)+'</span>'
+          +(x?'<span style="color:var(--vx-text-muted,#999);margin-left:4px;font-size:0.75em;">('+esc(x)+')</span>':'');
+        o.style.cssText='padding:9px 14px;cursor:pointer;font-size:0.88rem;border-bottom:1px solid var(--vx-border-light,#f0f0f0);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background 0.1s;';
+        o.dataset.sym=s;
+        o.addEventListener('mouseenter',function(){o.style.background='color-mix(in srgb,var(--vx-accent,#0969da) 6%,transparent)';ai=i;});
+        o.addEventListener('mouseleave',function(){o.style.background='';});
+        o.addEventListener('mousedown',function(e){e.preventDefault();pick(s);});
+        dd.appendChild(o);
+      });
+      if(dd.firstChild) dd.firstChild.style.borderRadius='12px 12px 0 0';
+      if(dd.lastChild){dd.lastChild.style.borderRadius='0 0 12px 12px';dd.lastChild.style.borderBottom='none';}
+      if(dd.childNodes.length===1) dd.firstChild.style.borderRadius='12px';
+      dd.style.display='block';
+    })
+    .catch(function(){dd.style.display='none';});
+  }
+  function pick(sym){
+    var setter=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;
+    setter.call(inp,sym);
+    inp.dispatchEvent(new Event('input',{bubbles:true}));
+    inp.dispatchEvent(new Event('change',{bubbles:true}));
+    dd.style.display='none';
+    setTimeout(function(){
+      inp.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));
+      inp.blur();
+    },80);
+  }
+  inp.addEventListener('input',function(e){
+    clearTimeout(timer);
+    var v=e.target.value;
+    if(!v||v.length<1){dd.style.display='none';return;}
+    timer=setTimeout(function(){doSearch(v);},D);
+  });
+  inp.addEventListener('keydown',function(e){
+    var items=dd.querySelectorAll('div[data-sym]');
+    if(!items.length||dd.style.display==='none') return;
+    if(e.key==='ArrowDown'){e.preventDefault();ai=Math.min(ai+1,items.length-1);items.forEach(function(it,i){it.style.background=i===ai?'color-mix(in srgb,var(--vx-accent,#0969da) 8%,transparent)':'';});items[ai].scrollIntoView({block:'nearest'});}
+    else if(e.key==='ArrowUp'){e.preventDefault();ai=Math.max(ai-1,0);items.forEach(function(it,i){it.style.background=i===ai?'color-mix(in srgb,var(--vx-accent,#0969da) 8%,transparent)':'';});items[ai].scrollIntoView({block:'nearest'});}
+    else if(e.key==='Enter'&&ai>=0){e.preventDefault();e.stopPropagation();pick(items[ai].dataset.sym);}
+    else if(e.key==='Enter'){dd.style.display='none';}
+    else if(e.key==='Escape'){dd.style.display='none';}
+  });
+  P.addEventListener('click',function(e){
+    if(!inp.contains(e.target)&&!dd.contains(e.target)) dd.style.display='none';
+  });
+}
+tryInit();
+})();
+</script>""",
+            height=0,
+        )
 
     # ── Action buttons ──
     _any_ai = _has_ai or _cloud_ai_available()
