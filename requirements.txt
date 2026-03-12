@@ -7,5 +7,6 @@ akshare
 yfinance
 markdown
 streamlit>=1.42.0
+streamlit-searchbox>=0.1.24
 plotly
 altair>=5
