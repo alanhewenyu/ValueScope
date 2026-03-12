@@ -9,7 +9,6 @@
 **AI 驱动的交互式 DCF 股票估值工具 — 标准化模型、实时调参、可复现结果。**
 
 [![在线使用](https://img.shields.io/badge/🌐_在线使用-valuescope.app-2563eb?style=for-the-badge)](https://valuescope.app)
-[![Demo](https://img.shields.io/badge/▶_观看演示-blue?style=for-the-badge)](#演示)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
 
@@ -17,267 +16,93 @@
 
 ## ValueScope 是什么？
 
-ValueScope 是一个基于**标准化 DCF 引擎**的 AI 股票估值工具 — 10 年显性预测期、终值、WACC、敏感性分析，框架固定、结果可复现。与直接让大模型"估个值"不同（每次对话可能用不同的方法、不同的折现框架、甚至不同的估值模型），ValueScope 产出**一致、可比较的估值结果**，为投资决策提供可靠依据。
-
-**ValueScope 相比直接用 AI 对话估值的优势：**
-
-- 🔧 **标准化 DCF 引擎** — 固定的估值框架（10 年 FCFF、WACC、终值），确保每次估值可复现、跨公司可比较。不用再猜 AI 这次用了什么方法。
-- 📊 **结构化数据管道** — 自动拉取历史财务数据，计算 TTM、WACC、历史参考区间。
-- 🖥️ **终端 + 本地网页双模式** — 两种本地运行方式：功能完整的**终端 CLI**（含 AI Copilot），或**本地网页可视化界面**，通过滑块调参、实时图表，在浏览器中打开 `http://localhost:8501` 即可使用。两者共享同一套估值引擎和数据管道。
-- 🌐 **在线网页版** — 不想安装？直接访问 [valuescope.app](https://valuescope.app) — 无需安装。在线版内置 **Cloud AI**，使用 DeepSeek R1 深度推理 + Serper 联网搜索，无需本地配置即可体验 AI 驱动的估值分析。
+ValueScope 是一个基于**标准化 DCF 引擎**的 AI 股票估值工具 — 10 年 FCFF 显性预测期、终值、WACC、敏感性分析，框架固定、结果可复现。与直接让大模型"估个值"不同（每次对话可能用不同的方法和折现框架），ValueScope 产出**一致、可比较的估值结果**，为投资决策提供可靠依据。
 
 你可以把它想象成一位坐在身边的股权研究分析师：AI 帮你搜索业绩指引、分析师一致预期和行业数据，然后给出估值参数建议 — 而底层模型始终是严谨、透明、由你掌控的。
 
----
-
-## 核心功能
-
-- **多引擎 AI Copilot** — 支持三种本地 AI 引擎：[Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Gemini CLI](https://github.com/google-gemini/gemini-cli)、[Qwen Code](https://github.com/QwenLM/qwen-code)。启动时自动检测已安装的引擎（优先级：Claude > Gemini > Qwen），也可通过 `--engine` 指定。AI 分析公司基本面，搜索分析师预期和业绩指引，为每个 DCF 参数给出建议值和详细分析。你逐项审核，按 Enter 接受或输入新值覆盖。
-- **Cloud AI（在线版）** — 在线网页版 [valuescope.app](https://valuescope.app) 内置 Cloud AI，使用 **DeepSeek R1** 深度推理模型 + **Serper** 联网搜索与网页抓取。无需本地安装任何 AI 工具，自动搜索业绩指引、分析师预期和行业数据，为估值参数给出建议。
-- **自定义估值模式** — 想完全自己掌控？在网页版点击「📝 自定义估值」，或在终端使用 `--manual` 手动输入所有参数。无需 AI 引擎或 API Key。
-- **全自动模式** — 使用 `--auto` 实现全自动终端流程：AI 分析、自动采纳参数、自动导出 Excel，无需任何交互。
-- **估值判定与摘要卡片** — 估值完成后，醒目的判定横幅（买入/持有/卖出）一目了然显示内在价值 vs 市场价格和安全边际，配合 4 张核心假设摘要卡片。
-- **估值差异分析** — 估值完成后，AI 对比 DCF 结果与当前股价，搜索分析师目标价，分析差异原因并给出修正后估值。
-- **敏感性分析** — 生成收入增长率 × EBIT 利润率、WACC 两组敏感性分析表，展示每股价值的可能范围。
-- **Excel 导出** — 将估值结果、历史数据、财务报表和 AI 差异分析导出为格式化的 Excel 工作簿。
-- **全球覆盖** — 支持 A 股、港股、美股、日股等全球市场，根据不同国家的无风险利率和股权风险溢价自动计算 WACC。
----
-
-## 工作流程
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│  输入股票代码  →  抓取年度历史财务数据                           │
-│                    ↓                                         │
-│  展示历史数据摘要（含 TTM 数据）                                │
-│                    ↓                                         │
-│  [可选] 查看季度数据作为参考                                    │
-│                    ↓                                         │
-│  AI Copilot：搜索市场数据 → 建议参数 → 你来审核                 │
-│                    ↓                                         │
-│  计算 DCF → 每股内在价值                                       │
-│                    ↓                                         │
-│  敏感性分析（收入增长 × EBIT 利润率，WACC）                     │
-│                    ↓                                         │
-│  [可选] AI 估值差异分析：DCF 估值 vs 当前股价                   │
-│                    ↓                                         │
-│  [可选] 导出 Excel                                            │
-└──────────────────────────────────────────────────────────────┘
-```
+**支持市场：** 🇺🇸 美股 &nbsp; 🇭🇰 港股 &nbsp; 🇨🇳 A 股 &nbsp; 🇯🇵 日股
 
 ---
 
 ## 演示
 
-> 以贵州茅台（600519.SS）为例 — 从数据到内在价值，几分钟完成。
+### 在线网页版 — 首页
+
+![在线网页版](assets/web-landing.png)
+
+### 在线网页版 — 估值判定 + 滑块调参
+
+![在线网页版估值](assets/web-valuation.png)
 
 ### 终端 CLI
-
-**历史财务数据**
 
 ![历史数据](assets/demo-1-historical.png)
-
-**AI Copilot — 参数建议**
-
 ![AI 分析](assets/demo-2-ai-params.png)
-
-**DCF 估值结果 & 敏感性分析**
-
 ![DCF 结果](assets/demo-3-dcf-result.png)
 
-### 在线网页版
+---
 
-**估值判定 + 滑块调参 + 实时估值**
+## 核心功能
 
-![在线网页版](assets/web-valuation.png)
+- **AI Copilot** — AI 联网搜索分析师预期、业绩指引和行业数据，为每个 DCF 参数给出建议值和详细分析。你逐项审核调整。
+- **在线网页版** — 访问 [valuescope.app](https://valuescope.app)，内置 Cloud AI（DeepSeek R1 + Serper 联网搜索），无需安装。
+- **终端 CLI** — 支持三种本地 AI 引擎：[Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Gemini CLI](https://github.com/google-gemini/gemini-cli)、[Qwen Code](https://github.com/QwenLM/qwen-code)。启动时自动检测，也可通过 `--engine` 指定。
+- **自定义估值** — 通过滑块（网页版）或 `--manual`（终端）完全手动调参。无需 AI 引擎或 API Key。
+- **估值判定与差异分析** — 买入/持有/卖出判定及安全边际。AI 对比 DCF 估值与市场价格和分析师目标价。
+- **敏感性分析 & Excel 导出** — 收入增长率 × EBIT 利润率、WACC 敏感性分析表。一键导出格式化 `.xlsx` 工作簿。
 
 ---
 
-## 数据源
+## 数据源 & FMP API Key
 
-ValueScope 根据不同市场使用不同数据源，兼顾数据质量和使用成本：
+| 市场 | 数据源 | API Key |
+|------|-------|---------|
+| **A 股** | [akshare](https://github.com/akfamily/akshare) | 不需要（免费） |
+| **港股** | [yfinance](https://github.com/ranaroussi/yfinance)（年度）/ [FMP](https://site.financialmodelingprep.com/register)（季度） | 年度：免费；季度：需 FMP Key |
+| **美股** | [FMP](https://site.financialmodelingprep.com/register) | 需要 FMP Key |
+| **日股** | [FMP](https://site.financialmodelingprep.com/register) | 需要 FMP Key |
 
-| 市场 | 年度数据 | 季度数据 | API Key |
-|------|---------|---------|---------|
-| **A 股** | [akshare](https://github.com/akfamily/akshare) | akshare | 不需要（免费） |
-| **港股** | [yfinance](https://github.com/ranaroussi/yfinance) | [FMP](https://site.financialmodelingprep.com/register) | 年度：免费；季度：需 FMP Key |
-| **美股** | [FMP](https://site.financialmodelingprep.com/register)（stable API） | FMP | 需要 FMP Key |
-| **日股及其他** | [FMP](https://site.financialmodelingprep.com/register)（legacy API） | FMP | 需要 FMP Key |
-
-**为什么使用多个数据源？**
-- **akshare** — 免费，无需 API Key。A 股历史财务数据为原始报表数据，质量可靠。
-- **yfinance** — 免费，无需 API Key。港股年度及 TTM 财务数据较全，质量可靠（不提供季度数据）。
-- **[FMP（Financial Modeling Prep）](https://site.financialmodelingprep.com/register)** — 一家美国金融数据服务商，美股数据质量较高，定价合理。提供财务报表、市场数据、公司信息和风险溢价等全方位数据。通过上方链接注册可享受优惠价格，同时也是对 ValueScope 项目的一份支持。
-
----
-
-## AI 引擎
-
-### Cloud AI（在线网页版）
-
-在线网页版 [valuescope.app](https://valuescope.app) 内置 Cloud AI，无需安装：
-
-| 组件 | 说明 |
-|------|------|
-| **推理模型** | [DeepSeek R1](https://www.deepseek.com/) — 深度思维链推理，用于财务分析 |
-| **联网搜索** | [Serper](https://serper.dev/) — Google 搜索 API，获取业绩指引、分析师预期和行业数据 |
-| **网页抓取** | [Serper Scrape](https://serper.dev/) — 自动提取搜索结果页面的全文内容 |
-
-Cloud AI 自动执行 6 组定向搜索（业绩指引、分析师预期、EBIT 利润率、WACC、季度业绩、竞争格局），抓取搜索结果全文后，交由 DeepSeek R1 进行深度推理分析。
-
-### 本地 AI 引擎（终端 CLI 和本地网页版）
-
-本地使用时，ValueScope 支持三种 AI CLI 工具。启动时自动检测已安装的引擎（优先级：Claude > Gemini > Qwen），也可通过 `--engine` 强制指定。
-
-| 引擎 | CLI 工具 | 安装方式 | 说明 |
-|------|---------|---------|------|
-| **Claude** | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `npm install -g @anthropic-ai/claude-code` | 默认优先。需要 Anthropic 账号。 |
-| **Gemini** | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `npm install -g @google/gemini-cli` | Google 账号登录即可免费使用。 |
-| **Qwen** | [Qwen Code](https://github.com/QwenLM/qwen-code) | `npm install -g @anthropic-ai/qwen-code` | qwen.ai 账号登录即可免费使用。 |
-
-如果未检测到任何 AI 引擎，ValueScope 会自动切换到自定义估值模式（手动输入）。
-
----
-
-## 运行模式
-
-### 终端 CLI
-
-| 模式 | 命令 | 需要 AI | 说明 |
-|------|------|---------|------|
-| **Copilot**（默认） | `python main.py` | 是 | AI 逐项给出参数建议和分析，你来审核和调整。 |
-| **自定义** | `python main.py --manual` | 否 | 自行输入所有估值参数。无需 AI 引擎或 API Key 即可使用。 |
-| **全自动** | `python main.py --auto` | 是 | 全自动流程：AI 分析 → 自动采纳参数 → 自动导出 Excel。无需任何交互。 |
-
-额外参数：
-- `--engine claude|gemini|qwen` — 强制使用指定 AI 引擎，跳过自动检测。
-- `--apikey YOUR_KEY` — 直接传入 FMP API Key（替代 `FMP_API_KEY` 环境变量）。
-
-### 网页版
-
-网页版（本地和在线）提供两种估值模式：
-
-| 模式 | 按钮 | 需要 AI | 说明 |
-|------|------|---------|------|
-| **AI 一键估值** | 🤖 AI 一键估值 | 是 | AI 联网搜索、分析公司，一键生成所有 DCF 参数建议。 |
-| **自定义估值** | 📝 自定义估值 | 否 | 通过滑块和输入框手动调参，实时图表动态更新。 |
+> 💡 **[获取 FMP API Key →](https://site.financialmodelingprep.com/register)**
+>
+> FMP（Financial Modeling Prep）提供美股、港股、日股等高质量金融数据。**通过此链接购买可享折扣价**，同时也是对 ValueScope 项目的支持。
 
 ---
 
 ## 安装与使用
 
-### 1. 下载项目
-
 ```bash
+# 1. 下载并安装依赖
 git clone https://github.com/alanhewenyu/ValueScope.git
 cd ValueScope
-```
-
-### 2. 安装依赖
-
-需要 Python 3.8+。
-
-```bash
 pip install -r requirements.txt
+
+# 2. 设置 FMP API Key（美股/日股需要）
+export FMP_API_KEY='your_key_here'
+
+# 3.（可选）安装本地 AI 引擎
+npm install -g @anthropic-ai/claude-code    # 或 @google/gemini-cli 或 @anthropic-ai/qwen-code
+
+# 4. 运行
+python main.py                    # 终端 CLI（AI copilot 模式）
+python main.py --manual           # 终端 CLI（手动输入模式）
+python main.py --auto             # 终端 CLI（全自动模式）
+streamlit run web_app.py          # 本地网页版
 ```
 
-### 3. 设置 FMP API Key
-
-美股、日股等国际市场数据需要 FMP API Key。A 股使用免费数据源，港股年度数据也是免费的。
-
-[FMP（Financial Modeling Prep）](https://site.financialmodelingprep.com/register)是一家美国金融数据服务商，美股数据质量较高，定价合理。通过此链接注册可享受优惠价格，同时也是对 ValueScope 的支持。
-
-设置 API Key：
-
-```bash
-export FMP_API_KEY='your_api_key_here'
-```
-
-### 4. 安装 AI 引擎（可选 — 仅本地使用）
-
-> **使用在线版？** 跳过此步骤 — Cloud AI（DeepSeek R1）已内置于 [valuescope.app](https://valuescope.app)。
-
-本地使用时，安装任一支持的 AI CLI 工具：
-
-```bash
-# 方式一：Claude Code（推荐）
-npm install -g @anthropic-ai/claude-code
-
-# 方式二：Gemini CLI（Google 账号免费使用）
-npm install -g @google/gemini-cli
-
-# 方式三：Qwen Code（qwen.ai 账号免费使用）
-npm install -g @anthropic-ai/qwen-code
-```
-
-如果没有安装任何 AI 引擎，ValueScope 会自动切换到自定义估值模式。
-
-### 5. 运行
-
-确保当前在 ValueScope 项目目录下：
-
-```bash
-cd ValueScope
-```
-
-**终端 CLI** — 功能完整，支持 AI Copilot：
-
-```bash
-python main.py                      # AI copilot 模式（默认）
-python main.py --manual             # 手动输入模式
-python main.py --auto               # 全自动模式
-python main.py --engine gemini      # 强制使用 Gemini 引擎
-```
-
-**本地网页版** — 可视化交互界面：
-
-```bash
-streamlit run web_app.py
-```
-
-运行后自动在浏览器中打开 `http://localhost:8501`。支持滑块调参、实时图表、敏感性分析等可视化交互。如果本地已安装 AI 引擎，网页版同样支持 AI Copilot。
+> **不想安装？** 直接访问 [valuescope.app](https://valuescope.app) — Cloud AI（DeepSeek R1）已内置。
 
 ---
 
-## 使用步骤
-
-1. **输入股票代码** — 如 `AAPL`、`0700.HK`（腾讯）、`600519.SS`（茅台）、`7203.T`（丰田）
-2. **查看年度历史数据** — 程序抓取并展示年度财务数据摘要（含 TTM 数据）
-3. **查看季度数据**（可选） — 在开始估值前，可选择查看季度财务数据作为参考
-4. **选择估值模式** — 点击「🤖 AI 一键估值」进行 AI 驱动分析，或点击「📝 自定义估值」手动输入参数。终端模式下，AI 逐项给出建议值和分析，按 Enter 接受或输入新值。
-5. **查看 DCF 结果** — 每股内在价值、估值判定横幅（买入/持有/卖出）及完整计算过程
-6. **敏感性分析** — 收入增长率 × EBIT 利润率、WACC 两组敏感性表
-7. **估值差异分析**（可选） — AI 分析 DCF 估值与市场价差异原因
-8. **导出 Excel**（可选） — 保存为格式化的 `.xlsx` 文件
-
-### 输入格式说明
-
-百分比参数（收入增长率、EBIT 利润率、税率、WACC）直接输入数字：输入 `10` 表示 10%，不需要输入 `10%`。
-
----
-
-## 关键估值参数说明
+## 关键估值参数
 
 | 参数 | 说明 |
 |------|------|
-| **收入增长率（Year 1）** | 未来一年的收入预测。AI 优先参考公司业绩指引，其次参考分析师一致预期。 |
-| **收入增长率（Years 2-5）** | 未来 2-5 年的复合年增长率（CAGR）。 |
+| **收入增长率（Year 1）** | 未来一年收入预测。AI 优先参考公司业绩指引，其次参考分析师预期。 |
+| **收入增长率（Years 2-5）** | 未来 2-5 年复合年增长率（CAGR）。 |
 | **目标 EBIT 利润率** | 公司达到成熟稳定期的 EBIT 利润率。 |
-| **收敛年数** | 从当前 EBIT 利润率达到目标利润率所需的年数。 |
-| **收入/投资资本比率** | 不同阶段的资本效率比率（Year 1-2、3-5、5-10）。AI 会对照历史再投资数据进行合理性校验。 |
-| **税率** | 基于历史数据自动计算，可手动调整。 |
+| **收入/投资资本比率** | 不同阶段的资本效率比率。 |
 | **WACC** | 基于无风险利率、股权风险溢价和 Beta 自动计算，可手动调整。 |
-| **RONIC** | 终值期新投资资本回报率。默认等于 WACC（竞争均衡），对有持续竞争优势的公司可设为 WACC + 5%。 |
-
-> **关于 EBIT**：A 股的 EBIT 基于 akshare 原始数据计算，已剔除投资收益、公允价值变动等非经营性项目。港股直接使用营业利润（Operating Income），部分公司可能包含未剔除的大额非经营性项目，请注意甄别。
-
----
-
-## DCF 估值对价值投资的意义
-
-价格是你支付的，价值是你得到的。DCF 估值通过折现未来自由现金流来估算公司的内在价值，是价值投资的基石。
-
-本工具聚焦三个核心驱动因素：**收入增长**、**经营效率（EBIT 利润率）** 和 **再投资**。正如巴菲特所说，*"模糊的正确胜过精确的错误。"* 通过敏感性分析，即使假设不完美，也能找到投资的安全垫。
+| **RONIC** | 终值期新投资资本回报率。默认等于 WACC。 |
 
 ---
 
