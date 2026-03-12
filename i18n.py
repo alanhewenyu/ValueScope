@@ -42,16 +42,15 @@ _STRINGS = {
         'sidebar_fmp_label': 'FMP API Key',
         'sidebar_fmp_placeholder': 'Enter your FMP key',
         'sidebar_fmp_hint': (
-            'Required for US & JP stocks. '
-            '[Get free API key](https://site.financialmodelingprep.com/register)\n\n'
-            'HK & A-shares do not need an API key.'
+            'US & JP stocks require an FMP key; HK & A-shares do not.\n\n'
+            '[Buy via this link for a discount →](https://site.financialmodelingprep.com/register)'
         ),
         'sidebar_sponsor': '☕ Support the Author',
         'sponsor_guide': 'If ValueScope is helpful, scan to support via WeChat Pay ❤️',
-        'sidebar_fmp_expander': '📊 Financial Data API',
+        'sidebar_fmp_expander': 'Financial Data API (US Stocks)',
         'sidebar_engine_not_installed': '**{engine}** is not installed.',
         # ── User Cloud AI API keys ──
-        'sidebar_cloud_ai_expander': '🤖 AI Engine API (optional)',
+        'sidebar_cloud_ai_expander': 'AI Engine API (optional)',
         'sidebar_serper_label': 'Serper API Key',
         'sidebar_serper_placeholder': 'Enter your Serper key',
         'sidebar_deepseek_label': 'DeepSeek API Key',
@@ -390,16 +389,15 @@ _STRINGS = {
         'sidebar_fmp_label': 'FMP API 密钥',
         'sidebar_fmp_placeholder': '输入 FMP 密钥',
         'sidebar_fmp_hint': (
-            '美股和日股必填。'
-            '[免费注册获取](https://site.financialmodelingprep.com/register)\n\n'
-            '港股和 A 股无需 API 密钥。'
+            '美股和日股需要 FMP 密钥；港股和 A 股无需。\n\n'
+            '[通过此链接购买可享折扣 →](https://site.financialmodelingprep.com/register)'
         ),
         'sidebar_sponsor': '☕ 赞赏支持',
         'sponsor_guide': '如果 ValueScope 对你有帮助，欢迎微信扫码赞赏 ❤️',
-        'sidebar_fmp_expander': '📊 金融数据 API',
+        'sidebar_fmp_expander': '金融数据 API（美股）',
         'sidebar_engine_not_installed': '**{engine}** \u672a\u5b89\u88c5\u3002',
         # ── User Cloud AI API keys ──
-        'sidebar_cloud_ai_expander': '🤖 AI 引擎 API（可选）',
+        'sidebar_cloud_ai_expander': 'AI 引擎 API（可选）',
         'sidebar_serper_label': 'Serper API 密钥',
         'sidebar_serper_placeholder': '输入你的 Serper 密钥',
         'sidebar_deepseek_label': 'DeepSeek API 密钥',

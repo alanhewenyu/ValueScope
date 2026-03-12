@@ -467,10 +467,19 @@ section[data-testid="stSidebar"] div[data-testid="stTextInput"] div:focus-within
 /* Our own clean blue input style */
 section[data-testid="stSidebar"] div[data-testid="stTextInput"] input {
     border: 2px solid var(--vx-accent, #0969da) !important; border-radius: 8px !important;
-    font-size: 1.05rem !important; font-weight: 600 !important; padding: 8px 12px !important;
+    font-size: 1.05rem !important; font-weight: 600 !important; padding: 8px 12px 8px 36px !important;
     background: var(--vx-input-bg, #fff) !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: 10px center !important;
+    background-size: 16px 16px !important;
     color: var(--vx-text, #1f2328) !important;
     transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+/* Expander inputs: reset search icon and restore normal padding */
+section[data-testid="stSidebar"] details[data-testid="stExpander"] div[data-testid="stTextInput"] input {
+    padding-left: 10px !important;
+    background-image: none !important;
 }
 section[data-testid="stSidebar"] div[data-testid="stTextInput"] input:focus {
     border-color: var(--vx-accent, #0969da) !important;
