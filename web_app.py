@@ -1452,6 +1452,7 @@ with st.sidebar:
             default_use_searchterm=True,
             clear_on_submit=False,
             edit_after_submit="current",
+            rerun_on_update=False,
             debounce=200,
         )
         ticker_input = ticker_input or ''
