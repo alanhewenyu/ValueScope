@@ -1453,7 +1453,7 @@ function tryInit(){
   dd.style.cssText='position:absolute;top:100%;left:0;right:0;background:#ffffff;border:1px solid #e0e0e0;border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,0.12);z-index:999999;display:none;max-height:300px;overflow-y:auto;margin-top:4px;';
   var wrap=inp.closest('div[data-testid="stTextInput"]');
   if(wrap){wrap.style.position='relative';wrap.style.overflow='visible';wrap.appendChild(dd);}
-  var timer=null,ai=-1;
+  var timer=null,ai=-1,picking=false;
   function doSearch(q){
     if(!q||q.length<1){dd.style.display='none';return;}
     fetch('https://financialmodelingprep.com/api/v3/search?query='+encodeURIComponent(q)+'&limit='+M+'&apikey='+K)
@@ -1482,17 +1482,20 @@ function tryInit(){
     .catch(function(){dd.style.display='none';});
   }
   function pick(sym){
+    picking=true;clearTimeout(timer);
     var setter=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;
     setter.call(inp,sym);
     inp.dispatchEvent(new Event('input',{bubbles:true}));
     inp.dispatchEvent(new Event('change',{bubbles:true}));
-    dd.style.display='none';
+    dd.style.display='none';dd.innerHTML='';
     setTimeout(function(){
       inp.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));
       inp.blur();
     },80);
+    setTimeout(function(){picking=false;},400);
   }
   inp.addEventListener('input',function(e){
+    if(picking) return;
     clearTimeout(timer);
     var v=e.target.value;
     if(!v||v.length<1){dd.style.display='none';return;}
