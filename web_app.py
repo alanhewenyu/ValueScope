@@ -97,7 +97,7 @@ import time
 # ────────────────────────────────────────────────────────────────
 # Page config & global CSS
 # ────────────────────────────────────────────────────────────────
-st.set_page_config(page_title="ValueScope", page_icon="📊", layout="wide",
+st.set_page_config(page_title="ValueScope", page_icon="🎯", layout="wide",
                    initial_sidebar_state="expanded")
 
 # ── AI availability flags ──
@@ -3497,12 +3497,14 @@ if 'summary_df' not in st.session_state:
                 st.stop()  # Let the error from _fetch_data stay visible
     else:
         st.markdown(f"""
-        <div class="vx-welcome" style="text-align:center; padding:20px 20px 24px 20px; max-width:720px; margin:0 auto;">
-            <p style="font-size:3rem; margin-bottom:8px; line-height:1;">📊</p>
-            <p style="font-size:1.5rem; font-weight:700; margin-bottom:6px; color:var(--vx-text, #1f2328);
+        <div class="vx-welcome" style="text-align:center; padding:28px 20px 24px 20px; max-width:720px; margin:0 auto;">
+            <p style="font-size:2.4rem; font-weight:800; margin-bottom:10px; line-height:1.1; letter-spacing:-0.02em;
                        background:linear-gradient(135deg, #00d2ff 0%, #7b2ff7 100%);
                        -webkit-background-clip:text; -webkit-text-fill-color:transparent;">
                 ValueScope
+            </p>
+            <p style="font-size:0.95rem; color:var(--vx-text-muted, #8b949e); margin-bottom:14px; letter-spacing:0.04em;">
+                {t('footer_tagline_web').replace('<b>ValueScope</b> — ', '')}
             </p>
             <p style="font-size:1.05rem; color:var(--vx-text-secondary, #656d76); line-height:1.6; margin-bottom:14px;">
                 {t('welcome_instruction_web') if not (_has_ai or _has_cloud_ai) else t('welcome_instruction')}
@@ -3551,7 +3553,7 @@ if 'summary_df' not in st.session_state:
                 <div style="flex:1; min-width:170px; max-width:210px; padding:14px 14px; border-radius:12px; text-align:center;
                             background:color-mix(in srgb, var(--vx-accent, #0969da) 4%, transparent);
                             border:1px solid color-mix(in srgb, var(--vx-accent, #0969da) 12%, transparent);">
-                    <p style="font-size:1.6rem; margin-bottom:8px; line-height:1;">🎯</p>
+                    <p style="font-size:1.6rem; margin-bottom:8px; line-height:1;">🏷️</p>
                     <p style="font-size:0.9rem; font-weight:600; color:var(--vx-text, #1f2328); margin-bottom:8px;">
                         {t('mission_pillar3_title')}</p>
                     <p style="font-size:0.8rem; color:var(--vx-text-secondary, #656d76); line-height:1.6;">
