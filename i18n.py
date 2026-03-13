@@ -120,7 +120,7 @@ _STRINGS = {
         # ── AI quota ──
         'ai_quota_remaining': '\U0001f916 Free AI quota: {n}/{limit} remaining today',
         'ai_quota_exceeded': 'Today\'s free AI quota is used up ({limit}/day). You can configure your own AI Engine API keys in the sidebar for unlimited access.',
-        'ai_quota_exceeded_contact': '[Contact admin]({email}) for more quota, or run ValueScope locally for unlimited access.',
+        'ai_quota_exceeded_contact': '[Contact admin]({email}) for more quota, or switch to Custom Valuation for unlimited use.',
         'invite_code_label': 'Enter invite code',
         'invite_code_placeholder': 'Enter invite code, e.g. VIP-abc123',
         'invite_code_success': '🎉 Code redeemed! +{n} AI analyses added.',
@@ -467,7 +467,7 @@ _STRINGS = {
         # ── AI quota ──
         'ai_quota_remaining': '\U0001f916 \u514d\u8d39AI\u989d\u5ea6\uff1a\u4eca\u65e5\u5269\u4f59 {n}/{limit} \u6b21',
         'ai_quota_exceeded': '今日免费AI额度已用完（{limit}次/天）。可在侧边栏配置自己的 AI 引擎 API 密钥，即可无限使用。',
-        'ai_quota_exceeded_contact': '[联系管理员]({email})获取更多额度，或本地运行 ValueScope 可无限使用。',
+        'ai_quota_exceeded_contact': '[联系管理员]({email})获取更多额度，或切换至自定义估值模式，无限次使用。',
         'invite_code_label': '\u8f93\u5165\u9080\u8bf7\u7801',
         'invite_code_placeholder': '\u8f93\u5165\u9080\u8bf7\u7801\uff0c\u4f8b\u5982 VIP-abc123',
         'invite_code_success': '\U0001f389 \u5151\u6362\u6210\u529f\uff01\u5df2\u589e\u52a0 {n} \u6b21 AI \u5206\u6790\u989d\u5ea6\u3002',
