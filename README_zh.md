@@ -192,4 +192,8 @@ streamlit run web_app.py          # 本地网页版（打开 http://localhost:85
 
 ## 许可证
 
-MIT License。详见 [LICENSE](LICENSE)。
+本项目采用 [GNU Affero 通用公共许可证 v3.0 (AGPL-3.0)](LICENSE) 授权。
+
+你可以自由使用、修改和分发本软件，但任何修改版本——包括作为网络服务（SaaS）提供——都必须同样以 AGPL-3.0 开源。
+
+© 2025-2026 Alan He

@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Alan He. Licensed under MIT.
+# Copyright (c) 2025-2026 Alan He. Licensed under AGPL-3.0. See LICENSE.
 """ValueScope i18n — lightweight Chinese/English UI translations."""
 
 import streamlit as st

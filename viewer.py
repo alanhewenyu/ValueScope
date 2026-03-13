@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2025 Alan He. Licensed under MIT.
+# Copyright (c) 2025-2026 Alan He. Licensed under AGPL-3.0. See LICENSE.
 """ValueScope Valuation History Viewer.
 
 Usage:

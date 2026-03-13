@@ -192,4 +192,8 @@ For more on company valuation, visit [jianshan.co](https://jianshan.co) or scan 
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+This project is licensed under the [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).
+
+This means you are free to use, modify, and distribute this software, but any modified version — including use as a network service (SaaS) — must also be open-sourced under AGPL-3.0.
+
+© 2025-2026 Alan He
