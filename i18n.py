@@ -39,11 +39,11 @@ _STRINGS = {
                                'you just set the assumptions yourself.'),
         'sidebar_language': 'Language',
         'sidebar_language_help': 'Interface & AI output language. EN = English, CN = \u4e2d\u6587.',
-        'sidebar_fmp_label': 'FMP API Key',
+        'sidebar_fmp_label': 'FMP (Financial Modeling Prep) API Key',
         'sidebar_fmp_placeholder': 'Enter your FMP key',
         'sidebar_fmp_hint': (
             'US & JP stocks require an FMP key; HK & A-shares do not.\n\n'
-            '[Buy via this link for a discount →](https://site.financialmodelingprep.com/pricing-plans?couponCode=valuescope)'
+            '[Buy FMP API Key at a discount →](https://site.financialmodelingprep.com/pricing-plans?couponCode=valuescope)'
         ),
         'sidebar_sponsor': '☕ Support the Author',
         'sponsor_guide': 'If ValueScope is helpful, scan to support via WeChat Pay ❤️',
@@ -300,13 +300,12 @@ _STRINGS = {
 
         # ── Error / warning messages ──
         'err_no_fmp_key': (
-            '🔑 **FMP API Key Required**\n\n'
+            '🔑 **FMP (Financial Modeling Prep) API Key Required**\n\n'
             'US & JP stocks require an FMP key; HK & A-shares do not.\n\n'
             '1. Copy your API key from [Financial Modeling Prep](https://financialmodelingprep.com/developer/docs)\n'
             '2. Paste it in the **FMP API Key** field in the sidebar\n\n'
-            '💡 You can buy an FMP API key via the link below — '
-            'you get a discounted price, and it helps support ValueScope development.\n\n'
-            '[Purchase FMP API Key →](https://site.financialmodelingprep.com/pricing-plans?couponCode=valuescope)'
+            '💡 Buy via the link below for a discounted price — it also supports ValueScope development.\n\n'
+            '[Buy FMP API Key at a discount →](https://site.financialmodelingprep.com/pricing-plans?couponCode=valuescope)'
         ),
         'err_fetch_failed': 'Failed to fetch financial data. Please check your FMP API key and ticker symbol.',
         'err_fetch_failed_hk': 'Failed to fetch HK stock data. yfinance may be rate-limited — please wait a moment and try again.',
@@ -387,11 +386,11 @@ _STRINGS = {
                                '\u53ea\u662f\u9700\u8981\u60a8\u81ea\u5df1\u8bbe\u5b9a\u5047\u8bbe\u53c2\u6570\u3002'),
         'sidebar_language': '\u8bed\u8a00',
         'sidebar_language_help': '\u754c\u9762\u548c AI \u8f93\u51fa\u8bed\u8a00\u3002EN = English\uff0cCN = \u4e2d\u6587\u3002',
-        'sidebar_fmp_label': 'FMP API 密钥',
+        'sidebar_fmp_label': 'FMP (Financial Modeling Prep) API 密钥',
         'sidebar_fmp_placeholder': '输入 FMP 密钥',
         'sidebar_fmp_hint': (
             '美股和日股需要 FMP 密钥；港股和 A 股无需。\n\n'
-            '[通过此链接购买可享折扣 →](https://site.financialmodelingprep.com/pricing-plans?couponCode=valuescope)'
+            '[折扣购买 FMP API 密钥 →](https://site.financialmodelingprep.com/pricing-plans?couponCode=valuescope)'
         ),
         'sidebar_sponsor': '☕ 赞赏支持',
         'sponsor_guide': '如果 ValueScope 对你有帮助，欢迎微信扫码赞赏 ❤️',
@@ -648,12 +647,12 @@ _STRINGS = {
 
         # ── Error / warning messages ──
         'err_no_fmp_key': (
-            '🔑 **需要 FMP API 密钥**\n\n'
+            '🔑 **需要 FMP (Financial Modeling Prep) API 密钥**\n\n'
             '美股和日股需要 FMP 密钥；港股和 A 股无需。\n\n'
             '1. 从 [Financial Modeling Prep](https://financialmodelingprep.com/developer/docs) 复制你的 API 密钥\n'
             '2. 粘贴到左侧边栏的 **FMP API 密钥** 输入框\n\n'
-            '💡 通过下方链接购买 FMP API 密钥可享受折扣价，同时也是对 ValueScope 开发的支持。\n\n'
-            '[购买 FMP API 密钥 →](https://site.financialmodelingprep.com/pricing-plans?couponCode=valuescope)'
+            '💡 通过下方链接购买可享折扣价，同时也是对 ValueScope 开发的支持。\n\n'
+            '[折扣购买 FMP API 密钥 →](https://site.financialmodelingprep.com/pricing-plans?couponCode=valuescope)'
         ),
         'err_fetch_failed': '获取财务数据失败。请检查 FMP API 密钥和股票代码。',
         'err_fetch_failed_hk': '获取港股数据失败。yfinance 可能被限流，请稍等片刻后重试。',

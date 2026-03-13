@@ -58,8 +58,8 @@ ValueScope 是一个基于**标准化 DCF 引擎**的 AI 股票估值工具 — 
 
 | 市场 | 数据源 | API Key |
 |------|-------|---------|
-| **A 股** | [akshare](https://github.com/akfamily/akshare) | 不需要（免费） |
-| **港股** | [yfinance](https://github.com/ranaroussi/yfinance)（年度）/ FMP（季度） | 年度：免费；季度：需 FMP Key |
+| **A 股** | akshare | 不需要（免费） |
+| **港股** | yfinance（年度）/ FMP（季度） | 年度：免费；季度：需 FMP Key |
 | **美股** | FMP | 需要 FMP Key |
 | **日股** | FMP | 需要 FMP Key |
 

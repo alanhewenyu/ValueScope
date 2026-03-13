@@ -58,8 +58,8 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 
 | Market | Data Source | API Key |
 |--------|-----------|---------|
-| **A-shares** | [akshare](https://github.com/akfamily/akshare) | Not required (free) |
-| **Hong Kong** | [yfinance](https://github.com/ranaroussi/yfinance) (annual) / FMP (quarterly) | Annual: free; Quarterly: FMP key |
+| **A-shares** | akshare | Not required (free) |
+| **Hong Kong** | yfinance (annual) / FMP (quarterly) | Annual: free; Quarterly: FMP key |
 | **US** | FMP | FMP key required |
 | **Japan** | FMP | FMP key required |
 
