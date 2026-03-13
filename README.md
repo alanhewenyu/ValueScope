@@ -59,11 +59,11 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 | Market | Data Source | API Key |
 |--------|-----------|---------|
 | **A-shares** | [akshare](https://github.com/akfamily/akshare) | Not required (free) |
-| **Hong Kong** | [yfinance](https://github.com/ranaroussi/yfinance) (annual) / [FMP](https://site.financialmodelingprep.com/register) (quarterly) | Annual: free; Quarterly: FMP key |
-| **US** | [FMP](https://site.financialmodelingprep.com/register) | FMP key required |
-| **Japan** | [FMP](https://site.financialmodelingprep.com/register) | FMP key required |
+| **Hong Kong** | [yfinance](https://github.com/ranaroussi/yfinance) (annual) / FMP (quarterly) | Annual: free; Quarterly: FMP key |
+| **US** | FMP | FMP key required |
+| **Japan** | FMP | FMP key required |
 
-> 💡 **[Get FMP API Key →](https://site.financialmodelingprep.com/register)**
+> 💡 **[Get FMP API Key →](https://site.financialmodelingprep.com/pricing-plans?couponCode=valuescope)**
 >
 > FMP (Financial Modeling Prep) provides high-quality financial data for US, HK, and JP markets. **Buy through this link for a discounted price** — it also supports ValueScope's ongoing development.
 
@@ -129,7 +129,7 @@ pip install -r requirements.txt
 
 Required for US and Japan stock data. A-shares use free data sources; HK annual data is also free.
 
-> 💡 **[Get FMP API Key →](https://site.financialmodelingprep.com/register)** — Buy through this link for a discounted price, and support ValueScope's development.
+> 💡 **[Get FMP API Key →](https://site.financialmodelingprep.com/pricing-plans?couponCode=valuescope)** — Buy through this link for a discounted price, and support ValueScope's development.
 
 ```bash
 # macOS / Linux

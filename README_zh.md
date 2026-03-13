@@ -59,11 +59,11 @@ ValueScope 是一个基于**标准化 DCF 引擎**的 AI 股票估值工具 — 
 | 市场 | 数据源 | API Key |
 |------|-------|---------|
 | **A 股** | [akshare](https://github.com/akfamily/akshare) | 不需要（免费） |
-| **港股** | [yfinance](https://github.com/ranaroussi/yfinance)（年度）/ [FMP](https://site.financialmodelingprep.com/register)（季度） | 年度：免费；季度：需 FMP Key |
-| **美股** | [FMP](https://site.financialmodelingprep.com/register) | 需要 FMP Key |
-| **日股** | [FMP](https://site.financialmodelingprep.com/register) | 需要 FMP Key |
+| **港股** | [yfinance](https://github.com/ranaroussi/yfinance)（年度）/ FMP（季度） | 年度：免费；季度：需 FMP Key |
+| **美股** | FMP | 需要 FMP Key |
+| **日股** | FMP | 需要 FMP Key |
 
-> 💡 **[获取 FMP API Key →](https://site.financialmodelingprep.com/register)**
+> 💡 **[获取 FMP API Key →](https://site.financialmodelingprep.com/pricing-plans?couponCode=valuescope)**
 >
 > FMP（Financial Modeling Prep）提供美股、港股、日股等高质量金融数据。**通过此链接购买可享折扣价**，同时也是对 ValueScope 项目的支持。
 
@@ -129,7 +129,7 @@ pip install -r requirements.txt
 
 美股、日股需要 FMP API Key。A 股使用免费数据源，港股年度数据也免费。
 
-> 💡 **[获取 FMP API Key →](https://site.financialmodelingprep.com/register)** — 通过此链接购买可享折扣价，同时支持 ValueScope 的发展。
+> 💡 **[获取 FMP API Key →](https://site.financialmodelingprep.com/pricing-plans?couponCode=valuescope)** — 通过此链接购买可享折扣价，同时支持 ValueScope 的发展。
 
 ```bash
 # macOS / Linux
