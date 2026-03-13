@@ -3498,14 +3498,6 @@ if 'summary_df' not in st.session_state:
     else:
         st.markdown(f"""
         <div class="vx-welcome" style="text-align:center; padding:28px 20px 24px 20px; max-width:720px; margin:0 auto;">
-            <p style="font-size:2.4rem; font-weight:800; margin-bottom:10px; line-height:1.1; letter-spacing:-0.02em;
-                       background:linear-gradient(135deg, #00d2ff 0%, #7b2ff7 100%);
-                       -webkit-background-clip:text; -webkit-text-fill-color:transparent;">
-                ValueScope
-            </p>
-            <p style="font-size:0.95rem; color:var(--vx-text-muted, #8b949e); margin-bottom:14px; letter-spacing:0.04em;">
-                {t('footer_tagline_web').replace('<b>ValueScope</b> — ', '')}
-            </p>
             <p style="font-size:1.05rem; color:var(--vx-text-secondary, #656d76); line-height:1.6; margin-bottom:14px;">
                 {t('welcome_instruction_web') if not (_has_ai or _has_cloud_ai) else t('welcome_instruction')}
             </p>
