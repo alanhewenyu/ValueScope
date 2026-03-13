@@ -1319,7 +1319,7 @@ def _check_ai_quota():
     _, _, is_user_keys = _get_effective_cloud_keys()
     if is_user_keys:
         return True, 0, 0
-    base_limit = int(_get_secret('VS_AI_DAILY_LIMIT') or '5')
+    base_limit = int(_get_secret('VS_AI_DAILY_LIMIT') or '3')
     if base_limit <= 0:  # 0 or negative = unlimited
         return True, 0, 0
     db_path = _get_secret('VS_DB_PATH')
