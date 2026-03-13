@@ -1778,7 +1778,7 @@ tryInit();
     # ── Admin panel (visible only with ?admin=<key>) ──
     if _is_admin():
         with st.expander("🔧 Admin", expanded=False):
-            _adm_limit = int(_get_secret('VS_AI_DAILY_LIMIT') or '5')
+            _adm_limit = int(_get_secret('VS_AI_DAILY_LIMIT') or '3')
             _db_path = _get_secret('VS_DB_PATH')
             if not _db_path:
                 st.caption("⚠️ Set `VS_DB_PATH` in Secrets to enable admin features.")
