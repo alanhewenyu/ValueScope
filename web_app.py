@@ -399,9 +399,12 @@ div[data-testid="stLayoutWrapper"]:has(div.vs-sticky-hero) div[data-testid="stEl
 .verdict-card.buy .badge-label  { color: var(--vx-green); }
 .verdict-card.hold .badge-label { color: var(--vx-text-muted); }
 .verdict-card.sell .badge-label { color: var(--vx-red); }
-.verdict-badge .badge-sub {
-    font-size: 0.72rem; color: var(--vx-text-secondary); text-align: center; line-height: 1.2;
+.verdict-badge .badge-pct {
+    font-size: 1.1rem; font-weight: 700; text-align: center; line-height: 1;
 }
+.verdict-card.buy  .badge-pct { color: var(--vx-green); }
+.verdict-card.hold .badge-pct { color: var(--vx-text-secondary); }
+.verdict-card.sell .badge-pct { color: var(--vx-red); }
 .verdict-metrics {
     display: flex; align-items: center; gap: 28px; flex-wrap: wrap; flex: 1; justify-content: flex-end;
 }
@@ -2140,22 +2143,14 @@ def _render_verdict_section(results, company_profile, valuation_params, forex_ra
         badge_cls, badge_label = 'sell', t('verdict_sell')
     else:
         badge_cls, badge_label = 'hold', t('verdict_hold')
-    # 5-tier sub-text
-    if mos is not None:
-        if mos > 30:     sub_text = t('verdict_sig_under')
-        elif mos > 10:   sub_text = t('verdict_mod_under')
-        elif mos > -10:  sub_text = t('verdict_fair')
-        elif mos > -30:  sub_text = t('verdict_mod_over')
-        else:            sub_text = t('verdict_sig_over')
-    else:
-        sub_text = ''
 
     # ── Build verdict card HTML ──
     html = f'<div class="verdict-card {badge_cls}">'
-    # Badge
+    # Badge: label + percentage together
+    mos_str = f'{mos:+.1f}%' if mos is not None else ''
     html += (f'<div class="verdict-badge">'
              f'<span class="badge-label">{badge_label}</span>'
-             f'<span class="badge-sub">{sub_text}</span>'
+             f'<span class="badge-pct">{mos_str}</span>'
              f'</div>')
     # IV vs Market metrics
     html += '<div class="verdict-metrics">'
@@ -2171,12 +2166,6 @@ def _render_verdict_section(results, company_profile, valuation_params, forex_ra
                  f'</div>')
     else:
         html += '<div class="verdict-metric"><div class="vm-val market">\u2014</div></div>'
-    # MOS%
-    if mos is not None:
-        html += (f'<div class="verdict-mos">'
-                 f'<div class="vm-label">{t("verdict_mos_label")}</div>'
-                 f'<div class="vm-pct">{mos:+.1f}%</div>'
-                 f'</div>')
     html += '</div>'  # verdict-metrics
     html += '</div>'  # verdict-card
 
@@ -2204,6 +2193,12 @@ def _render_verdict_section(results, company_profile, valuation_params, forex_ra
              f'<div class="sc-val">{w:.1f}%</div>'
              f'</div>')
     html += '</div>'  # summary-cards
+
+    # Inline disclaimer under verdict
+    html += (f'<div style="text-align:center; font-size:0.65rem; color:var(--vx-text-muted, #8b949e); '
+             f'margin:6px 0 0 0; opacity:0.8; line-height:1.4;">'
+             f'{t("footer_disclaimer")}'
+             f'</div>')
 
     return html
 
@@ -4297,10 +4292,13 @@ elif _did_ai_run:
 elif _gap_just_done:
     _scroll_to("gap-analysis-anchor")
 
-# ── Footer — tagline only ──
+# ── Footer — tagline + disclaimer ──
 st.markdown(f"""
 <div style="margin-top:48px; padding:16px 0 8px 0; border-top:1px solid var(--vx-border-light, #d0d7de); text-align:center; color:var(--vx-text-muted, #8b949e); font-size:0.78rem;">
     {t('footer_tagline_web') if not (_has_ai or _has_cloud_ai) else t('footer_tagline')}
+</div>
+<div style="margin:8px auto; max-width:800px; padding:10px 16px; text-align:center; color:var(--vx-text-muted, #8b949e); font-size:0.68rem; line-height:1.6; opacity:0.85;">
+    {t('footer_disclaimer')}
 </div>
 """, unsafe_allow_html=True)
 
