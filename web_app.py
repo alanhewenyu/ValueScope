@@ -2194,10 +2194,10 @@ def _render_verdict_section(results, company_profile, valuation_params, forex_ra
              f'</div>')
     html += '</div>'  # summary-cards
 
-    # Inline disclaimer under verdict
-    html += (f'<div style="text-align:center; font-size:0.65rem; color:var(--vx-text-muted, #8b949e); '
-             f'margin:6px 0 0 0; opacity:0.8; line-height:1.4;">'
-             f'{t("footer_disclaimer")}'
+    # Short hint under verdict
+    html += (f'<div style="text-align:center; font-size:0.7rem; color:var(--vx-text-muted, #8b949e); '
+             f'margin:6px 0 0 0; opacity:0.75;">'
+             f'{t("verdict_hint")}'
              f'</div>')
 
     return html
