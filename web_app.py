@@ -2195,7 +2195,7 @@ def _render_verdict_section(results, company_profile, valuation_params, forex_ra
     html += '</div>'  # summary-cards
 
     # Short hint under verdict
-    html += (f'<div style="text-align:center; font-size:0.7rem; color:var(--vx-text-muted, #8b949e); '
+    html += (f'<div style="text-align:left; font-size:0.7rem; color:var(--vx-text-muted, #8b949e); '
              f'margin:6px 0 0 0; opacity:0.75;">'
              f'{t("verdict_hint")}'
              f'</div>')
@@ -4297,7 +4297,7 @@ st.markdown(f"""
 <div style="margin-top:48px; padding:16px 0 8px 0; border-top:1px solid var(--vx-border-light, #d0d7de); text-align:center; color:var(--vx-text-muted, #8b949e); font-size:0.78rem;">
     {t('footer_tagline_web') if not (_has_ai or _has_cloud_ai) else t('footer_tagline')}
 </div>
-<div style="margin:8px auto; max-width:800px; padding:10px 16px; text-align:center; color:var(--vx-text-muted, #8b949e); font-size:0.68rem; line-height:1.6; opacity:0.85;">
+<div style="margin:8px auto; max-width:800px; padding:10px 16px; text-align:left; color:var(--vx-text-muted, #8b949e); font-size:0.68rem; line-height:1.6; opacity:0.85;">
     {t('footer_disclaimer')}
 </div>
 """, unsafe_allow_html=True)
