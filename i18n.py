@@ -94,24 +94,24 @@ _STRINGS = {
 
         # ── Hero bar ──
         'hero_title': 'Valuation Results',
-        'hero_intrinsic': 'Intrinsic Value',
+        'hero_intrinsic': 'DCF Estimate',
         'hero_market': 'Market Price',
-        'hero_undervalued': 'Undervalued',
-        'hero_overvalued': 'Overvalued',
-        'verdict_sig_under': 'significantly undervalued',
-        'verdict_mod_under': 'moderately undervalued',
-        'verdict_fair': 'fairly valued',
-        'verdict_mod_over': 'moderately overvalued',
-        'verdict_sig_over': 'significantly overvalued',
+        'hero_undervalued': 'DCF Above Market',
+        'hero_overvalued': 'DCF Below Market',
+        'verdict_sig_under': 'DCF significantly above market price',
+        'verdict_mod_under': 'DCF moderately above market price',
+        'verdict_fair': 'DCF close to market price',
+        'verdict_mod_over': 'DCF moderately below market price',
+        'verdict_sig_over': 'DCF significantly below market price',
         'hero_summary': '{g1:.1f}% Y1 growth, {g2:.1f}% Y2-5 CAGR, {m:.1f}% operating margin, {w:.1f}% WACC \u2192 <b>{verdict}</b>',
 
         # ── Verdict section ──
-        'verdict_buy': 'BUY',
-        'verdict_hold': 'HOLD',
-        'verdict_sell': 'SELL',
-        'verdict_iv_label': 'Intrinsic Value',
+        'verdict_buy': 'DCF > PRICE',
+        'verdict_hold': 'DCF ≈ PRICE',
+        'verdict_sell': 'DCF < PRICE',
+        'verdict_iv_label': 'DCF Estimate',
         'verdict_mkt_label': 'Market Price',
-        'verdict_mos_label': 'Margin of Safety',
+        'verdict_mos_label': 'Difference',
         'summary_y1_growth': 'Y1 Growth',
         'summary_y25_cagr': 'Y2-5 CAGR',
         'summary_ebit_margin': 'EBIT Margin',
@@ -280,8 +280,8 @@ _STRINGS = {
         'bd_minority': '\u2212 Minority Interest',
         'bd_equity': 'Equity Value',
         'bd_shares': 'Outstanding Shares (millions)',
-        'bd_iv_per_share': 'Intrinsic Value per Share',
-        'bd_iv_per_share_cur': 'Intrinsic Value per Share ({cur})',
+        'bd_iv_per_share': 'DCF Estimate per Share',
+        'bd_iv_per_share_cur': 'DCF Estimate per Share ({cur})',
 
         # ── Sensitivity ──
         'sens_rev_vs_ebit': '**Revenue Growth vs EBIT Margin** (Price / Share, {cur})',
@@ -323,6 +323,11 @@ _STRINGS = {
         # ── Footer ──
         'footer_tagline': '<b>ValueScope</b> \u2014 AI-Powered Interactive DCF Valuation',
         'footer_tagline_web': '<b>ValueScope</b> \u2014 Interactive DCF Valuation',
+        'footer_disclaimer': '<b>Disclaimer:</b> This tool is a DCF valuation calculator for educational and research purposes only. '
+                             'All outputs are model estimates based on user-defined assumptions and do not constitute investment advice, '
+                             'securities research reports, or recommendations to buy, sell, or hold any security. '
+                             'Users should make independent investment decisions and bear all associated risks. '
+                             'Analysis results are generated with AI assistance.',
 
         # ── Financial table row labels ──
         'fin_reported_currency': 'Reported Currency',
@@ -441,24 +446,24 @@ _STRINGS = {
 
         # ── Hero bar ──
         'hero_title': '\u4f30\u503c\u7ed3\u679c',
-        'hero_intrinsic': '\u5185\u5728\u4ef7\u503c',
-        'hero_market': '\u5e02\u573a\u4ef7\u683c',
-        'hero_undervalued': '\u4f4e\u4f30',
-        'hero_overvalued': '\u9ad8\u4f30',
-        'verdict_sig_under': '\u663e\u8457\u4f4e\u4f30',
-        'verdict_mod_under': '\u9002\u5ea6\u4f4e\u4f30',
-        'verdict_fair': '\u4f30\u503c\u5408\u7406',
-        'verdict_mod_over': '\u9002\u5ea6\u9ad8\u4f30',
-        'verdict_sig_over': '\u663e\u8457\u9ad8\u4f30',
+        'hero_intrinsic': 'DCF估算值',
+        'hero_market': '市场价格',
+        'hero_undervalued': 'DCF高于市价',
+        'hero_overvalued': 'DCF低于市价',
+        'verdict_sig_under': 'DCF估算显著高于市场价',
+        'verdict_mod_under': 'DCF估算适度高于市场价',
+        'verdict_fair': 'DCF估算接近市场价',
+        'verdict_mod_over': 'DCF估算适度低于市场价',
+        'verdict_sig_over': 'DCF估算显著低于市场价',
         'hero_summary': '{g1:.1f}% \u7b2c1\u5e74\u589e\u957f, {g2:.1f}% 2-5\u5e74 CAGR, {m:.1f}% \u8425\u4e1a\u5229\u6da6\u7387, {w:.1f}% WACC \u2192 <b>{verdict}</b>',
 
         # ── Verdict section ──
-        'verdict_buy': '\u4e70\u5165',
-        'verdict_hold': '\u6301\u6709',
-        'verdict_sell': '\u5356\u51fa',
-        'verdict_iv_label': '\u5185\u5728\u4ef7\u503c',
-        'verdict_mkt_label': '\u5e02\u573a\u4ef7\u683c',
-        'verdict_mos_label': '\u5b89\u5168\u8fb9\u9645',
+        'verdict_buy': 'DCF > 市价',
+        'verdict_hold': 'DCF ≈ 市价',
+        'verdict_sell': 'DCF < 市价',
+        'verdict_iv_label': 'DCF估算值',
+        'verdict_mkt_label': '市场价格',
+        'verdict_mos_label': '偏离幅度',
         'summary_y1_growth': '\u7b2c1\u5e74\u589e\u957f',
         'summary_y25_cagr': '2-5\u5e74 CAGR',
         'summary_ebit_margin': 'EBIT \u5229\u6da6\u7387',
@@ -627,8 +632,8 @@ _STRINGS = {
         'bd_minority': '\u2212 \u5c11\u6570\u80a1\u4e1c\u6743\u76ca',
         'bd_equity': '\u80a1\u6743\u4ef7\u503c',
         'bd_shares': '\u6d41\u901a\u80a1\u672c\uff08\u767e\u4e07\uff09',
-        'bd_iv_per_share': '\u6bcf\u80a1\u5185\u5728\u4ef7\u503c',
-        'bd_iv_per_share_cur': '\u6bcf\u80a1\u5185\u5728\u4ef7\u503c ({cur})',
+        'bd_iv_per_share': '每股DCF估算值',
+        'bd_iv_per_share_cur': '每股DCF估算值 ({cur})',
 
         # ── Sensitivity ──
         'sens_rev_vs_ebit': '**\u8425\u6536\u589e\u957f vs EBIT \u5229\u6da6\u7387** (\u6bcf\u80a1\u4ef7\u683c, {cur})',
@@ -670,6 +675,9 @@ _STRINGS = {
         # ── Footer ──
         'footer_tagline': '<b>ValueScope</b> \u2014 AI \u667a\u80fd\u4ea4\u4e92\u5f0f DCF \u4f30\u503c',
         'footer_tagline_web': '<b>ValueScope</b> \u2014 \u4ea4\u4e92\u5f0f DCF \u4f30\u503c',
+        'footer_disclaimer': '<b>免责声明：</b>本工具仅为DCF估值计算器，供学习和研究用途。'
+                             '所有输出均为基于用户假设参数的模型估算结果，不构成任何投资建议、证券研究报告或买卖推荐。'
+                             '用户应独立做出投资决策并自行承担全部风险。分析结果由AI辅助生成。',
 
         # ── Financial table row labels ──
         'fin_reported_currency': '\u62a5\u544a\u8d27\u5e01',

@@ -350,7 +350,7 @@ def _render_valuation_breakdown(d, forex_rate=None):
         ("- Minority Interest", _fmt_amount(d.get('minority_interest')), False, False),
         ("Equity Value", _fmt_amount(d.get('equity_value')), True, False),
         ("Outstanding Shares (M)", _fmt_amount(shares_m), False, False),
-        (f"Intrinsic Value Per Share{cur_label}",
+        (f"DCF Estimate Per Share{cur_label}",
          _fmt_price(iv_reporting), False, True),
     ]
 
@@ -363,13 +363,13 @@ def _render_valuation_breakdown(d, forex_rate=None):
                 implied_fx = gap_dcf / iv_reporting
                 fx_str = f'  (× {implied_fx:.4f})'
             rows.append((
-                f"Intrinsic Value Per Share ({stock_cur})",
+                f"DCF Estimate Per Share ({stock_cur})",
                 f"{gap_dcf:,.2f}{fx_str}", False, True))
         elif _v(iv_reporting) and iv_reporting and forex_rate and forex_rate > 0:
             # No gap analysis — convert using provided forex rate
             converted = iv_reporting * forex_rate
             rows.append((
-                f"Intrinsic Value Per Share ({stock_cur})",
+                f"DCF Estimate Per Share ({stock_cur})",
                 f"{converted:,.2f}  (× {forex_rate:.4f})", False, True))
 
     html = '<div class="val-breakdown">'
@@ -833,7 +833,7 @@ if len(unique_companies) == 1:
         _pps = latest.get('price_per_share')
         iv_rep = _pps if _v(_pps) and _pps else None
         _has_adj = False
-    _panel_label = "Adjusted Intrinsic Value" if _has_adj else "Intrinsic Value"
+    _panel_label = "Adjusted DCF Estimate" if _has_adj else "DCF Estimate"
 
     # Fetch real-time market price (in trading currency)
     rt_price, rt_cur = _fetch_current_price(_ticker) if _ticker else (None, None)
@@ -914,14 +914,14 @@ _ovr_css = """
 
 ovr = '<table class="overview-table"><thead><tr>'
 ovr += '<th>Date</th><th>Company</th><th>Ticker</th><th>Mode</th><th>AI Engine</th>'
-ovr += '<th>Reporting Currency</th><th>Intrinsic Value</th><th>Adjusted Intrinsic Value</th>'
+ovr += '<th>Reporting Currency</th><th>DCF Estimate</th><th>Adjusted DCF Estimate</th>'
 ovr += '</tr></thead><tbody>'
 for idx, (_, r) in enumerate(df.iterrows()):
     stk_cur = r.get('currency') or ''
     rep_cur_r = r.get('reported_currency') or ''
     _is_dual = (stk_cur and rep_cur_r and stk_cur != rep_cur_r)
 
-    # Intrinsic Value — must be in reporting currency
+    # DCF Estimate — must be in reporting currency
     pps = r.get('price_per_share')
     gdcf = r.get('gap_dcf_price')
     if _v(pps) and pps:
@@ -1034,9 +1034,9 @@ for _, row in df.iterrows():
 
             # Dual currency: show reporting IV + trading IV, market/gap/adj in trading
             cols = st.columns(5)
-            with cols[0]: st.metric(f"Intrinsic Value ({reported_cur})",
+            with cols[0]: st.metric(f"DCF Estimate ({reported_cur})",
                                      _fmt_price(intrinsic_raw) if _v(intrinsic_raw) else "—")
-            with cols[1]: st.metric(f"Intrinsic Value ({stock_cur})",
+            with cols[1]: st.metric(f"DCF Estimate ({stock_cur})",
                                      _fmt_price(iv_trade) if _v(iv_trade) else "—")
             with cols[2]: st.metric(f"Market Price ({stock_cur})",
                                      _fmt_price(mkt_display) if _v(mkt_display) else "—")
@@ -1045,21 +1045,21 @@ for _, row in df.iterrows():
                     st.metric("Gap", f"{gap:+.1f}%", delta=f"{gap:+.1f}%",
                               delta_color="normal")
                 else: st.metric("Gap", "—")
-            with cols[4]: st.metric(f"Adjusted Intrinsic Value ({stock_cur})",
+            with cols[4]: st.metric(f"Adjusted DCF Estimate ({stock_cur})",
                                      _fmt_price(adj) if _v(adj) else "—")
         else:
             # Single currency
             cur_label = f" ({trading_cur})" if trading_cur else ""
             intrinsic = intrinsic_raw if _v(intrinsic_raw) else gap_dcf
             cols = st.columns(4)
-            with cols[0]: st.metric(f"Intrinsic Value{cur_label}", _fmt_price(intrinsic))
+            with cols[0]: st.metric(f"DCF Estimate{cur_label}", _fmt_price(intrinsic))
             with cols[1]: st.metric(f"Market Price{cur_label}", _fmt_price(market))
             with cols[2]:
                 if _v(gap):
                     st.metric("Gap", f"{gap:+.1f}%", delta=f"{gap:+.1f}%",
                               delta_color="normal")
                 else: st.metric("Gap", "—")
-            with cols[3]: st.metric(f"Adjusted Intrinsic Value{cur_label}",
+            with cols[3]: st.metric(f"Adjusted DCF Estimate{cur_label}",
                                      _fmt_price(adj) if _v(adj) else "—")
 
         # Detail (from batch-fetched map)
@@ -1159,7 +1159,7 @@ for _, row in df.iterrows():
             if gap_text and pd.notna(gap_text):
                 bar_html = '<div class="gap-bar">'
                 if _v(d.get('gap_dcf_price')):
-                    bar_html += f'<div><span class="label">Intrinsic Value</span><br><span class="val">{d["gap_dcf_price"]:,.2f}</span></div>'
+                    bar_html += f'<div><span class="label">DCF Estimate</span><br><span class="val">{d["gap_dcf_price"]:,.2f}</span></div>'
                 if _v(d.get('gap_market_price')):
                     bar_html += f'<div><span class="label">Market Price</span><br><span class="val">{d["gap_market_price"]:,.2f}</span></div>'
                 if _v(d.get('gap_pct')):
