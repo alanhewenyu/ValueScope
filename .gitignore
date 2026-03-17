@@ -1,37 +1,57 @@
+# ── Personal data (CRITICAL: never track) ──
+*.db
+*.db-wal
+*.db-shm
+data/*
+!data/.gitkeep
+backups/
+*.xlsx
+*.xlsm
+*.xls
+
+# ── Environment & secrets ──
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+.rate_limits.json
+
+# ── Logs ──
+*.log
+
+# ── Python ──
 __pycache__/
 *.pyc
-.DS_Store
-stock_valuation/
-.env
-.rate_limits.json
-.streamlit/secrets.toml
-*.swp
-*.swo
-assets/*.cast
-
-# Frontend (Next.js)
-frontend/node_modules/
-frontend/.next/
-frontend/out/
-frontend/.env.local
-
-# Python virtualenv
+*.pyo
 .venv/
 venv/
 env/
 
-# Personal data
-valuations.db
-import_excels.py
-stock-data-platform-analysis.md
+# ── Node / Next.js ──
+frontend/node_modules/
+frontend/.next/
+frontend/out/
 
-# Internal docs
-PRODUCT_VISION.md
-ROADMAP.md
-
-# IDE / editor
+# ── IDE / editor ──
 .vscode/
 .idea/
+*.swp
+*.swo
 
-# Claude local config
+# ── OS ──
+.DS_Store
+Thumbs.db
+
+# ── Internal docs (personal strategy) ──
+PRODUCT_VISION.md
+ROADMAP.md
+stock-data-platform-analysis.md
+
+# ── Legacy files ──
+legacy/
+stock_valuation/
+import_excels.py
+assets/*.cast
+
+# ── Claude local config ──
 .claude/
