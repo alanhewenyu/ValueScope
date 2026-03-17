@@ -150,24 +150,6 @@ python main.py --auto             # 全自动
 
 额外参数：`--engine claude|gemini|qwen`、`--apikey YOUR_KEY`。
 
-### 方式三：自部署（后端 + 前端）
-
-```bash
-# 后端
-pip install -r requirements-api.txt
-uvicorn backend.main:app --host 0.0.0.0 --port 8000
-
-# 前端
-cd frontend && npm install && npm run dev
-```
-
-或使用 Docker 部署后端：
-
-```bash
-docker build -t valuescope-api .
-docker run -p 8000:8000 -e FMP_API_KEY=your_key valuescope-api
-```
-
 ---
 
 ## 关键估值参数

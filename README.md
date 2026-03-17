@@ -150,24 +150,6 @@ python main.py --auto             # Fully automated
 
 Additional flags: `--engine claude|gemini|qwen`, `--apikey YOUR_KEY`.
 
-### Option 3: Self-Host (Backend + Frontend)
-
-```bash
-# Backend
-pip install -r requirements-api.txt
-uvicorn backend.main:app --host 0.0.0.0 --port 8000
-
-# Frontend
-cd frontend && npm install && npm run dev
-```
-
-Or use Docker for the backend:
-
-```bash
-docker build -t valuescope-api .
-docker run -p 8000:8000 -e FMP_API_KEY=your_key valuescope-api
-```
-
 ---
 
 ## Key Valuation Parameters
