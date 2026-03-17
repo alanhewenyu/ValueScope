@@ -43,7 +43,7 @@ export default function Home() {
             description={t.featureRelDesc}
           />
           <FeatureCard
-            icon="📊"
+            icon="📐"
             title={t.featureScoringTitle}
             description={t.featureScoringDesc}
           />
