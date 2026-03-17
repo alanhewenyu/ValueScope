@@ -70,4 +70,76 @@ app.include_router(relative.router, prefix="/api/analysis", tags=["Analysis"])
 
 @app.get("/api/health")
 def health_check():
+    """Basic liveness check for uptime monitors (UptimeRobot etc.)."""
     return {"status": "ok", "version": "2.0.0"}
+
+
+@app.get("/api/health/deep")
+def deep_health_check():
+    """Deep health check: verify DeepSeek & Serper API keys are valid and have quota.
+
+    Returns per-service status so UptimeRobot keyword monitoring can alert on failures.
+    """
+    import requests as _req
+
+    result = {"status": "ok", "version": "2.0.0", "services": {}}
+
+    # --- DeepSeek API balance check ---
+    ds_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    if ds_key:
+        try:
+            resp = _req.get(
+                "https://api.deepseek.com/user/balance",
+                headers={"Authorization": f"Bearer {ds_key}"},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                # data: {"is_available": true, "balance_infos": [{"currency": "CNY", "total_balance": "...", "granted_balance": "...", "topped_up_balance": "..."}]}
+                balance_infos = data.get("balance_infos", [])
+                total = sum(float(b.get("total_balance", 0)) for b in balance_infos)
+                result["services"]["deepseek"] = {
+                    "status": "ok" if data.get("is_available") and total > 0 else "warning",
+                    "available": data.get("is_available", False),
+                    "balance": total,
+                    "currency": balance_infos[0].get("currency", "CNY") if balance_infos else "CNY",
+                }
+                if total <= 0 or not data.get("is_available"):
+                    result["status"] = "degraded"
+            else:
+                result["services"]["deepseek"] = {"status": "error", "detail": f"HTTP {resp.status_code}"}
+                result["status"] = "degraded"
+        except Exception as e:
+            result["services"]["deepseek"] = {"status": "error", "detail": str(e)}
+            result["status"] = "degraded"
+    else:
+        result["services"]["deepseek"] = {"status": "not_configured"}
+
+    # --- Serper API credit check ---
+    serper_key = os.environ.get("SERPER_API_KEY", "")
+    if serper_key:
+        try:
+            resp = _req.get(
+                "https://google.serper.dev/account",
+                headers={"X-API-KEY": serper_key},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                credits = data.get("credits", 0)
+                result["services"]["serper"] = {
+                    "status": "ok" if credits > 0 else "warning",
+                    "credits_remaining": credits,
+                }
+                if credits <= 0:
+                    result["status"] = "degraded"
+            else:
+                result["services"]["serper"] = {"status": "error", "detail": f"HTTP {resp.status_code}"}
+                result["status"] = "degraded"
+        except Exception as e:
+            result["services"]["serper"] = {"status": "error", "detail": str(e)}
+            result["status"] = "degraded"
+    else:
+        result["services"]["serper"] = {"status": "not_configured"}
+
+    return result
