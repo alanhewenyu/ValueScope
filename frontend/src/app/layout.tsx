@@ -16,29 +16,54 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://valuescope.app"),
-  title: "ValueScope — AI-Powered Stock Valuation & Analysis",
+  title: "ValueScope — AI 智能 DCF 股票估值工具 | Free AI-Powered Valuation",
   description:
-    "DCF valuation, relative valuation, multi-dimensional scoring, and financial analysis for A-shares, HK stocks, and US stocks.",
+    "免费 AI 驱动的 DCF 股票估值工具。支持 A 股、港股、美股，一键 AI 估值，实时参数调节，敏感性分析。Free AI-powered DCF stock valuation for A-shares, HK & US stocks.",
+  keywords: [
+    "DCF估值", "股票估值", "内在价值", "现金流折现", "AI估值",
+    "A股估值", "港股估值", "美股估值", "WACC", "免费估值工具",
+    "stock valuation", "intrinsic value", "DCF calculator", "AI valuation",
+  ],
+  verification: {
+    google: "4mcNP75rC_oaDhSwvwS-vVV9mSylXl1CGLl45Y_CSoM",
+  },
   openGraph: {
-    title: "ValueScope — AI-Powered Stock Valuation & Analysis",
+    title: "ValueScope — AI 智能 DCF 股票估值工具",
     description:
-      "DCF valuation, relative valuation, multi-dimensional scoring, and financial analysis for A-shares, HK stocks, and US stocks.",
+      "免费 AI 驱动的 DCF 股票估值工具。支持 A 股、港股、美股，一键 AI 估值，实时参数调节，敏感性分析。",
     type: "website",
     siteName: "ValueScope",
     url: "https://valuescope.app",
-    locale: "en_US",
+    locale: "zh_CN",
+    alternateLocale: "en_US",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "ValueScope — AI-Powered DCF Stock Valuation",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "ValueScope — AI-Powered Stock Valuation & Analysis",
+    title: "ValueScope — AI 智能 DCF 股票估值工具",
     description:
-      "DCF valuation, relative valuation, multi-dimensional scoring, and financial analysis for A-shares, HK stocks, and US stocks.",
+      "免费 AI 驱动的 DCF 估值工具。支持 A 股、港股、美股，一键估值 + 敏感性分析。",
+    images: ["/og-image.png"],
   },
   icons: {
     icon: "/favicon.ico",
   },
   alternates: {
     canonical: "https://valuescope.app",
+    languages: {
+      "zh": "https://valuescope.app",
+      "en": "https://valuescope.app",
+    },
+  },
+  other: {
+    "baidu-site-verification": "codeva-8CrbIdgNjp",
   },
 };
 
@@ -48,7 +73,38 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="zh-CN">
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "WebApplication",
+              name: "ValueScope",
+              alternateName: "ValueScope AI 估值工具",
+              description:
+                "免费 AI 驱动的 DCF 股票估值工具，支持 A 股、港股、美股。提供一键 AI 估值、实时参数调节、敏感性分析。",
+              url: "https://valuescope.app",
+              applicationCategory: "FinanceApplication",
+              operatingSystem: "Web",
+              inLanguage: ["zh-CN", "en"],
+              offers: {
+                "@type": "Offer",
+                price: "0",
+                priceCurrency: "USD",
+              },
+              featureList: [
+                "AI 一键 DCF 估值",
+                "A 股 / 港股 / 美股 / 日股支持",
+                "实时参数调节",
+                "敏感性分析",
+                "中英文双语界面",
+              ],
+            }),
+          }}
+        />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-50 dark:bg-gray-950 min-h-screen`}
       >
