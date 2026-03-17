@@ -40,7 +40,7 @@ from modeling.constants import (
     TERMINAL_RONIC_PREMIUM,
 )
 from backend.cache import get as cache_get, put as cache_put, make_key
-from main import _build_valuation_params
+from backend.utils import _build_valuation_params
 
 router = APIRouter()
 
