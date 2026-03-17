@@ -64,7 +64,7 @@ export default function VerdictCard({
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 mt-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
         <div>
           <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">
             {t.dcfEstimate}

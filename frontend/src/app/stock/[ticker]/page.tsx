@@ -188,12 +188,12 @@ export default function StockPage() {
 
         {/* Tab navigation */}
         <div className="border-b border-gray-200 dark:border-gray-800 mb-6">
-          <div className="flex gap-1 -mb-px">
+          <div className="flex gap-1 -mb-px overflow-x-auto">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors
+                className={`px-3 py-2.5 sm:px-4 sm:py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap
                   ${
                     activeTab === tab.id
                       ? "border-blue-500 text-blue-600 dark:text-blue-400"

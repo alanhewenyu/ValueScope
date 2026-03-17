@@ -16,10 +16,10 @@ export default function Home() {
       {/* Hero section */}
       <main className="flex-1 flex flex-col items-center justify-center px-4">
         <div className="text-center w-full max-w-2xl mx-auto">
-          <h1 className="text-5xl font-bold text-gray-900 dark:text-white mb-3 tracking-tight">
-            <span className="text-4xl mr-2">🎯</span> ValueScope
+          <h1 className="text-3xl sm:text-5xl font-bold text-gray-900 dark:text-white mb-3 tracking-tight">
+            <span className="text-3xl sm:text-4xl mr-2">🎯</span> ValueScope
           </h1>
-          <p className="text-lg text-gray-500 dark:text-gray-400 mb-8">
+          <p className="text-base sm:text-lg text-gray-500 dark:text-gray-400 mb-8">
             {t.heroSubtitle}
           </p>
 
@@ -31,7 +31,7 @@ export default function Home() {
         </div>
 
         {/* Feature cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto mt-16">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto mt-8 sm:mt-16">
           <FeatureCard
             icon="📊"
             title={t.featureDCFTitle}

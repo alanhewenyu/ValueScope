@@ -75,7 +75,7 @@ export default function RelativeValuationTab({ ticker, initialData }: { ticker: 
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           {t.currentValuationMetrics}
         </h3>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
           <MetricItem
             label={t.trailingPE}
             value={current.trailing_pe?.toFixed(1) ?? "\u2014"}

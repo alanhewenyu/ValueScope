@@ -46,10 +46,10 @@ export default function CompanyHeader({
       )}
       <div className="flex-1">
         <div className="flex items-baseline gap-3 flex-wrap">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
             {companyName}
           </h1>
-          <span className="font-mono text-lg text-blue-600 dark:text-blue-400">
+          <span className="font-mono text-base sm:text-lg text-blue-600 dark:text-blue-400">
             {ticker}
           </span>
           {exchange && (
@@ -60,7 +60,7 @@ export default function CompanyHeader({
         </div>
         <div className="flex items-center gap-4 mt-2 text-sm text-gray-500 dark:text-gray-400 flex-wrap">
           {price > 0 && (
-            <span className="text-lg font-semibold text-gray-900 dark:text-white">
+            <span className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">
               {formatCurrency(price, currency)}
               <span className="text-xs font-normal text-gray-400 ml-1">{t.currentPrice}</span>
             </span>

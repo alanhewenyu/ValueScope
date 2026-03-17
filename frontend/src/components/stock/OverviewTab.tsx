@@ -383,7 +383,7 @@ export default function OverviewTab({
               {chartData.reportedCurrency && ` · ${t.inMillions(chartData.reportedCurrency)}`}
             </span>
           </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             <MetricItem
               label={t.cashEquivalents}
               value={chartData.balance.cash != null ? formatNumber(chartData.balance.cash, 0) : "—"}

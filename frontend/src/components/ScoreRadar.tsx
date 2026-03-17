@@ -73,7 +73,7 @@ export default function ScoreRadar({ scores }: ScoreRadarProps) {
 
   return (
     <div className="flex flex-col items-center">
-      <div className="w-full max-w-[350px] h-[300px]">
+      <div className="w-full max-w-[350px] h-[250px] sm:h-[300px]">
         <ResponsiveContainer width="100%" height="100%">
           <RadarChart data={data} cx="50%" cy="50%" outerRadius="70%">
             <PolarGrid
