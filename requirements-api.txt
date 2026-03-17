@@ -18,4 +18,4 @@ akshare>=1.14
 yfinance>=1.2,<2.0
 
 # V8 engine for akshare
-py-mini-racer>=0.12
+py-mini-racer

@@ -15,11 +15,7 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir \
-        -r requirements-api.txt \
-        python-dotenv \
-        py-mini-racer \
-        pydantic
+    pip install --no-cache-dir -r requirements-api.txt
 
 # ---- Runtime stage ----
 FROM python:3.10-slim AS runtime
