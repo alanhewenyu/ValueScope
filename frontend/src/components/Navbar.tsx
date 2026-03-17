@@ -8,7 +8,7 @@ import SettingsDrawer from "./SettingsDrawer";
 import { useI18n } from "@/lib/i18n";
 
 export default function Navbar() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -32,6 +32,12 @@ export default function Navbar() {
           <div className="hidden md:flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
             <Link href="/" className="hover:text-gray-900 dark:hover:text-white transition-colors">
               {t.home}
+            </Link>
+            <Link href="/history" className="hover:text-gray-900 dark:hover:text-white transition-colors">
+              {locale === "zh" ? "估值记录" : "History"}
+            </Link>
+            <Link href="/portfolio" className="hover:text-gray-900 dark:hover:text-white transition-colors">
+              {locale === "zh" ? "投资组合" : "Portfolio"}
             </Link>
             <LanguageToggle />
             <button
@@ -71,6 +77,20 @@ export default function Navbar() {
                   className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
                 >
                   {t.home}
+                </Link>
+                <Link
+                  href="/history"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                >
+                  {locale === "zh" ? "估值记录" : "History"}
+                </Link>
+                <Link
+                  href="/portfolio"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                >
+                  {locale === "zh" ? "投资组合" : "Portfolio"}
                 </Link>
                 <div className="px-4 py-2">
                   <LanguageToggle />

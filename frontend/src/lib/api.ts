@@ -501,3 +501,178 @@ export async function saveValuationToServer(params: {
     body: JSON.stringify(params),
   });
 }
+
+// ── Portfolio API ──
+
+export interface PortfolioStatus {
+  available: boolean;
+  db_path: string | null;
+}
+
+export interface PortfolioHolding {
+  ticker: string;
+  name: string;
+  market: string;
+  broker: string;
+  quantity: number;
+  cost_price: number;
+  currency: string;
+  status: string;
+  price: number;
+  price_stale: boolean;
+  market_value: number;
+  market_value_cny: number;
+  cost_total: number;
+  pnl: number;
+  pnl_pct: number;
+  pnl_cny: number;
+  daily_pnl: number | null;
+  daily_pnl_pct: number | null;
+  daily_pnl_cny: number | null;
+  ytd_pnl: number | null;
+  ytd_pnl_pct: number | null;
+  ytd_pnl_cny: number | null;
+  weight: number;
+}
+
+export interface PortfolioSummary {
+  equity_cny: number;
+  cash_cny: number;
+  leverage_cny: number;
+  total_assets: number;
+  net_assets: number;
+  total_pnl_cny: number;
+  total_cost_cny: number;
+  total_pnl_pct: number;
+  daily_pnl_cny: number;
+  ytd_pnl_cny: number;
+}
+
+export interface CashBalance {
+  account: string;
+  currency: string;
+  balance: number;
+}
+
+export interface PortfolioData {
+  holdings: PortfolioHolding[];
+  fx: Record<string, number>;
+  cash: CashBalance[];
+  summary: PortfolioSummary;
+}
+
+export interface NavHistoryPoint {
+  date: string;
+  nav: number;
+  capital_invested: number;
+}
+
+export async function getPortfolioStatus(): Promise<PortfolioStatus> {
+  return fetchAPI<PortfolioStatus>("/api/portfolio/status");
+}
+
+export async function getPortfolioHoldings(): Promise<PortfolioData> {
+  return fetchAPI<PortfolioData>("/api/portfolio/holdings");
+}
+
+export async function getPortfolioFxRates(): Promise<Record<string, number>> {
+  return fetchAPI<Record<string, number>>("/api/portfolio/fx-rates");
+}
+
+export async function getNavHistory(): Promise<NavHistoryPoint[]> {
+  return fetchAPI<NavHistoryPoint[]>("/api/portfolio/nav-history");
+}
+
+// ── Valuation History API ──
+
+export interface HistoryStatus {
+  available: boolean;
+  count: number;
+}
+
+export interface HistoryFilters {
+  modes: string[];
+  engines: string[];
+}
+
+export interface ValuationRecord {
+  id: number;
+  ticker: string;
+  company_name: string;
+  valuation_date: string;
+  mode: string;
+  ai_engine: string | null;
+  source: string | null;
+  currency: string;
+  reported_currency: string | null;
+  price_per_share: number | null;
+  gap_dcf_price: number | null;
+  market_price: number | null;
+  gap_market_price: number | null;
+  gap_pct: number | null;
+  gap_adjusted_price: number | null;
+  gap_adjusted_price_reporting: number | null;
+  forex_rate: number | null;
+  revenue_growth_1: number | null;
+  revenue_growth_2: number | null;
+  ebit_margin: number | null;
+  wacc: number | null;
+  base_year: number | null;
+  ttm_label: string | null;
+}
+
+export interface ValuationDetail extends ValuationRecord {
+  beta: number | null;
+  market_cap: number | null;
+  outstanding_shares: number | null;
+  pv_cf_10yr: number | null;
+  pv_terminal: number | null;
+  enterprise_value: number | null;
+  equity_value: number | null;
+  cash: number | null;
+  total_debt: number | null;
+  minority_interest: number | null;
+  total_investments: number | null;
+  summary_json: Record<string, unknown> | null;
+  dcf_table_json: Record<string, unknown> | null;
+  sensitivity_json: Record<string, unknown> | null;
+  wacc_sensitivity_json: Record<string, unknown> | null;
+  ai_parameters_json: Record<string, unknown> | null;
+  ai_raw_text: string | null;
+}
+
+export async function getHistoryStatus(): Promise<HistoryStatus> {
+  return fetchAPI<HistoryStatus>("/api/history/status");
+}
+
+export async function getHistoryFilters(): Promise<HistoryFilters> {
+  return fetchAPI<HistoryFilters>("/api/history/filters");
+}
+
+export async function searchValuations(params: {
+  q?: string;
+  modes?: string;
+  engines?: string;
+  date_start?: string;
+  date_end?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ results: ValuationRecord[]; count: number }> {
+  const qs = new URLSearchParams();
+  if (params.q) qs.set("q", params.q);
+  if (params.modes) qs.set("modes", params.modes);
+  if (params.engines) qs.set("engines", params.engines);
+  if (params.date_start) qs.set("date_start", params.date_start);
+  if (params.date_end) qs.set("date_end", params.date_end);
+  if (params.limit) qs.set("limit", String(params.limit));
+  if (params.offset) qs.set("offset", String(params.offset));
+  return fetchAPI(`/api/history/search?${qs}`);
+}
+
+export async function getValuationDetail(id: number): Promise<ValuationDetail> {
+  return fetchAPI<ValuationDetail>(`/api/history/${id}`);
+}
+
+export async function deleteValuation(id: number): Promise<{ ok: boolean }> {
+  return fetchAPI(`/api/history/${id}`, { method: "DELETE" });
+}

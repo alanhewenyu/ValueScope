@@ -1,0 +1,686 @@
+# Copyright (c) 2025-2026 Alan He. Licensed under AGPL-3.0. See LICENSE.
+"""Portfolio database schema, migrations, and CRUD operations.
+
+Extracted from portfolio-tracker/db.py — genericized for any user.
+All personal configuration (broker names, capital amounts) comes from
+environment variables, never hardcoded.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+import os
+from datetime import datetime
+from typing import Any
+
+import logging
+
+logger = logging.getLogger("valuescope.portfolio")
+
+# ── Database path ──
+DB_PATH = os.environ.get(
+    'PORTFOLIO_DB_PATH',
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                 'data', 'portfolio.db'),
+)
+
+# ── Multi-portfolio support ──
+# Format: PORTFOLIOS=Name1:file1.db,Name2:file2.db
+_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data')
+
+
+def _parse_portfolios() -> list[tuple[str, str]]:
+    """Parse PORTFOLIOS env var into [(name, abs_path), ...]."""
+    raw = os.environ.get('PORTFOLIOS', '').strip()
+    if not raw:
+        return []
+    result = []
+    for item in raw.split(','):
+        item = item.strip()
+        if ':' not in item:
+            continue
+        name, path = item.split(':', 1)
+        name, path = name.strip(), path.strip()
+        if not os.path.isabs(path):
+            path = os.path.join(_DATA_DIR, path)
+        result.append((name, path))
+    return result
+
+
+PORTFOLIOS = _parse_portfolios()
+
+
+# ── Capital configuration (all from env, no hardcoded values) ──
+# Deposit mode: track capital as fixed deposit amount (advanced)
+# Cost mode: capital = sum of position costs (default for new users)
+DEPOSIT_CAPITAL = float(os.environ.get('DEPOSIT_CAPITAL', '0'))
+DEPOSIT_FX_RATE = float(os.environ.get('DEPOSIT_FX_RATE', '1.0'))
+B_SHARE_CAPITAL = float(os.environ.get('B_SHARE_CAPITAL', '0'))
+DEPOSIT_MODE = DEPOSIT_CAPITAL > 0 or B_SHARE_CAPITAL > 0
+
+# Brokers covered by deposit capital (comma-separated from env)
+# e.g. DEPOSIT_BROKERS=Broker_A,Broker_B
+_raw_brokers = os.environ.get('DEPOSIT_BROKERS', '').strip()
+DEPOSIT_BROKERS: set[str] = set(b.strip() for b in _raw_brokers.split(',') if b.strip()) if _raw_brokers else set()
+
+
+def set_active_portfolio(db_path: str, capital: float = 0,
+                         deposit_fx: float = 1.0, b_capital: float = 0,
+                         deposit_brokers: set[str] | None = None):
+    """Switch the active database and capital configuration."""
+    global DB_PATH, DEPOSIT_CAPITAL, DEPOSIT_FX_RATE, B_SHARE_CAPITAL, DEPOSIT_MODE, DEPOSIT_BROKERS
+    DB_PATH = db_path
+    DEPOSIT_CAPITAL = capital
+    DEPOSIT_FX_RATE = deposit_fx
+    B_SHARE_CAPITAL = b_capital
+    DEPOSIT_MODE = DEPOSIT_CAPITAL > 0 or B_SHARE_CAPITAL > 0
+    if deposit_brokers is not None:
+        DEPOSIT_BROKERS = deposit_brokers
+    elif not DEPOSIT_MODE:
+        DEPOSIT_BROKERS = set()
+
+
+# ── Schema ──
+
+SCHEMA = """
+PRAGMA journal_mode = WAL;
+
+CREATE TABLE IF NOT EXISTS positions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker      TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    market      TEXT NOT NULL,
+    broker      TEXT NOT NULL,
+    currency    TEXT NOT NULL,
+    quantity    REAL NOT NULL DEFAULT 0,
+    cost_price  REAL NOT NULL DEFAULT 0,
+    status      TEXT NOT NULL DEFAULT 'open',
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS closed_trades (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker       TEXT,
+    name         TEXT NOT NULL,
+    market       TEXT NOT NULL,
+    broker       TEXT NOT NULL,
+    currency     TEXT NOT NULL,
+    realized_pnl REAL NOT NULL DEFAULT 0,
+    close_date   TEXT,
+    notes        TEXT,
+    quantity     REAL,
+    cost_price   REAL,
+    close_price  REAL,
+    cost_total   REAL
+);
+
+CREATE TABLE IF NOT EXISTS cash_balances (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    account    TEXT NOT NULL,
+    currency   TEXT NOT NULL,
+    balance    REAL NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    UNIQUE(account, currency)
+);
+
+CREATE TABLE IF NOT EXISTS nav_history (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    date             TEXT NOT NULL UNIQUE,
+    net_asset_value  REAL,
+    capital_invested REAL,
+    pnl              REAL,
+    equity_nav       REAL,
+    benchmark_value  REAL
+);
+
+CREATE TABLE IF NOT EXISTS fx_rates (
+    currency   TEXT PRIMARY KEY,
+    rate_to_cny REAL NOT NULL,
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS margin_balances (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    broker     TEXT NOT NULL,
+    category   TEXT NOT NULL,
+    currency   TEXT NOT NULL DEFAULT 'CNY',
+    amount     REAL NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    UNIQUE(broker, category, currency)
+);
+
+CREATE TABLE IF NOT EXISTS industry_cache (
+    ticker     TEXT PRIMARY KEY,
+    sector     TEXT,
+    industry   TEXT,
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS daily_snapshots (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    date          TEXT NOT NULL UNIQUE,
+    total_assets  REAL,
+    net_assets    REAL,
+    equity_mv_cny REAL,
+    cash_cny      REAL,
+    leverage_cny  REAL,
+    total_pnl_cny REAL,
+    market_data   TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS snapshot_market_detail (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    date     TEXT NOT NULL,
+    market   TEXT NOT NULL,
+    currency TEXT NOT NULL,
+    mv       REAL NOT NULL DEFAULT 0,
+    UNIQUE(date, market, currency)
+);
+
+CREATE TABLE IF NOT EXISTS ytd_baseline_prices (
+    year       INTEGER NOT NULL,
+    ticker     TEXT NOT NULL,
+    price      REAL NOT NULL,
+    currency   TEXT NOT NULL,
+    date       TEXT NOT NULL,
+    quantity   REAL,
+    cost_price REAL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    UNIQUE(year, ticker)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_ticker_broker ON positions(ticker, broker);
+CREATE INDEX IF NOT EXISTS idx_positions_market ON positions(market);
+CREATE INDEX IF NOT EXISTS idx_positions_broker ON positions(broker);
+CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status);
+CREATE INDEX IF NOT EXISTS idx_closed_market ON closed_trades(market);
+CREATE INDEX IF NOT EXISTS idx_smd_date ON snapshot_market_detail(date);
+CREATE INDEX IF NOT EXISTS idx_ytd_year ON ytd_baseline_prices(year);
+"""
+
+
+# ── Connection ──
+
+def get_conn(db_path: str | None = None) -> sqlite3.Connection:
+    conn = sqlite3.connect(db_path or DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+# ── Migrations (all idempotent) ──
+
+def _migrate_closed_trades(conn):
+    """Add quantity/cost/price/pnl_cny columns to closed_trades."""
+    for col, col_type in [
+        ('quantity', 'REAL'), ('cost_price', 'REAL'), ('close_price', 'REAL'),
+        ('cost_total', 'REAL'), ('realized_pnl_cny', 'REAL'),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE closed_trades ADD COLUMN {col} {col_type}")
+        except sqlite3.OperationalError:
+            pass
+
+
+def _migrate_margin_multi_currency(conn):
+    """Migrate margin_balances UNIQUE to (broker, category, currency)."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='margin_balances'"
+    ).fetchone()
+    if not row:
+        return
+    ddl = row[0] if isinstance(row, (tuple, list)) else row['sql']
+    if 'UNIQUE(broker, category, currency)' in ddl:
+        return
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS margin_balances_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, broker TEXT NOT NULL,
+            category TEXT NOT NULL, currency TEXT NOT NULL DEFAULT 'CNY',
+            amount REAL NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            UNIQUE(broker, category, currency))""")
+    conn.execute("""
+        INSERT OR IGNORE INTO margin_balances_new (broker, category, currency, amount, updated_at)
+        SELECT broker, category, currency, amount, updated_at FROM margin_balances""")
+    conn.execute("DROP TABLE margin_balances")
+    conn.execute("ALTER TABLE margin_balances_new RENAME TO margin_balances")
+    conn.commit()
+
+
+def _migrate_snapshot_market_data(conn):
+    try:
+        conn.execute("ALTER TABLE daily_snapshots ADD COLUMN market_data TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+
+def _migrate_positions_created_at(conn):
+    try:
+        conn.execute("ALTER TABLE positions ADD COLUMN created_at TEXT")
+    except sqlite3.OperationalError:
+        return
+    conn.execute("UPDATE positions SET created_at = updated_at WHERE created_at IS NULL")
+    conn.commit()
+
+
+def _migrate_snapshot_capital(conn):
+    try:
+        conn.execute("ALTER TABLE daily_snapshots ADD COLUMN capital REAL")
+    except sqlite3.OperationalError:
+        pass
+
+
+def _migrate_snapshot_market_pnl(conn):
+    try:
+        conn.execute("ALTER TABLE daily_snapshots ADD COLUMN market_pnl TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+
+def _migrate_snapshot_realized_pnl(conn):
+    try:
+        conn.execute("ALTER TABLE daily_snapshots ADD COLUMN realized_pnl_cny REAL")
+    except sqlite3.OperationalError:
+        pass
+    nulls = conn.execute(
+        "SELECT date FROM daily_snapshots WHERE realized_pnl_cny IS NULL"
+    ).fetchall()
+    if nulls:
+        for row in nulls:
+            sd = row[0]
+            rpnl = conn.execute("""
+                SELECT COALESCE(SUM(realized_pnl_cny), 0) FROM closed_trades
+                WHERE close_date IS NULL OR close_date <= ?
+            """, (sd,)).fetchone()[0]
+            conn.execute(
+                "UPDATE daily_snapshots SET realized_pnl_cny = ? WHERE date = ?",
+                (rpnl, sd))
+
+
+def _migrate_snapshot_stock_pnl(conn):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS snapshot_stock_pnl (
+            date TEXT NOT NULL, ticker TEXT NOT NULL, name TEXT,
+            market TEXT, pnl_cny REAL DEFAULT 0,
+            PRIMARY KEY (date, ticker))""")
+
+
+def _migrate_backfill_realized_pnl_cny(conn):
+    """Backfill realized_pnl_cny for existing closed trades."""
+    count = conn.execute(
+        "SELECT COUNT(*) FROM closed_trades WHERE realized_pnl_cny IS NOT NULL"
+    ).fetchone()[0]
+    if count > 0:
+        return
+    fx = {'CNY': 1.0, 'USD': 6.897, 'HKD': 0.882, 'JPY': 0.04378}
+    for row in conn.execute("SELECT currency, rate_to_cny FROM fx_rates"):
+        fx[row[0]] = row[1]
+    for row in conn.execute("SELECT id, currency, realized_pnl FROM closed_trades"):
+        rate = fx.get(row['currency'], 1.0)
+        pnl_cny = row['realized_pnl'] * rate
+        conn.execute("UPDATE closed_trades SET realized_pnl_cny=? WHERE id=?",
+                      (pnl_cny, row['id']))
+    conn.commit()
+
+
+def _migrate_backfill_market_detail(conn):
+    """Backfill snapshot_market_detail from existing market_data JSON."""
+    count = conn.execute("SELECT COUNT(*) FROM snapshot_market_detail").fetchone()[0]
+    if count > 0:
+        return
+    rows = conn.execute(
+        "SELECT date, market_data FROM daily_snapshots WHERE market_data IS NOT NULL"
+    ).fetchall()
+    for date_val, md_json in rows:
+        try:
+            data = json.loads(md_json)
+        except Exception:
+            continue
+        for market, val in data.items():
+            if isinstance(val, dict):
+                for cur, mv in val.items():
+                    conn.execute("""
+                        INSERT OR IGNORE INTO snapshot_market_detail (date, market, currency, mv)
+                        VALUES (?, ?, ?, ?)""", (date_val, market, cur, mv))
+            else:
+                conn.execute("""
+                    INSERT OR IGNORE INTO snapshot_market_detail (date, market, currency, mv)
+                    VALUES (?, ?, 'CNY', ?)""", (date_val, market, val))
+    conn.commit()
+
+
+def _migrate_ytd_add_qty_cost(conn):
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(ytd_baseline_prices)").fetchall()]
+    if 'quantity' in cols:
+        return
+    conn.execute("ALTER TABLE ytd_baseline_prices ADD COLUMN quantity REAL")
+    conn.execute("ALTER TABLE ytd_baseline_prices ADD COLUMN cost_price REAL")
+    conn.execute("""
+        UPDATE ytd_baseline_prices
+        SET quantity = (SELECT SUM(p.quantity) FROM positions p
+                        WHERE p.ticker = ytd_baseline_prices.ticker AND p.status = 'open'),
+            cost_price = (SELECT p.cost_price FROM positions p
+                          WHERE p.ticker = ytd_baseline_prices.ticker AND p.status = 'open'
+                          LIMIT 1)""")
+    conn.commit()
+
+
+def _migrate_stock_pnl_add_market_pk(conn):
+    pk_cols = [r[1] for r in conn.execute("PRAGMA table_info(snapshot_stock_pnl)").fetchall()
+               if r[5] > 0]
+    if 'market' in pk_cols:
+        return
+    conn.executescript("""
+        DROP TABLE IF EXISTS snapshot_stock_pnl;
+        CREATE TABLE snapshot_stock_pnl (
+            date TEXT NOT NULL, ticker TEXT NOT NULL, name TEXT,
+            market TEXT NOT NULL DEFAULT '', pnl_cny REAL DEFAULT 0,
+            PRIMARY KEY (date, ticker, market));""")
+
+
+def _migrate_backfill_stock_pnl_ytd_base(conn):
+    """Backfill snapshot_stock_pnl for the YTD base date."""
+    cur_year = datetime.now().year
+    row = conn.execute(
+        "SELECT MAX(date) FROM snapshot_market_detail WHERE date < ?",
+        (f'{cur_year}-01-01',)).fetchone()
+    if not row or not row[0]:
+        row = conn.execute(
+            "SELECT MIN(date) FROM snapshot_market_detail WHERE date >= ?",
+            (f'{cur_year}-01-01',)).fetchone()
+    if not row or not row[0]:
+        return
+    base_date = row[0]
+    existing = conn.execute(
+        "SELECT COUNT(*) FROM snapshot_stock_pnl WHERE date = ?", (base_date,)
+    ).fetchone()[0]
+    if existing > 0:
+        return
+    fx = {'CNY': 1.0}
+    for r in conn.execute("SELECT currency, rate_to_cny FROM fx_rates"):
+        fx[r[0]] = r[1]
+    if not fx.get('USD'):
+        return
+    pos_info = {}
+    for r in conn.execute("SELECT ticker, name, market FROM positions"):
+        pos_info[r[0]] = (r[1], r[2])
+    stock_pnl = {}
+    for r in conn.execute(
+        "SELECT ticker, price, currency, quantity, cost_price "
+        "FROM ytd_baseline_prices WHERE year = ?", (cur_year,)
+    ).fetchall():
+        tk, price, cur = r[0], r[1], r[2]
+        qty = r[3] if r[3] is not None else 0
+        cost = r[4] if r[4] is not None else price
+        pnl_cny = (price - cost) * qty * fx.get(cur, 1.0)
+        name, market = pos_info.get(tk, (tk, ''))
+        stock_pnl[(tk, market)] = {'name': name, 'market': market, 'pnl_cny': pnl_cny}
+    for r in conn.execute(
+        "SELECT ticker, name, market, realized_pnl_cny FROM closed_trades "
+        "WHERE (close_date IS NULL OR close_date <= ?) AND realized_pnl_cny IS NOT NULL",
+        (base_date,)
+    ).fetchall():
+        tk, nm, mkt, rpnl = r[0], r[1], r[2] or '', r[3]
+        key = (tk, mkt)
+        if key in stock_pnl:
+            stock_pnl[key]['pnl_cny'] += rpnl
+        else:
+            stock_pnl[key] = {'name': nm, 'market': mkt, 'pnl_cny': rpnl}
+    for (tk, _mkt), sp in stock_pnl.items():
+        conn.execute(
+            "INSERT OR IGNORE INTO snapshot_stock_pnl "
+            "(date, ticker, name, market, pnl_cny) VALUES (?, ?, ?, ?, ?)",
+            (base_date, tk, sp['name'], sp['market'], sp['pnl_cny']))
+    conn.commit()
+
+
+# ── Init ──
+
+def init_db(db_path: str | None = None) -> None:
+    """Initialize database schema and run all migrations."""
+    with get_conn(db_path) as conn:
+        conn.executescript(SCHEMA)
+        _migrate_closed_trades(conn)
+        _migrate_margin_multi_currency(conn)
+        _migrate_snapshot_market_data(conn)
+        _migrate_positions_created_at(conn)
+        _migrate_snapshot_capital(conn)
+        _migrate_snapshot_market_pnl(conn)
+        _migrate_snapshot_realized_pnl(conn)
+        _migrate_snapshot_stock_pnl(conn)
+        _migrate_backfill_realized_pnl_cny(conn)
+        _migrate_backfill_market_detail(conn)
+        _migrate_ytd_add_qty_cost(conn)
+        _migrate_stock_pnl_add_market_pk(conn)
+        _migrate_backfill_stock_pnl_ytd_base(conn)
+
+
+# ── Capital computation ──
+
+def compute_capital(conn: sqlite3.Connection, fx: dict[str, float]) -> float:
+    """Compute total invested capital (CNY).
+
+    Deposit mode: Capital = deposit + B-share deposit + other position costs + cash - off-exchange leverage - realized P&L
+    Cost mode (default): Capital = all position costs + cash - off-exchange leverage - realized P&L
+    """
+    position_cost = 0.0
+    for row in conn.execute(
+            "SELECT broker, market, currency, quantity, cost_price "
+            "FROM positions WHERE status='open'"):
+        if DEPOSIT_MODE and (row['broker'] in DEPOSIT_BROKERS or row['market'] == 'B股'):
+            continue
+        rate = fx.get(row['currency'], 1.0)
+        position_cost += row['quantity'] * row['cost_price'] * rate
+
+    cash_cny = 0.0
+    for row in conn.execute("SELECT account, currency, balance FROM cash_balances"):
+        if DEPOSIT_MODE and row['account'] in DEPOSIT_BROKERS:
+            continue
+        cash_cny += row['balance'] * fx.get(row['currency'], 1.0)
+
+    margin_off = 0.0
+    for row in conn.execute(
+            "SELECT currency, amount FROM margin_balances WHERE category='off_exchange'"):
+        margin_off += row['amount'] * fx.get(row['currency'], 1.0)
+
+    realised_pl = 0.0
+    if DEPOSIT_MODE:
+        for row in conn.execute(
+                "SELECT broker, market, COALESCE(realized_pnl_cny, 0) AS rpl FROM closed_trades"):
+            if row['broker'] in DEPOSIT_BROKERS or row['market'] == 'B股':
+                continue
+            realised_pl += row['rpl']
+    else:
+        for row in conn.execute(
+                "SELECT COALESCE(realized_pnl_cny, 0) AS rpl FROM closed_trades"):
+            realised_pl += row['rpl']
+
+    base = (DEPOSIT_CAPITAL + B_SHARE_CAPITAL + position_cost) if DEPOSIT_MODE else position_cost
+    return base + cash_cny - margin_off - realised_pl
+
+
+# ── DCF valuation integration (read-only) ──
+
+def get_dcf_valuations() -> dict[str, dict]:
+    """Read latest DCF valuation per ticker from ValueScope DB.
+
+    Returns {ticker: {'dcf_price': float, 'date': str, 'currency': str}}.
+    """
+    db_path = os.environ.get('VS_DB_PATH')
+    if not db_path or not os.path.exists(db_path):
+        return {}
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("""
+            SELECT v.ticker, v.gap_adjusted_price, v.price_per_share,
+                   v.currency, v.valuation_date
+            FROM valuations v
+            INNER JOIN (
+                SELECT ticker, MAX(valuation_date) AS max_date
+                FROM valuations GROUP BY ticker
+            ) latest ON v.ticker = latest.ticker AND v.valuation_date = latest.max_date
+        """).fetchall()
+        conn.close()
+        result = {}
+        for r in rows:
+            price = r['gap_adjusted_price'] or r['price_per_share']
+            if price and price > 0:
+                result[r['ticker']] = {
+                    'dcf_price': round(price, 2),
+                    'date': r['valuation_date'],
+                    'currency': r['currency'],
+                }
+        return result
+    except Exception:
+        return {}
+
+
+# ── CRUD operations ──
+
+def upsert_position(conn: sqlite3.Connection, ticker: str, name: str, market: str,
+                    broker: str, currency: str, quantity: float, cost_price: float) -> None:
+    conn.execute("""
+        INSERT INTO positions (ticker, name, market, broker, currency, quantity, cost_price,
+                               status, updated_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'open', datetime('now','localtime'), datetime('now','localtime'))
+        ON CONFLICT(ticker, broker) DO UPDATE SET
+            name = excluded.name, market = excluded.market,
+            currency = excluded.currency, quantity = excluded.quantity,
+            cost_price = excluded.cost_price,
+            updated_at = CASE
+                WHEN positions.quantity != excluded.quantity
+                  OR abs(positions.cost_price - excluded.cost_price) > 0.0001
+                THEN datetime('now','localtime') ELSE positions.updated_at END
+    """, (ticker, name, market, broker, currency, quantity, cost_price))
+
+
+def insert_closed_trade(conn: sqlite3.Connection, ticker: str | None, name: str,
+                        market: str, broker: str, currency: str, realized_pnl: float,
+                        close_date: str | None = None, notes: str | None = None,
+                        quantity: float | None = None, cost_price: float | None = None,
+                        close_price: float | None = None, cost_total: float | None = None,
+                        realized_pnl_cny: float | None = None) -> None:
+    conn.execute("""
+        INSERT INTO closed_trades (ticker, name, market, broker, currency, realized_pnl,
+                                   close_date, notes, quantity, cost_price, close_price,
+                                   cost_total, realized_pnl_cny)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (ticker, name, market, broker, currency, realized_pnl,
+          close_date, notes, quantity, cost_price, close_price, cost_total, realized_pnl_cny))
+
+
+def upsert_cash(conn: sqlite3.Connection, account: str, currency: str, balance: float) -> None:
+    conn.execute("""
+        INSERT INTO cash_balances (account, currency, balance, updated_at)
+        VALUES (?, ?, ?, datetime('now','localtime'))
+        ON CONFLICT(account, currency) DO UPDATE SET
+            balance = excluded.balance, updated_at = excluded.updated_at
+    """, (account, currency, balance))
+
+
+def upsert_nav(conn: sqlite3.Connection, date: str, nav: float, capital: float,
+               pnl: float, equity_nav: float | None = None, benchmark: float | None = None) -> None:
+    conn.execute("""
+        INSERT INTO nav_history (date, net_asset_value, capital_invested, pnl, equity_nav, benchmark_value)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(date) DO UPDATE SET
+            net_asset_value = excluded.net_asset_value, capital_invested = excluded.capital_invested,
+            pnl = excluded.pnl, equity_nav = excluded.equity_nav, benchmark_value = excluded.benchmark_value
+    """, (date, nav, capital, pnl, equity_nav, benchmark))
+
+
+def upsert_fx(conn: sqlite3.Connection, currency: str, rate: float) -> None:
+    conn.execute("""
+        INSERT INTO fx_rates (currency, rate_to_cny, updated_at)
+        VALUES (?, ?, datetime('now','localtime'))
+        ON CONFLICT(currency) DO UPDATE SET
+            rate_to_cny = excluded.rate_to_cny, updated_at = excluded.updated_at
+    """, (currency, rate))
+
+
+def upsert_margin(conn: sqlite3.Connection, broker: str, category: str,
+                  currency: str, amount: float) -> None:
+    conn.execute("""
+        INSERT INTO margin_balances (broker, category, currency, amount, updated_at)
+        VALUES (?, ?, ?, ?, datetime('now','localtime'))
+        ON CONFLICT(broker, category, currency) DO UPDATE SET
+            amount = excluded.amount, updated_at = excluded.updated_at
+    """, (broker, category, currency, amount))
+
+
+def upsert_snapshot(conn: sqlite3.Connection, date: str, total_assets: float,
+                    net_assets: float, equity_mv: float, cash: float, leverage: float,
+                    total_pnl: float, market_data: str | None = None,
+                    capital: float | None = None, market_detail: dict | None = None,
+                    market_pnl: str | None = None,
+                    realized_pnl_cny: float | None = None,
+                    stock_pnl: list[dict] | None = None) -> None:
+    """Record daily snapshot — first write of the day wins (no overwrite)."""
+    conn.execute("""
+        INSERT OR IGNORE INTO daily_snapshots
+            (date, total_assets, net_assets, equity_mv_cny, cash_cny,
+             leverage_cny, total_pnl_cny, market_data, capital, market_pnl,
+             realized_pnl_cny, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
+    """, (date, total_assets, net_assets, equity_mv, cash, leverage, total_pnl,
+          market_data, capital, market_pnl, realized_pnl_cny))
+
+    if market_pnl:
+        conn.execute("""
+            UPDATE daily_snapshots SET market_pnl = ?
+            WHERE date = ? AND market_pnl IS NULL""", (market_pnl, date))
+    if realized_pnl_cny is not None:
+        conn.execute("""
+            UPDATE daily_snapshots SET realized_pnl_cny = ?
+            WHERE date = ? AND realized_pnl_cny IS NULL""", (realized_pnl_cny, date))
+
+    if market_detail:
+        for market, cur_dict in market_detail.items():
+            if isinstance(cur_dict, dict):
+                for currency, mv in cur_dict.items():
+                    conn.execute("""
+                        INSERT OR IGNORE INTO snapshot_market_detail (date, market, currency, mv)
+                        VALUES (?, ?, ?, ?)""", (date, market, currency, mv))
+
+    if stock_pnl:
+        for sp in stock_pnl:
+            conn.execute("""
+                INSERT OR IGNORE INTO snapshot_stock_pnl (date, ticker, name, market, pnl_cny)
+                VALUES (?, ?, ?, ?, ?)
+            """, (date, sp['ticker'], sp.get('name'), sp.get('market', ''), sp.get('pnl_cny', 0)))
+
+
+# ── YTD baselines ──
+
+def get_ytd_baselines(conn: sqlite3.Connection, year: int) -> dict[str, dict]:
+    rows = conn.execute(
+        "SELECT ticker, price, quantity, cost_price FROM ytd_baseline_prices WHERE year = ?",
+        (year,)).fetchall()
+    result = {}
+    for r in rows:
+        tk = r['ticker'] if isinstance(r, sqlite3.Row) else r[0]
+        result[tk] = {
+            'price': r['price'] if isinstance(r, sqlite3.Row) else r[1],
+            'quantity': r['quantity'] if isinstance(r, sqlite3.Row) else r[2],
+            'cost_price': r['cost_price'] if isinstance(r, sqlite3.Row) else r[3],
+        }
+    return result
+
+
+def record_ytd_baselines(conn: sqlite3.Connection, year: int, ticker_data: dict, date: str) -> None:
+    for ticker, vals in ticker_data.items():
+        price, currency = vals[0], vals[1]
+        qty = vals[2] if len(vals) > 2 else None
+        cost = vals[3] if len(vals) > 3 else None
+        conn.execute("""
+            INSERT OR IGNORE INTO ytd_baseline_prices
+                (year, ticker, price, currency, date, quantity, cost_price)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (year, ticker, price, currency, date, qty, cost))
+
+
+if __name__ == '__main__':
+    init_db()
+    print(f"Database initialized at {DB_PATH}")

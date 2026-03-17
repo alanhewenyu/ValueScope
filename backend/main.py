@@ -37,7 +37,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
-from backend.routers import stock, valuation, relative
+from backend.routers import stock, valuation, relative, portfolio, history
 
 app = FastAPI(
     title="ValueScope API",
@@ -59,13 +59,15 @@ app.add_middleware(
     ],
     allow_origin_regex=r"https://valuescope-.*\.vercel\.app",  # Vercel preview deploys only
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
 
 app.include_router(stock.router, prefix="/api/stock", tags=["Stock"])
 app.include_router(valuation.router, prefix="/api/valuation", tags=["Valuation"])
 app.include_router(relative.router, prefix="/api/analysis", tags=["Analysis"])
+app.include_router(portfolio.router, prefix="/api/portfolio", tags=["Portfolio"])
+app.include_router(history.router, prefix="/api/history", tags=["History"])
 
 
 @app.get("/api/health")
