@@ -268,7 +268,7 @@ def _render_dcf_table(dcf_table_json, ttm_label='', base_year=None):
     if ttm_label:
         base_label = f'Base ({ttm_label})'
     elif base_year:
-        base_label = f'Base ({int(base_year)})'
+        base_label = f'Base ({int(str(base_year).replace("FY", ""))})'
     else:
         base_label = 'Base Year'
     year_labels = [base_label] + [str(i) for i in range(1, 11)] + ['Terminal']

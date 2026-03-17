@@ -48,8 +48,9 @@ def calculate_wacc(base_year_data, company_profile, apikey, verbose=True, forex_
         market_risk_premium_data = fetch_market_risk_premium(apikey)
         total_equity_risk_premium = market_risk_premium_data.get(mapped_country, 5.0) / 100
 
+    # Summary stores values in millions; convert market_cap to same scale
     total_debt = float(base_year_data.get('(+) Total Debt', 0))
-    market_cap = float(company_profile.get('marketCap', 0))
+    market_cap = float(company_profile.get('marketCap', 0)) / 1_000_000
     reporting_currency = base_year_data.get('Reported Currency', 'USD')
     company_currency = company_profile.get('currency', 'USD')
 
@@ -92,8 +93,8 @@ def calculate_wacc(base_year_data, company_profile, apikey, verbose=True, forex_
         ("Beta", f"{beta:.1f}"),
         ("Cost of debt", f"{cost_of_debt:.1%}"),
         ("Marginal tax rate", f"{MARGINAL_TAX_RATE:.0%}"),
-        ("Debt weighting", f"{debt_weighting:.0%}"),
-        ("Equity weighting", f"{equity_weighting:.0%}"),
+        ("Debt weighting", f"{debt_weighting:.1%}"),
+        ("Equity weighting", f"{equity_weighting:.1%}"),
         ("Calculated WACC", f"{wacc:.1%}")
     ]
 
@@ -115,6 +116,9 @@ def print_wacc_details(wacc_details):
 
 def calculate_dcf(base_year_data, valuation_params, financial_data, company_info, company_profile):
     base_year = valuation_params['base_year']
+    forecast_year_1 = valuation_params.get('forecast_year_1', base_year + 1)
+    fy_end_month = valuation_params.get('fy_end_month', 12)
+    base_year_label = f'FY{base_year}' if fy_end_month != 12 else str(base_year)
     revenue = float(base_year_data['Revenue'])
     ebit = float(base_year_data['EBIT'])
     tax_rate = float(base_year_data['Average Tax Rate'])
@@ -149,7 +153,7 @@ def calculate_dcf(base_year_data, valuation_params, financial_data, company_info
     base_ebit_margin = ebit / revenue  # Store base year margin for linear convergence
 
     dcf_table.loc[0] = [
-        base_year, revenue_growth_rate_base_year, revenue, base_ebit_margin, ebit, tax_rate,
+        base_year_label, revenue_growth_rate_base_year, revenue, base_ebit_margin, ebit, tax_rate,
         ebit * (1 - tax_rate), reinvestments_base_year, ebit * (1 - tax_rate) - reinvestments_base_year,
         wacc, 1, (ebit * (1 - tax_rate) - reinvestments_base_year)
     ]
@@ -210,7 +214,7 @@ def calculate_dcf(base_year_data, valuation_params, financial_data, company_info
             pv_fcff = None
 
         dcf_table.loc[year] = [
-            base_year + year, revenue_growth, revenue_current, ebit_margin_current, ebit_current, 
+            forecast_year_1 + year - 1, revenue_growth, revenue_current, ebit_margin_current, ebit_current,
             tax_to_ebit, ebit_after_tax, reinvestments, fcff, wacc_current, discount_factor, pv_fcff
         ]
 
@@ -368,7 +372,7 @@ def print_dcf_results(results, company_name, ttm_quarter='', ttm_label='', forex
     formatted_dcf_table = dcf_table.copy()
     for col in formatted_dcf_table.columns:
         if col in ['Year']:
-            formatted_dcf_table[col] = formatted_dcf_table[col].apply(lambda x: f"{int(x)}")
+            formatted_dcf_table[col] = formatted_dcf_table[col].apply(lambda x: str(x) if isinstance(x, str) else f"{int(x)}")
         elif col in ['Revenue Growth Rate', 'EBIT Margin', 'Tax to EBIT', 'WACC']:
             formatted_dcf_table[col] = formatted_dcf_table[col].apply(lambda x: f"{x:.1%}" if pd.notnull(x) else 'N/A')
         elif col in ['Discount Factor']:

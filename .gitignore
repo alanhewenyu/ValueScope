@@ -3,7 +3,35 @@ __pycache__/
 .DS_Store
 stock_valuation/
 .env
+.rate_limits.json
 .streamlit/secrets.toml
 *.swp
 *.swo
 assets/*.cast
+
+# Frontend (Next.js)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+
+# Python virtualenv
+.venv/
+venv/
+env/
+
+# Personal data
+valuations.db
+import_excels.py
+stock-data-platform-analysis.md
+
+# Internal docs
+PRODUCT_VISION.md
+ROADMAP.md
+
+# IDE / editor
+.vscode/
+.idea/
+
+# Claude local config
+.claude/

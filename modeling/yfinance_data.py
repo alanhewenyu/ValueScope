@@ -439,6 +439,9 @@ def fetch_yfinance_hk_company_profile(ticker):
         'exchange': info.get('exchange', 'HKG'),
         'price': info.get('currentPrice') or info.get('regularMarketPrice', 0) or 0,
         'outstandingShares': info.get('sharesOutstanding', 0) or 0,
+        'industry': info.get('industry', ''),
+        'sector': info.get('sector', ''),
+        'description': info.get('longBusinessSummary', ''),
     }
 
 

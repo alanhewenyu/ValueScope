@@ -12,10 +12,28 @@ def _supports_color():
     return True
 
 _COLOR = _supports_color()
+_SOFT = True  # soft mode on by default — less eye strain
+
+def enable_vivid_mode():
+    """Restore original bright/bold colour palette."""
+    global _SOFT, BOLD
+    global BRIGHT_RED, BRIGHT_GREEN, BRIGHT_YELLOW, BRIGHT_BLUE
+    global BRIGHT_MAGENTA, BRIGHT_CYAN, BRIGHT_WHITE
+    _SOFT = False
+    if not _COLOR:
+        return
+    BOLD = '\033[1m'
+    BRIGHT_RED = '\033[91m'
+    BRIGHT_GREEN = '\033[92m'
+    BRIGHT_YELLOW = '\033[93m'
+    BRIGHT_BLUE = '\033[94m'
+    BRIGHT_MAGENTA = '\033[95m'
+    BRIGHT_CYAN = '\033[96m'
+    BRIGHT_WHITE = '\033[97m'
 
 # ANSI escape codes
 RESET = '\033[0m' if _COLOR else ''
-BOLD = '\033[1m' if _COLOR else ''
+BOLD = '' if _COLOR else ''  # soft default: no bold
 DIM = '\033[2m' if _COLOR else ''
 ITALIC = '\033[3m' if _COLOR else ''
 UNDERLINE = '\033[4m' if _COLOR else ''
@@ -30,14 +48,14 @@ MAGENTA = '\033[35m' if _COLOR else ''
 CYAN = '\033[36m' if _COLOR else ''
 WHITE = '\033[37m' if _COLOR else ''
 
-# Bright foreground colors
-BRIGHT_RED = '\033[91m' if _COLOR else ''
-BRIGHT_GREEN = '\033[92m' if _COLOR else ''
-BRIGHT_YELLOW = '\033[93m' if _COLOR else ''
-BRIGHT_BLUE = '\033[94m' if _COLOR else ''
-BRIGHT_MAGENTA = '\033[95m' if _COLOR else ''
-BRIGHT_CYAN = '\033[96m' if _COLOR else ''
-BRIGHT_WHITE = '\033[97m' if _COLOR else ''
+# Bright colors — soft default: use regular (dimmer) variants
+BRIGHT_RED = '\033[31m' if _COLOR else ''
+BRIGHT_GREEN = '\033[32m' if _COLOR else ''
+BRIGHT_YELLOW = '\033[33m' if _COLOR else ''
+BRIGHT_BLUE = '\033[34m' if _COLOR else ''
+BRIGHT_MAGENTA = '\033[35m' if _COLOR else ''
+BRIGHT_CYAN = '\033[36m' if _COLOR else ''
+BRIGHT_WHITE = '\033[37m' if _COLOR else ''
 
 
 # --- Semantic helpers ---
@@ -46,12 +64,16 @@ def header(text):
     """Major section header with double-line border."""
     w = max(len(text) + 4, 60)
     border = '═' * w
+    if _SOFT:
+        return f"{DIM}{CYAN}{border}{RESET}\n{BRIGHT_CYAN}  {text}{RESET}\n{DIM}{CYAN}{border}{RESET}"
     return f"{BOLD}{CYAN}{border}{RESET}\n{BOLD}{CYAN}  {text}{RESET}\n{BOLD}{CYAN}{border}{RESET}"
 
 def subheader(text):
     """Sub-section header with single-line border."""
     w = max(len(text) + 4, 60)
     border = '─' * w
+    if _SOFT:
+        return f"{DIM}{border}{RESET}\n{BRIGHT_WHITE}  {text}{RESET}\n{DIM}{border}{RESET}"
     return f"{CYAN}{border}{RESET}\n{BOLD}{WHITE}  {text}{RESET}\n{CYAN}{border}{RESET}"
 
 def divider(char='─', width=60):

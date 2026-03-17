@@ -1,0 +1,40 @@
+# Frontend (built/served separately)
+frontend/
+node_modules/
+
+# Version control
+.git/
+.gitignore
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+backend/.env
+*.env
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Misc
+*.db
+*.sqlite3
+.claude/
+docs/
+assets/
+*.md

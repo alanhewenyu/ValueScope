@@ -323,11 +323,11 @@ _STRINGS = {
         # ── Footer ──
         'footer_tagline': '<b>ValueScope</b> \u2014 AI-Powered Interactive DCF Valuation',
         'footer_tagline_web': '<b>ValueScope</b> \u2014 Interactive DCF Valuation',
-        'footer_disclaimer': '<b>Disclaimer:</b> This tool is a DCF valuation calculator for educational and research purposes only. '
-                             'All outputs are model estimates based on user-defined assumptions and do not constitute investment advice, '
-                             'securities research reports, or recommendations to buy, sell, or hold any security. '
+        'footer_disclaimer': '<b>Disclaimer:</b> ValueScope is a stock valuation and analysis tool for educational and research purposes only. '
+                             'All outputs — including DCF estimates, scores, and relative valuation metrics — are model calculations based on public data and user-defined assumptions, '
+                             'and do not constitute investment advice, securities research reports, or recommendations to buy, sell, or hold any security. '
                              'Users should make independent investment decisions and bear all associated risks. '
-                             'Analysis results are generated with AI assistance.',
+                             'Analysis results may be generated with AI assistance.',
         'verdict_hint': '\u2699\ufe0f Model estimate, not investment advice',
 
         # ── Financial table row labels ──
@@ -676,9 +676,9 @@ _STRINGS = {
         # ── Footer ──
         'footer_tagline': '<b>ValueScope</b> \u2014 AI \u667a\u80fd\u4ea4\u4e92\u5f0f DCF \u4f30\u503c',
         'footer_tagline_web': '<b>ValueScope</b> \u2014 \u4ea4\u4e92\u5f0f DCF \u4f30\u503c',
-        'footer_disclaimer': '<b>免责声明：</b>本工具仅为DCF估值计算器，供学习和研究用途。'
-                             '所有输出均为基于用户假设参数的模型估算结果，不构成任何投资建议、证券研究报告或买卖推荐。'
-                             '用户应独立做出投资决策并自行承担全部风险。分析结果由AI辅助生成。',
+        'footer_disclaimer': '<b>免责声明：</b>ValueScope 仅为股票估值与分析工具，供学习和研究用途。'
+                             '所有输出（包括 DCF 估算、评分和相对估值指标）均为基于公开数据和用户假设参数的模型计算结果，不构成任何投资建议、证券研究报告或买卖推荐。'
+                             '用户应独立做出投资决策并自行承担全部风险。分析结果可能由 AI 辅助生成。',
         'verdict_hint': '\u2699\ufe0f 模型估算，非投资建议',
 
         # ── Financial table row labels ──

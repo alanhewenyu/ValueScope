@@ -1,5 +1,6 @@
 from urllib.request import urlopen
-import os, re, json, traceback
+import urllib.request
+import os, re, json, time, traceback
 import pandas as pd
 from . import style as S
 from .constants import CHINA_DEFAULT_BETA
@@ -29,15 +30,31 @@ def _get_ak():
 
 
 def _normalize_ticker(ticker):
-    """Normalize ticker: convert .SH alias to .SS for internal consistency.
+    """Normalize ticker: auto-detect market suffix and convert aliases.
 
-    Shanghai Stock Exchange uses .SS (Yahoo/FMP convention). Users may also enter
-    .SH (intuitive Chinese abbreviation 上海=SH). Both are accepted, but .SH is
-    auto-converted to .SS internally since FMP and other data sources use .SS.
+    - .SH → .SS (Shanghai Stock Exchange alias)
+    - Bare 6-digit codes → auto-append .SS or .SZ based on prefix:
+      600/601/603/605/688 → .SS (Shanghai)
+      000/001/002/003/300/301 → .SZ (Shenzhen)
+    - Bare 4-5 digit codes starting with 0 → .HK (Hong Kong)
     """
     t = ticker.strip().upper()
     if t.endswith('.SH'):
         return t[:-3] + '.SS'
+
+    # Bare 6-digit number without suffix → A-share auto-detection
+    if re.match(r'^\d{6}$', t):
+        if t[:3] in ('600', '601', '603', '605', '688'):
+            return t + '.SS'
+        if t[:3] in ('000', '001', '002', '003', '300', '301'):
+            return t + '.SZ'
+        # Fallback: Shanghai B-share (900xxx) or unknown → .SS
+        return t + '.SS'
+
+    # Bare 4-5 digit number starting with 0 → likely HK stock
+    if re.match(r'^0\d{3,4}$', t):
+        return t + '.HK'
+
     return t
 
 
@@ -95,6 +112,31 @@ def is_jpn_stock(ticker):
     """Return True if ticker is a Japanese stock (.T, Tokyo Stock Exchange)."""
     t = _normalize_ticker(ticker)
     return t.endswith('.T')
+
+
+def _fiscal_year_quarter(date_str, fy_end_month):
+    """Given a report date and fiscal year end month, return (fiscal_year, 'Q1'..'Q4').
+
+    Fiscal year is named by the calendar year it ENDS in.
+    E.g. FY end month=3, date=2025-09-30 → FY2026 Q2 (FY2026 runs Apr 2025–Mar 2026).
+    """
+    year = int(date_str[:4])
+    month = int(date_str[5:7])
+    fiscal_year = year + 1 if month > fy_end_month else year
+    fy_start_month = (fy_end_month % 12) + 1
+    months_into_fy = (month - fy_start_month) % 12
+    fiscal_quarter = months_into_fy // 3 + 1
+    return fiscal_year, f'Q{fiscal_quarter}'
+
+
+def _get_fy_end_month(summary_data):
+    """Infer fiscal year end month from annual statement dates."""
+    for sd in summary_data:
+        if sd.get('Period') in ('FY', 'Q4'):
+            date = sd.get('Date', '')
+            if len(date) >= 7:
+                return int(date[5:7])
+    return 12  # Default: December
 
 
 def _is_cloud_mode():
@@ -303,6 +345,10 @@ def fetch_company_profile(ticker, apikey=''):
         'currency': data[0].get('currency', 'USD'),
         'exchange': data[0].get('exchange', 'NASDAQ'),
         'price': data[0].get('price', 0),
+        'industry': data[0].get('industry', ''),
+        'sector': data[0].get('sector', ''),
+        'description': data[0].get('description', ''),
+        'image': data[0].get('image', ''),
     }
 
 def _safe_numeric(val, default=0):
@@ -483,6 +529,7 @@ def fetch_akshare_company_profile(ticker):
                 'exchange': exchange,
                 'price': float(info_dict.get('最新', 0)),
                 'outstandingShares': float(info_dict.get('总股本', 0)),
+                'industry': str(info_dict.get('行业', '')),
             }
         except Exception as e:
             print(S.muted(f"  ⓘ stock_individual_info_em failed ({type(e).__name__}), building profile from alternative sources..."))
@@ -1377,6 +1424,9 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                 data['Payout Ratio (%)'] = _payout
             summary_data.append(data)
 
+        # --- Detect fiscal year end month ---
+        _fy_end_month = _get_fy_end_month(summary_data)
+
         # --- TTM column: prepend to summary_data when latest data is not full-year ---
         # For quarter mode: compute if latest quarter is not Q4
         # For annual mode: always attempt (latest quarterly data may be more recent than latest FY)
@@ -1432,10 +1482,15 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
 
                 if ttm_income:
                     _ttm_latest_date = ttm_income.get('_latest_date', '')
-                    _ttm_latest_quarter = ttm_income.get('_latest_quarter', '')
                     _ttm_end_date = _ttm_latest_date
-                    # TTM calendar year = latest full-year calendar year + 1
-                    _ttm_label_year = str(int(_latest_fy_cal_year) + 1) if _latest_fy_cal_year.isdigit() else (_ttm_latest_date[:4] if _ttm_latest_date else '')
+                    # Use fiscal year/quarter for correct labeling (non-Dec FY companies)
+                    if _ttm_latest_date:
+                        _fy, _fq = _fiscal_year_quarter(_ttm_latest_date, _fy_end_month)
+                        _ttm_label_year = str(_fy)
+                        _ttm_latest_quarter = _fq
+                    else:
+                        _ttm_label_year = str(int(_latest_fy_cal_year) + 1) if _latest_fy_cal_year.isdigit() else ''
+                        _ttm_latest_quarter = ttm_income.get('_latest_quarter', '')
                     ttm_revenue = ttm_income['revenue'] / 1_000_000
                     ttm_ebit = ttm_income['operatingIncome'] / 1_000_000
                     ttm_tax_rate = (ttm_income['incomeTaxExpense'] / ttm_income['incomeBeforeTax'] * 100
@@ -1529,9 +1584,15 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
 
                     if ttm_income:
                         _ttm_latest_date = ttm_income.get('_latest_date', '')
-                        _ttm_latest_quarter = ttm_income.get('_latest_quarter', '')
                         _ttm_end_date = _ttm_latest_date
-                        _ttm_label_year = str(int(_latest_fy_cal_year) + 1) if _latest_fy_cal_year.isdigit() else (_ttm_latest_date[:4] if _ttm_latest_date else '')
+                        # Use fiscal year/quarter for correct labeling (non-Dec FY companies)
+                        if _ttm_latest_date:
+                            _fy, _fq = _fiscal_year_quarter(_ttm_latest_date, _fy_end_month)
+                            _ttm_label_year = str(_fy)
+                            _ttm_latest_quarter = _fq
+                        else:
+                            _ttm_label_year = str(int(_latest_fy_cal_year) + 1) if _latest_fy_cal_year.isdigit() else ''
+                            _ttm_latest_quarter = ttm_income.get('_latest_quarter', '')
 
                         ttm_revenue = ttm_income['revenue'] / 1_000_000
                         ttm_ebit = ttm_income['operatingIncome'] / 1_000_000
@@ -1599,9 +1660,15 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
 
                         if yf_ttm and yf_ttm.get('has_ttm_income'):
                             _ttm_latest_date = yf_ttm['ttm_end_date']
-                            _ttm_latest_quarter = yf_ttm['ttm_quarter']
                             _ttm_end_date = _ttm_latest_date
-                            _ttm_label_year = str(int(_latest_fy_cal_year) + 1) if _latest_fy_cal_year.isdigit() else (_ttm_latest_date[:4] if _ttm_latest_date else '')
+                            # Use fiscal year/quarter for correct labeling (non-Dec FY companies)
+                            if _ttm_latest_date:
+                                _fy, _fq = _fiscal_year_quarter(_ttm_latest_date, _fy_end_month)
+                                _ttm_label_year = str(_fy)
+                                _ttm_latest_quarter = _fq
+                            else:
+                                _ttm_label_year = str(int(_latest_fy_cal_year) + 1) if _latest_fy_cal_year.isdigit() else ''
+                                _ttm_latest_quarter = yf_ttm['ttm_quarter']
 
                             ttm_revenue = yf_ttm['revenue'] / 1_000_000
                             ttm_ebit = yf_ttm['operatingIncome'] / 1_000_000
@@ -1723,9 +1790,15 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                     print(S.muted(f"  ⓘ 检测到半年报公司，使用 FY + Δ 方法计算 TTM"))
 
                     _ttm_q_date = q_inc[0].get('date', '')
-                    _ttm_latest_quarter = q_inc[0].get('period', '')
                     _ttm_end_date = _ttm_q_date
-                    _ttm_label_year = str(int(_latest_fy_cal_year) + 1) if _latest_fy_cal_year.isdigit() else (_ttm_q_date[:4] if _ttm_q_date else '')
+                    # Use fiscal year/quarter for correct labeling (non-Dec FY companies)
+                    if _ttm_q_date:
+                        _fy, _fq = _fiscal_year_quarter(_ttm_q_date, _fy_end_month)
+                        _ttm_label_year = str(_fy)
+                        _ttm_latest_quarter = _fq
+                    else:
+                        _ttm_label_year = str(int(_latest_fy_cal_year) + 1) if _latest_fy_cal_year.isdigit() else ''
+                        _ttm_latest_quarter = q_inc[0].get('period', '')
 
                     # q_inc[0] = latest quarter (e.g., Q2 2025)
                     # q_inc[1] = same quarter prior year (e.g., Q2 2024)
@@ -1800,9 +1873,15 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                     # --- Quarterly TTM: standard sum of 4 quarters ---
                     n = 4
                     _ttm_q_date = q_inc[0].get('date', '')
-                    _ttm_latest_quarter = q_inc[0].get('period', '')
                     _ttm_end_date = _ttm_q_date
-                    _ttm_label_year = str(int(_latest_fy_cal_year) + 1) if _latest_fy_cal_year.isdigit() else (_ttm_q_date[:4] if _ttm_q_date else '')
+                    # Use fiscal year/quarter for correct labeling (non-Dec FY companies)
+                    if _ttm_q_date:
+                        _fy, _fq = _fiscal_year_quarter(_ttm_q_date, _fy_end_month)
+                        _ttm_label_year = str(_fy)
+                        _ttm_latest_quarter = _fq
+                    else:
+                        _ttm_label_year = str(int(_latest_fy_cal_year) + 1) if _latest_fy_cal_year.isdigit() else ''
+                        _ttm_latest_quarter = q_inc[0].get('period', '')
 
                     # Revenue & EBIT: sum 4 quarters
                     ttm_revenue = sum((q_inc[j].get('revenue', 0) or 0) for j in range(n)) / 1_000_000
@@ -1969,6 +2048,13 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
             if '_ttm_note' in d:
                 ttm_note = d.pop('_ttm_note')
 
+        # For non-December fiscal year companies, prefix Calendar Year with "FY"
+        if _fy_end_month != 12:
+            for d in summary_data:
+                cy = d.get('Calendar Year', '')
+                if cy and not str(cy).startswith('FY'):
+                    d['Calendar Year'] = f'FY{cy}'
+
         summary_df = pd.DataFrame(summary_data).T
         summary_df.columns = summary_df.iloc[0]
         summary_df = summary_df[1:]
@@ -1986,6 +2072,7 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
             'ttm_note': ttm_note,
             'ttm_latest_quarter': _ttm_latest_quarter if _need_ttm else '',
             'ttm_end_date': _ttm_end_date,
+            'fy_end_month': _fy_end_month,
         }
 
         # For A-shares and HK stocks, include complete raw financial statements for Excel export
@@ -2047,3 +2134,157 @@ def format_summary_df(summary_df):
     df.index = [_DISPLAY_RENAME.get(idx, idx) for idx in df.index]
 
     return df
+
+
+# ── Index Membership ──────────────────────────────────────────────────
+
+_index_cache = {}  # key: cache_key -> {'symbols': set, 'timestamp': float}
+_INDEX_CACHE_TTL = 3600  # 1 hour
+
+
+def get_index_membership(ticker, apikey=''):
+    """Return list of major index names that `ticker` belongs to."""
+    ticker = _normalize_ticker(ticker)
+    indexes = []
+
+    if is_a_share(ticker):
+        bare = _ticker_to_bare_code(ticker)
+        for idx_code, idx_name in [
+            ('000300', '沪深300'),
+            ('000905', '中证500'),
+            ('000016', '上证50'),
+        ]:
+            if _check_akshare_index(bare, idx_code):
+                indexes.append(idx_name)
+    elif is_hk_stock(ticker):
+        # Hang Seng Index / HSTECH / Stock Connect — via official HSI API + akshare
+        bare = re.sub(r'\.HK$', '', ticker.upper()).lstrip('0')  # "0700.HK" → "700"
+        for series_code, idx_name_en, idx_label in [
+            ('hsi', 'Hang Seng Index', '恒生指数'),
+            ('hstech', 'Hang Seng TECH Index', '恒生科技指数'),
+        ]:
+            if _check_hsi_index(bare, series_code, idx_name_en):
+                indexes.append(idx_label)
+        if _check_hk_stock_connect(ticker):
+            indexes.append('港股通')
+    elif not is_jpn_stock(ticker):
+        # US stocks — check FMP constituent lists
+        if apikey:
+            for idx_name, endpoint in [
+                ('S&P 500', 'sp500_constituent'),
+                ('Nasdaq 100', 'nasdaq_constituent'),
+                ('Dow Jones', 'dowjones_constituent'),
+            ]:
+                if _check_fmp_index(ticker, endpoint, apikey):
+                    indexes.append(idx_name)
+
+    return indexes
+
+
+def _check_akshare_index(bare_code, index_code):
+    """Check if A-share bare code is in a given akshare index."""
+    cache_key = f'akshare_{index_code}'
+    cached = _index_cache.get(cache_key)
+    if cached and time.time() - cached['timestamp'] < _INDEX_CACHE_TTL:
+        return bare_code in cached['symbols']
+
+    try:
+        ak = _get_ak()
+        df = ak.index_stock_cons(symbol=index_code)
+        symbols = set(df['品种代码'].astype(str).tolist())
+        _index_cache[cache_key] = {'symbols': symbols, 'timestamp': time.time()}
+        return bare_code in symbols
+    except Exception as e:
+        print(S.warning(f"index_stock_cons({index_code}) failed: {e}"))
+        return False
+
+
+def _check_hsi_index(bare_code, series_code, index_name_en):
+    """Check if HK stock (bare code, e.g. '700') is in a Hang Seng index.
+
+    Fetches constituent data live from the official HSI.com.hk API.
+    Works without any API key. Results are cached per _INDEX_CACHE_TTL.
+
+    Args:
+        bare_code: Bare numeric code without leading zeros or suffix, e.g. '700'
+        series_code: HSI series code, e.g. 'hsi', 'hstech'
+        index_name_en: English name for logging, e.g. 'Hang Seng Index'
+    """
+    cache_key = f'hsi_{series_code}'
+    cached = _index_cache.get(cache_key)
+    if cached and time.time() - cached['timestamp'] < _INDEX_CACHE_TTL:
+        return bare_code in cached['symbols']
+
+    try:
+        url = (
+            f"https://www.hsi.com.hk/data/eng/rt/index-series/"
+            f"{series_code}/constituents.do"
+        )
+        req = urllib.request.Request(url, headers={
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0",
+        })
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+
+        # Response: indexSeriesList[0].indexList[0].constituentContent
+        cc = data["indexSeriesList"][0]["indexList"][0]["constituentContent"]
+        symbols = set()
+        for c in cc:
+            code = str(c.get("code", "")).strip()
+            if code:
+                symbols.add(code)
+        _index_cache[cache_key] = {'symbols': symbols, 'timestamp': time.time()}
+        return bare_code in symbols
+    except Exception as e:
+        print(S.warning(f"HSI.com.hk {series_code} failed: {e}"))
+        return False
+
+
+def _check_hk_stock_connect(ticker):
+    """Check if HK stock is in 港股通 via akshare."""
+    cache_key = 'hk_stock_connect'
+    cached = _index_cache.get(cache_key)
+    if cached and time.time() - cached['timestamp'] < _INDEX_CACHE_TTL:
+        return ticker in cached['symbols']
+
+    try:
+        ak = _get_ak()
+        df = ak.stock_hk_ggt_components_em()
+        # Column is typically '代码', map to .HK format
+        codes = df.iloc[:, 0].astype(str).tolist()
+        # Normalize: akshare returns e.g. "00700", our ticker is "0700.HK"
+        symbols = set()
+        for code in codes:
+            code = code.zfill(5)
+            symbols.add(f"{code}.HK")
+            # Also try 4-digit: "0700.HK"
+            if code.startswith('0') and len(code) == 5:
+                symbols.add(f"{code[1:]}.HK")
+        _index_cache[cache_key] = {'symbols': symbols, 'timestamp': time.time()}
+        return ticker.upper() in symbols
+    except Exception as e:
+        print(S.warning(f"stock_hk_ggt_components_em failed: {e}"))
+        # Cache the failure so we don't retry on every request (expensive timeout)
+        _index_cache[cache_key] = {'symbols': set(), 'timestamp': time.time()}
+        return False
+
+
+def _check_fmp_index(ticker, endpoint, apikey):
+    """Check if ticker is in an FMP index constituent list."""
+    cache_key = f'fmp_{endpoint}'
+    cached = _index_cache.get(cache_key)
+    if cached and time.time() - cached['timestamp'] < _INDEX_CACHE_TTL:
+        return ticker.upper() in cached['symbols']
+
+    try:
+        url = f'https://financialmodelingprep.com/api/v3/{endpoint}?apikey={apikey}'
+        data = get_jsonparsed_data(url)
+        symbols = set(
+            item.get('symbol', '').upper() for item in data
+        ) if isinstance(data, list) else set()
+        _index_cache[cache_key] = {'symbols': symbols, 'timestamp': time.time()}
+        return ticker.upper() in symbols
+    except Exception as e:
+        print(S.warning(f"FMP {endpoint} failed: {e}"))
+        return False

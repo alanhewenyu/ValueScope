@@ -6,17 +6,18 @@
 
 # ValueScope
 
-**AI 驱动的交互式 DCF 股票估值工具 — 标准化模型、实时调参、可复现结果。**
+**AI 驱动的股票估值与分析平台 — DCF 估值、相对估值、多维评分、财务分析。**
 
 [![在线使用](https://img.shields.io/badge/🌐_在线使用-valuescope.app-2563eb?style=for-the-badge)](https://valuescope.app)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-15-black.svg)](https://nextjs.org/)
 
 ---
 
 ## ValueScope 是什么？
 
-ValueScope 是一个基于**标准化 DCF 引擎**的 AI 股票估值工具 — 10 年 FCFF 显性预测期、终值、WACC、敏感性分析，框架固定、结果可复现。与直接让大模型"估个值"不同（每次对话可能用不同的方法和折现框架），ValueScope 产出**一致、可比较的估值结果**，为投资决策提供可靠依据。
+ValueScope 是一个基于 **Damodaran FCFF 标准化 DCF 引擎**的 AI 股票估值平台 — 10 年显性预测期、终值、WACC、敏感性分析，框架固定、结果可复现。与直接让大模型"估个值"不同（每次对话可能用不同的方法和折现框架），ValueScope 产出**一致、可比较的估值结果**，为投资决策提供可靠依据。
 
 你可以把它想象成一位坐在身边的股权研究分析师：AI 帮你搜索业绩指引、分析师一致预期和行业数据，然后给出估值参数建议 — 而底层模型始终是严谨、透明、由你掌控的。
 
@@ -24,17 +25,40 @@ ValueScope 是一个基于**标准化 DCF 引擎**的 AI 股票估值工具 — 
 
 ---
 
-## 演示
+## 在线使用
 
-### 在线网页版 — 首页
+访问 **[valuescope.app](https://valuescope.app)** — 无需安装，即开即用。
 
-![在线网页版](assets/web-landing.png)
+### 网页版 — 首页
 
-### 在线网页版 — 估值判定 + 滑块调参
+![网页版首页](assets/web-landing.png)
 
-![在线网页版估值](assets/web-valuation.png)
+### 网页版 — DCF 估值
+
+![网页版估值](assets/web-valuation.png)
+
+---
+
+## 核心功能
+
+### 网页版（[valuescope.app](https://valuescope.app)）
+
+- **DCF 估值** — 基于 Damodaran FCFF 框架，交互式参数调节，含 10 年预测表、双维度敏感性分析（增长率×利润率、WACC）、价值桥分解。
+- **AI 一键估值** — Cloud AI（DeepSeek R1 + Serper 联网搜索）分析业绩指引、分析师共识和行业数据，一键生成全部 DCF 参数及详细推理。含免费额度；配置自有密钥可无限使用。
+- **DCF 差异分析** — AI 对比 DCF 估值与市场价格，综合分析市场情绪、分析师目标价及风险因素。
+- **相对估值** — 当前估值倍数（PE、PB、PS、EV/EBITDA）对比 3/5/10 年历史分位。
+- **四维评分** — 估值、质量、成长、动量浓缩为一张雷达图，子因子透明可查。
+- **财务概览** — 核心驱动因素（营收增长、EBIT 利润率、ROIC、FCF）、资产负债表要点及历史财务数据表。
+- **中英双语** — 一键切换中英文界面。
 
 ### 终端 CLI
+
+- **AI Copilot** — 支持三种本地 AI 引擎（Claude、Gemini、Qwen）。AI 逐项给出参数建议，你来审核调整。
+- **自定义估值** — `--manual` 模式完全手动调参。无需 AI 或 API Key。
+- **全自动模式** — `--auto` 模式全自动：AI 分析 → 采纳参数 → 导出 Excel。
+- **Excel 导出** — 格式化 `.xlsx` 工作簿，含估值结果、历史数据和 AI 分析。
+
+### 终端演示
 
 ![历史数据](assets/demo-1-historical.png)
 ![AI 分析](assets/demo-2-ai-params.png)
@@ -42,15 +66,16 @@ ValueScope 是一个基于**标准化 DCF 引擎**的 AI 股票估值工具 — 
 
 ---
 
-## 核心功能
+## 架构
 
-- **AI Copilot** — AI 联网搜索分析师预期、业绩指引和行业数据，为每个 DCF 参数给出建议值和详细分析。你逐项审核调整。
-- **在线网页版** — 访问 [valuescope.app](https://valuescope.app)，内置 Cloud AI（DeepSeek R1 + Serper 联网搜索），无需安装。
-- **终端 CLI** — 支持三种本地 AI 引擎，启动时自动检测，也可通过 `--engine` 指定。
-- **自定义估值** — 通过滑块（网页版）或 `--manual`（终端）完全手动调参。无需 AI 引擎或 API Key。
-- **估值判定与差异分析** — 买入/持有/卖出判定及安全边际。AI 对比 DCF 估值与市场价格和分析师目标价。
-- **敏感性分析** — 收入增长率 × EBIT 利润率、WACC 两组敏感性分析表，展示每股价值的可能范围。
-- **Excel 导出** — 将估值结果、历史数据和 AI 分析导出为格式化的 `.xlsx` 工作簿。
+```
+valuescope/
+├── frontend/          # Next.js 15 (React) — 网页前端
+├── backend/           # FastAPI — REST API 服务
+├── modeling/          # 核心估值引擎（CLI 和后端共用）
+├── main.py            # 终端 CLI 入口
+└── Dockerfile         # 后端容器
+```
 
 ---
 
@@ -71,14 +96,15 @@ ValueScope 是一个基于**标准化 DCF 引擎**的 AI 股票估值工具 — 
 
 ## AI 引擎
 
-### Cloud AI（在线网页版）
+### Cloud AI（网页版）
 
-在线网页版 [valuescope.app](https://valuescope.app) 内置 Cloud AI，无需安装：
+网页版 [valuescope.app](https://valuescope.app) 内置 Cloud AI，无需安装：
 
 - **DeepSeek R1** — 深度思维链推理，用于财务分析
 - **Serper** — Google 搜索 + 网页抓取，获取业绩指引、分析师预期和行业数据
+- **含免费额度** — 配置自有 Serper + DeepSeek 密钥可无限使用
 
-### 本地 AI 引擎（终端 CLI 和本地网页版）
+### 本地 AI 引擎（终端 CLI）
 
 支持三种 AI CLI 工具，启动时自动检测（优先级：Claude > Gemini > Qwen），也可通过 `--engine` 强制指定。
 
@@ -92,30 +118,13 @@ ValueScope 是一个基于**标准化 DCF 引擎**的 AI 股票估值工具 — 
 
 ---
 
-## 运行模式
-
-### 终端 CLI
-
-| 模式 | 命令 | 需要 AI | 说明 |
-|------|------|---------|------|
-| **Copilot**（默认） | `python main.py` | 是 | AI 逐项给出参数建议，你来审核调整。 |
-| **自定义** | `python main.py --manual` | 否 | 自行输入所有参数。无需 AI 或 API Key。 |
-| **全自动** | `python main.py --auto` | 是 | 全自动：AI 分析 → 采纳参数 → 导出 Excel。 |
-
-额外参数：`--engine claude|gemini|qwen` 强制指定引擎，`--apikey YOUR_KEY` 直接传入 FMP Key。
-
-### 网页版
-
-| 模式 | 说明 |
-|------|------|
-| **AI 一键估值** | AI 联网搜索，一键生成所有 DCF 参数建议。 |
-| **自定义估值** | 滑块手动调参，实时图表动态更新。 |
-
----
-
 ## 安装与使用
 
-### 1. 下载并安装依赖
+### 方式一：直接使用网页版（推荐）
+
+访问 **[valuescope.app](https://valuescope.app)** — 无需安装。
+
+### 方式二：终端 CLI
 
 需要 Python 3.8+。
 
@@ -125,44 +134,38 @@ cd ValueScope
 pip install -r requirements.txt
 ```
 
-### 2. 设置 FMP API Key
-
-美股、日股需要 FMP API Key。A 股使用免费数据源，港股年度数据也免费。
-
-> 💡 **[获取 FMP API Key →](https://site.financialmodelingprep.com/pricing-plans?couponCode=valuescope)** — 通过此链接购买可享折扣价，同时支持 ValueScope 的发展。
+设置 FMP API Key（美股/日股需要）：
 
 ```bash
-# macOS / Linux
 export FMP_API_KEY='your_api_key_here'
-
-# Windows CMD
-set FMP_API_KEY=your_api_key_here
-
-# Windows PowerShell
-$env:FMP_API_KEY="your_api_key_here"
 ```
 
-### 3. 安装 AI 引擎（可选 — 仅本地使用）
-
-> **使用在线版？** 跳过此步骤 — Cloud AI 已内置于 [valuescope.app](https://valuescope.app)。
-
-安装任一支持的 AI CLI 工具：
+运行：
 
 ```bash
-npm install -g @anthropic-ai/claude-code    # 方式一：Claude Code（推荐）
-npm install -g @google/gemini-cli           # 方式二：Gemini CLI（Google 账号免费）
-npm install -g @anthropic-ai/qwen-code      # 方式三：Qwen Code（qwen.ai 账号免费）
+python main.py                    # AI copilot（默认）
+python main.py --manual           # 手动输入
+python main.py --auto             # 全自动
 ```
 
-如果没有安装 AI 引擎，自动切换到自定义估值模式。
+额外参数：`--engine claude|gemini|qwen`、`--apikey YOUR_KEY`。
 
-### 4. 运行
+### 方式三：自部署（后端 + 前端）
 
 ```bash
-python main.py                    # 终端 CLI — AI copilot（默认）
-python main.py --manual           # 终端 CLI — 手动输入
-python main.py --auto             # 终端 CLI — 全自动
-streamlit run web_app.py          # 本地网页版（打开 http://localhost:8501）
+# 后端
+pip install -r requirements-api.txt
+uvicorn backend.main:app --host 0.0.0.0 --port 8000
+
+# 前端
+cd frontend && npm install && npm run dev
+```
+
+或使用 Docker 部署后端：
+
+```bash
+docker build -t valuescope-api .
+docker run -p 8000:8000 -e FMP_API_KEY=your_key valuescope-api
 ```
 
 ---
@@ -192,7 +195,7 @@ streamlit run web_app.py          # 本地网页版（打开 http://localhost:85
 
 ## 许可证
 
-本项目采用 [GNU Affero 通用公共许可证 v3.0 (AGPL-3.0)](LICENSE) 授权。
+本项目采用 [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE) 授权。
 
 你可以自由使用、修改和分发本软件，但任何修改版本——包括作为网络服务（SaaS）提供——都必须同样以 AGPL-3.0 开源。
 

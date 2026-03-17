@@ -2299,16 +2299,16 @@ def _fetch_data(ticker_raw, apikey_val):
     _ttm_quarter = financial_data.get('ttm_latest_quarter', '')
     _ttm_end_date = financial_data.get('ttm_end_date', '')
     _is_ttm = bool(_ttm_quarter and _ttm_end_date)
-    base_year = int(base_year_col)
+    _fy_end_month = financial_data.get('fy_end_month', 12)
+    base_year = int(str(base_year_col).replace('FY', ''))
     _ttm_label = ''
     if _is_ttm:
         _ttm_end_month = int(_ttm_end_date[5:7])
         _ttm_end_year = int(_ttm_end_date[:4])
         forecast_year_1 = _ttm_end_year if _ttm_end_month <= 6 else _ttm_end_year + 1
-        base_year = forecast_year_1 - 1
         _ttm_label = f'{base_year_col}{_ttm_quarter} TTM'
     else:
-        forecast_year_1 = base_year + 1
+        forecast_year_1 = base_year if _fy_end_month <= 6 else base_year + 1
 
     outstanding_shares = company_info.get('outstandingShares', 0) or 0
     base_year_data['Outstanding Shares'] = outstanding_shares
@@ -2342,6 +2342,7 @@ def _fetch_data(ticker_raw, apikey_val):
     s.ttm_end_date = _ttm_end_date
     s.ttm_label = _ttm_label
     s.forecast_year_1 = forecast_year_1
+    s._fy_end_month = _fy_end_month
     s.wacc = wacc
     s.wacc_details = wacc_details
     s.total_equity_risk_premium = total_equity_risk_premium
@@ -2397,16 +2398,11 @@ def _build_analysis_prompt(s):
     ttm_quarter = s.ttm_quarter if s.is_ttm else ''
     ttm_end_date = s.ttm_end_date if s.is_ttm else ''
 
-    if ttm_end_date and ttm_quarter:
-        _end_month = int(ttm_end_date[5:7])
-        _end_year = int(ttm_end_date[:4])
-        forecast_year_1 = _end_year if _end_month <= 6 else _end_year + 1
-    else:
-        forecast_year_1 = base_year + 1
+    forecast_year_1 = s.forecast_year_1
 
-    _ttm_year_label = str(base_year + 1) if ttm_quarter else ''
     if ttm_quarter:
-        _ttm_label = f'{_ttm_year_label}{ttm_quarter} TTM'
+        _base_year_col = s.summary_df.columns[0] if hasattr(s, 'summary_df') and len(s.summary_df.columns) > 0 else str(base_year + 1)
+        _ttm_label = f'{_base_year_col}{ttm_quarter} TTM'
         if _lang == 'zh':
             ttm_context = f'，数据为 {_ttm_label}（截至 {ttm_end_date} 的最近十二个月）'
             forecast_year_guidance = (
@@ -2950,16 +2946,11 @@ def _run_cloud_ai_analysis():
         ttm_quarter = s.ttm_quarter if s.is_ttm else ''
         ttm_end_date = s.ttm_end_date if s.is_ttm else ''
 
-        if ttm_end_date and ttm_quarter:
-            _end_month = int(ttm_end_date[5:7])
-            _end_year = int(ttm_end_date[:4])
-            forecast_year_1 = _end_year if _end_month <= 6 else _end_year + 1
-        else:
-            forecast_year_1 = base_year + 1
+        forecast_year_1 = s.forecast_year_1
 
-        _ttm_year_label = str(base_year + 1) if ttm_quarter else ''
         if ttm_quarter:
-            _ttm_label = f'{_ttm_year_label}{ttm_quarter} TTM'
+            _base_year_col2 = s.summary_df.columns[0] if hasattr(s, 'summary_df') and len(s.summary_df.columns) > 0 else str(base_year + 1)
+            _ttm_label = f'{_base_year_col2}{ttm_quarter} TTM'
             if _lang == 'zh':
                 ttm_context = f'，数据为 {_ttm_label}（截至 {ttm_end_date} 的最近十二个月）'
                 forecast_year_guidance = (
@@ -3208,6 +3199,7 @@ def _run_dcf_from_ai():
     valuation_params = _build_valuation_params(
         raw_params, s.base_year, s.risk_free_rate,
         s.is_ttm, s.ttm_quarter, s.ttm_label,
+        forecast_year_1=s.forecast_year_1, fy_end_month=s._fy_end_month,
     )
     s.valuation_params = valuation_params
 
@@ -4075,6 +4067,7 @@ def _run_dcf_calc():
     valuation_params = _build_valuation_params(
         raw_params, ss.base_year, ss.risk_free_rate,
         ss.is_ttm, ss.ttm_quarter, ss.ttm_label,
+        forecast_year_1=ss.forecast_year_1, fy_end_month=getattr(ss, '_fy_end_month', 12),
     )
     ss.valuation_params = valuation_params
     results = calculate_dcf(

@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import unicodedata
 from contextlib import contextmanager
 from datetime import date
@@ -176,25 +177,101 @@ def _ensure_gemini_preview():
         json.dump(settings, f, indent=2)
 
 
+def _quick_cli_check(engine):
+    """Quick health check: verify CLI is installed AND authenticated.
+
+    Runs a trivial prompt (e.g. 'echo hi') with a short timeout.
+    Returns True if the CLI responds successfully, False otherwise.
+    """
+    if engine == 'claude':
+        cmd = ['claude', '-p', 'Reply with just: ok', '--output-format', 'json',
+               '--allowedTools', '']
+    elif engine == 'gemini':
+        cmd = ['gemini', '-p', 'Reply with just: ok', '--output-format', 'json', '-m', 'gemini-2.5-flash']
+    elif engine == 'qwen':
+        cmd = ['qwen', '-p', 'Reply with just: ok', '--output-format', 'json']
+    else:
+        return False
+
+    clean_env = {k: v for k, v in os.environ.items()
+                 if not k.startswith('CLAUDE')}
+    for _ek in ('PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'TERM',
+                'SYSTEMROOT', 'COMSPEC', 'PATHEXT', 'TEMP', 'TMP',
+                'APPDATA', 'LOCALAPPDATA', 'USERPROFILE'):
+        if _ek in os.environ:
+            clean_env[_ek] = os.environ[_ek]
+
+    _is_windows = sys.platform == 'win32'
+    if _is_windows:
+        resolved = shutil.which(cmd[0])
+        if resolved:
+            cmd[0] = resolved
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True,
+                                timeout=30, env=clean_env,
+                                shell=_is_windows, encoding='utf-8',
+                                errors='replace')
+        if result.returncode != 0:
+            return False
+        # Claude may return exit 0 but is_error:true (e.g. 401)
+        if engine == 'claude':
+            try:
+                parsed = json.loads(result.stdout.strip())
+                if isinstance(parsed, dict) and parsed.get('is_error'):
+                    return False
+            except (json.JSONDecodeError, KeyError):
+                pass
+        return True
+    except (subprocess.TimeoutExpired, Exception):
+        return False
+
+
+# Cache of verified CLI engines (avoids re-checking on every call)
+_verified_engines: dict = {}  # engine -> True/False
+
+
 def _detect_ai_engine():
-    """Detect available AI CLI engine.
+    """Detect available AI CLI engine with authentication verification.
 
     Returns 'claude', 'gemini', 'qwen', or None.
     Priority: Claude CLI > Gemini CLI > Qwen Code CLI.
+    Skips engines that are installed but fail auth checks.
     """
-    if shutil.which('claude'):
-        return 'claude'
-    if shutil.which('gemini'):
-        _ensure_gemini_preview()
-        return 'gemini'
-    if shutil.which('qwen'):
-        return 'qwen'
+    for engine in ('claude', 'gemini', 'qwen'):
+        cmd_name = 'qwen' if engine == 'qwen' else engine
+        if not shutil.which(cmd_name):
+            continue
+        # Check cache first
+        if engine in _verified_engines:
+            if _verified_engines[engine]:
+                if engine == 'gemini':
+                    _ensure_gemini_preview()
+                return engine
+            continue  # previously failed, skip
+        # Run quick health check
+        ok = _quick_cli_check(engine)
+        _verified_engines[engine] = ok
+        if ok:
+            if engine == 'gemini':
+                _ensure_gemini_preview()
+            return engine
     return None
 
-_AI_ENGINE = _detect_ai_engine()
+# Lazy detection: None = not yet checked, False = checked & not found
+_AI_ENGINE = None
+_ai_engine_detected = False
 
 # Actual model name detected at runtime (populated after first AI call)
 _detected_model_name = None
+
+
+def _ensure_ai_engine():
+    """Lazy-detect AI engine on first access (avoids 20s startup delay)."""
+    global _AI_ENGINE, _ai_engine_detected
+    if not _ai_engine_detected:
+        _AI_ENGINE = _detect_ai_engine()
+        _ai_engine_detected = True
+    return _AI_ENGINE
 
 
 def set_ai_engine(engine):
@@ -205,7 +282,7 @@ def set_ai_engine(engine):
     Raises:
         RuntimeError: If the requested CLI is not installed.
     """
-    global _AI_ENGINE, _detected_model_name
+    global _AI_ENGINE, _ai_engine_detected, _detected_model_name
     _install_hints = {
         'claude': "Claude CLI 未安装。请先安装: https://docs.anthropic.com/en/docs/claude-code",
         'gemini': "Gemini CLI 未安装。请先安装: npm install -g @google/gemini-cli",
@@ -217,6 +294,7 @@ def set_ai_engine(engine):
     if engine == 'gemini':
         _ensure_gemini_preview()
     _AI_ENGINE = engine
+    _ai_engine_detected = True
     _detected_model_name = None  # reset so first call re-detects
 
 
@@ -369,6 +447,7 @@ def _call_ai_cli(prompt):
     """
     global _detected_model_name, _AI_ENGINE
 
+    _ensure_ai_engine()
     if _AI_ENGINE is None:
         raise RuntimeError(
             "未检测到可用的 AI 引擎。请安装以下任一工具：\n"
@@ -619,7 +698,7 @@ Please conduct **independent, in-depth** analysis for each parameter below. Each
 **Note: JSON must be valid format, all strings in double quotes, no comments. Cite data sources in reasoning where applicable.**"""
 
 
-def analyze_company(ticker, summary_df, base_year_data, company_profile, calculated_wacc, calculated_tax_rate, base_year, ttm_quarter='', ttm_end_date=''):
+def analyze_company(ticker, summary_df, base_year_data, company_profile, calculated_wacc, calculated_tax_rate, base_year, ttm_quarter='', ttm_end_date='', fy_end_month=12):
     """
     Call AI CLI (Claude or Gemini) to analyze a company and generate DCF valuation parameters.
 
@@ -633,17 +712,20 @@ def analyze_company(ticker, summary_df, base_year_data, company_profile, calcula
 
     financial_table = summary_df.to_string()
 
-    # Calculate forecast_year_1 using the same logic as main.py
+    # forecast_year_1: approximate calendar year for Year 1
+    # Rule: ending month ≤ 6 → same year; > 6 → next year
     if ttm_end_date and ttm_quarter:
         _end_month = int(ttm_end_date[5:7])
         _end_year = int(ttm_end_date[:4])
         forecast_year_1 = _end_year if _end_month <= 6 else _end_year + 1
     else:
-        forecast_year_1 = base_year + 1
+        forecast_year_1 = base_year if fy_end_month <= 6 else base_year + 1
 
     # Build TTM context strings for the prompt
-    # TTM label format: "2026Q1 TTM" (year = base_year+1)
-    _ttm_year_label = str(base_year + 1) if ttm_quarter else ''
+    # Use column header for TTM label (includes FY prefix for non-Dec FY companies)
+    # TTM label uses the summary column header (already contains FY prefix if needed)
+    _ttm_col = summary_df.columns[0] if len(summary_df.columns) > 0 else str(base_year)
+    _ttm_year_label = str(_ttm_col) if ttm_quarter else ''
     if ttm_quarter:
         _ttm_label = f'{_ttm_year_label}{ttm_quarter} TTM'
         ttm_context = f'，数据为 {_ttm_label}（截至 {ttm_end_date} 的最近十二个月）'
@@ -1741,25 +1823,34 @@ def cloud_ai_analyze(template_args, serper_key, deepseek_key, lang='zh',
     ]
 
     all_results = {}
-    for i, query in enumerate(queries):
-        if progress_callback:
-            progress_callback('searching', query)
-        try:
-            all_results[i] = _serper_search(query, serper_key)
-        except SerperCreditError:
-            raise  # Propagate credit errors immediately
-        except Exception as e:
-            all_results[i] = [{"title": "Search Error", "snippet": str(e), "link": ""}]
+    if progress_callback:
+        progress_callback('searching', f'Running {len(queries)} searches...')
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = {executor.submit(_serper_search, q, serper_key): i for i, q in enumerate(queries)}
+        for fut in as_completed(futures):
+            i = futures[fut]
+            try:
+                all_results[i] = fut.result()
+            except SerperCreditError:
+                raise  # Propagate credit errors immediately
+            except Exception as e:
+                all_results[i] = [{"title": "Search Error", "snippet": str(e), "link": ""}]
 
     # Step 2: Scrape top 3 search result pages for full content
     scraped_pages = {}
     top_links = _collect_top_links(all_results, max_links=3)
-    for link in top_links:
-        if progress_callback:
-            progress_callback('scraping', link)
-        content = _serper_scrape(link, serper_key, max_chars=6000)
-        if content:
-            scraped_pages[link] = content
+    if progress_callback:
+        progress_callback('scraping', f'Reading {len(top_links)} pages...')
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {executor.submit(_serper_scrape, link, serper_key, max_chars=6000): link for link in top_links}
+        for fut in as_completed(futures):
+            link = futures[fut]
+            try:
+                content = fut.result()
+                if content:
+                    scraped_pages[link] = content
+            except Exception:
+                pass
 
     search_context = _format_search_results(queries, all_results, scraped_pages)
 
@@ -1768,7 +1859,7 @@ def cloud_ai_analyze(template_args, serper_key, deepseek_key, lang='zh',
         progress_callback('analyzing', None)
     prompt = _build_cloud_analysis_prompt(template_args, search_context, lang)
 
-    # Step 4: Call DeepSeek Reasoner (R1 with chain-of-thought)
+    # Step 4: Call DeepSeek V3 (fast, high-quality; R1 is 3-5x slower with minimal benefit)
     # Run in background thread so progress_callback keeps firing → live timer
     text = _call_deepseek_with_live_progress(
         prompt, deepseek_key, "deepseek-reasoner", progress_callback)
@@ -1806,25 +1897,34 @@ def cloud_gap_analyze(template_args, serper_key, deepseek_key, lang='zh',
     ]
 
     all_results = {}
-    for i, query in enumerate(queries):
-        if progress_callback:
-            progress_callback('searching', query)
-        try:
-            all_results[i] = _serper_search(query, serper_key)
-        except SerperCreditError:
-            raise  # Propagate credit errors immediately
-        except Exception as e:
-            all_results[i] = [{"title": "Search Error", "snippet": str(e), "link": ""}]
+    if progress_callback:
+        progress_callback('searching', f'Running {len(queries)} searches...')
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = {executor.submit(_serper_search, q, serper_key): i for i, q in enumerate(queries)}
+        for fut in as_completed(futures):
+            i = futures[fut]
+            try:
+                all_results[i] = fut.result()
+            except SerperCreditError:
+                raise  # Propagate credit errors immediately
+            except Exception as e:
+                all_results[i] = [{"title": "Search Error", "snippet": str(e), "link": ""}]
 
     # Scrape top 3 search result pages for full content
     scraped_pages = {}
     top_links = _collect_top_links(all_results, max_links=3)
-    for link in top_links:
-        if progress_callback:
-            progress_callback('scraping', link)
-        content = _serper_scrape(link, serper_key, max_chars=6000)
-        if content:
-            scraped_pages[link] = content
+    if progress_callback:
+        progress_callback('scraping', f'Reading {len(top_links)} pages...')
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {executor.submit(_serper_scrape, link, serper_key, max_chars=6000): link for link in top_links}
+        for fut in as_completed(futures):
+            link = futures[fut]
+            try:
+                content = fut.result()
+                if content:
+                    scraped_pages[link] = content
+            except Exception:
+                pass
 
     search_context = _format_search_results(queries, all_results, scraped_pages)
 

@@ -8,9 +8,10 @@ from datetime import date
 from modeling.data import get_historical_financials, get_company_share_float, fetch_company_profile, fetch_forex_data, format_summary_df, validate_ticker, _normalize_ticker, is_a_share, is_hk_stock, is_jpn_stock, _fill_profile_from_financial_data, _calculate_beta_akshare
 from modeling.dcf import calculate_dcf, print_dcf_results, sensitivity_analysis, print_sensitivity_table, wacc_sensitivity_analysis, print_wacc_sensitivity, calculate_wacc, print_wacc_details, get_risk_free_rate
 from modeling.constants import HISTORICAL_DATA_PERIODS_ANNUAL, HISTORICAL_DATA_PERIODS_QUARTER, TERMINAL_RISK_PREMIUM, TERMINAL_RONIC_PREMIUM
-from modeling.ai_analyst import analyze_company, interactive_review, analyze_valuation_gap, _AI_ENGINE, set_ai_engine, _ai_engine_display_name
+from modeling.ai_analyst import analyze_company, interactive_review, analyze_valuation_gap, _ensure_ai_engine, set_ai_engine, _ai_engine_display_name
 from modeling import excel_export as _excel
 from modeling.excel_export import write_to_excel, init_paths as _init_excel_paths
+from modeling.terminal_charts import print_key_drivers, print_relative_valuation, fetch_relative_valuation_data
 from modeling import style as S
 
 # Initialise Excel export paths
@@ -223,8 +224,8 @@ def _collect_manual_params(average_tax_rate, wacc, wacc_details, risk_free_rate)
         f"\n{S.prompt(f'Calculated WACC: {wacc:.1%}. Press Enter to accept or enter a new value (e.g., 8 for 8%): ')}",
         default=wacc * 100)
 
-    cont = input(f'{S.prompt("Will ROIC match terminal WACC beyond year 10? (y/n): ")}').strip().lower()
-    if cont == 'y':
+    cont = input(f'{S.prompt("ROIC 是否在终值期回归 WACC? (y/N, Enter=N): ")}').strip().lower()
+    if cont in ('y', 'yes'):
         ronic = risk_free_rate + TERMINAL_RISK_PREMIUM
     else:
         ronic = risk_free_rate + TERMINAL_RISK_PREMIUM + TERMINAL_RONIC_PREMIUM
@@ -247,10 +248,13 @@ def _collect_manual_params(average_tax_rate, wacc, wacc_details, risk_free_rate)
 # Valuation parameter building
 # ────────────────────────────────────────────────────────────────────
 
-def _build_valuation_params(raw_params, base_year, risk_free_rate, _is_ttm, _ttm_quarter, _ttm_label):
+def _build_valuation_params(raw_params, base_year, risk_free_rate, _is_ttm, _ttm_quarter, _ttm_label,
+                            forecast_year_1=None, fy_end_month=12):
     """Build the full valuation_params dict from raw parameter values."""
     return {
         'base_year': base_year,
+        'forecast_year_1': forecast_year_1 if forecast_year_1 is not None else base_year + 1,
+        'fy_end_month': fy_end_month,
         'ttm_quarter': _ttm_quarter if _is_ttm else '',
         'ttm_label': _ttm_label if _is_ttm else '',
         'revenue_growth_1': raw_params['revenue_growth_1'],
@@ -380,24 +384,7 @@ def _export_excel(auto_mode, use_ai, company_name, base_year_data, financial_dat
 
 def main(args):
     auto_mode = getattr(args, 'auto', False)
-
-    # ── AI engine startup check ──
     use_ai = not args.manual
-    if use_ai and _AI_ENGINE is None:
-        print(f"\n{S.warning('未检测到 AI 引擎。')}")
-        print(S.info("  安装任一工具即可启用 AI 自动分析："))
-        print(S.info("  1. Claude CLI: https://docs.anthropic.com/en/docs/claude-code"))
-        print(S.info("  2. Gemini CLI: npm install -g @google/gemini-cli"))
-        print(S.info("     （只需 Google 账号登录，免费使用）"))
-        print(S.info("  3. Qwen Code:  npm install -g @qwen-code/qwen-code"))
-        print(S.info("     （只需 qwen.ai 账号登录，免费使用）"))
-        if auto_mode:
-            print(f"\n{S.error('Auto 模式需要 AI 引擎，退出。')}")
-            sys.exit(1)
-        print(f"\n{S.warning('当前将使用手工输入模式。')}")
-        input(f"\n{S.prompt('按 Enter 继续...')}")
-        args.manual = True
-        use_ai = False
 
     while True:
         # ── Ticker ──
@@ -405,11 +392,12 @@ def main(args):
         args.t = ticker
         args.period = 'annual'
 
-        # ── Fetch annual financial data + company profile (parallel) ──
+        # ── Fetch annual financial data + company profile + relative valuation (parallel) ──
         from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=2) as _pool:
+        with ThreadPoolExecutor(max_workers=3) as _pool:
             _f_data = _pool.submit(get_historical_financials, args.t, 'annual', args.apikey, HISTORICAL_DATA_PERIODS_ANNUAL)
             _f_prof = _pool.submit(fetch_company_profile, args.t, args.apikey)
+            _f_relval = _pool.submit(fetch_relative_valuation_data, args.t, args.apikey)
             financial_data = _f_data.result()
             company_profile = _f_prof.result()
         if financial_data is None:
@@ -445,6 +433,20 @@ def main(args):
             print(S.muted(f"  ⓘ TTM Note: {ttm_note}"))
             print()
 
+        # ── Key financial driver charts ──
+        print_key_drivers(summary_df, company_name)
+
+        # ── Relative valuation & historical percentiles ──
+        _relval_data = _f_relval.result()  # already fetched in parallel
+        print_relative_valuation(ticker, apikey=args.apikey, prefetched=_relval_data)
+
+        # ── Kick off AI engine detection in background while user reviews data ──
+        if use_ai:
+            from concurrent.futures import ThreadPoolExecutor as _TP
+            _ai_detect_future = _TP(max_workers=1).submit(_ensure_ai_engine)
+        else:
+            _ai_detect_future = None
+
         # ── Optional: view quarterly data as reference ──
         if not auto_mode:
             _show_quarterly_reference(ticker, args.apikey, company_name)
@@ -463,15 +465,17 @@ def main(args):
         _ttm_quarter = financial_data.get('ttm_latest_quarter', '')
         _ttm_end_date = financial_data.get('ttm_end_date', '')
         _is_ttm = bool(_ttm_quarter and _ttm_end_date)
-        base_year = int(base_year_col)
+        _fy_end_month = financial_data.get('fy_end_month', 12)
+        base_year = int(str(base_year_col).replace('FY', ''))
         _ttm_label = ''
+        # forecast_year_1: approximate calendar year for Year 1
+        # Rule: ending month ≤ 6 → same year; > 6 → next year
         if _is_ttm:
             _ttm_end_month = int(_ttm_end_date[5:7])
             _ttm_end_year = int(_ttm_end_date[:4])
             forecast_year_1 = _ttm_end_year if _ttm_end_month <= 6 else _ttm_end_year + 1
-            base_year = forecast_year_1 - 1
         else:
-            forecast_year_1 = base_year + 1
+            forecast_year_1 = base_year if _fy_end_month <= 6 else base_year + 1
 
         # ── Prepare base year data ──
         outstanding_shares = company_info.get('outstandingShares', 0) or 0
@@ -506,6 +510,22 @@ def main(args):
         ai_params = None
         ai_result = None
 
+        # ── AI engine check (detection started earlier in background) ──
+        if use_ai and (_ai_detect_future.result() if _ai_detect_future else _ensure_ai_engine()) is None:
+            print(f"\n{S.warning('未检测到 AI 引擎。')}")
+            print(S.info("  安装任一工具即可启用 AI 自动分析："))
+            print(S.info("  1. Claude CLI: https://docs.anthropic.com/en/docs/claude-code"))
+            print(S.info("  2. Gemini CLI: npm install -g @google/gemini-cli"))
+            print(S.info("     （只需 Google 账号登录，免费使用）"))
+            print(S.info("  3. Qwen Code:  npm install -g @qwen-code/qwen-code"))
+            print(S.info("     （只需 qwen.ai 账号登录，免费使用）"))
+            if auto_mode:
+                print(f"\n{S.error('Auto 模式需要 AI 引擎，退出。')}")
+                sys.exit(1)
+            print(f"\n{S.warning('当前将使用手工输入模式。')}")
+            input(f"\n{S.prompt('按 Enter 继续...')}")
+            use_ai = False
+
         if use_ai:
             try:
                 ai_result = analyze_company(
@@ -518,6 +538,7 @@ def main(args):
                     base_year=base_year,
                     ttm_quarter=_ttm_quarter if _is_ttm else '',
                     ttm_end_date=_ttm_end_date,
+                    fy_end_month=_fy_end_month,
                 )
                 if auto_mode:
                     ai_params = _auto_accept_params(ai_result)
@@ -543,7 +564,8 @@ def main(args):
             raw_params = _collect_manual_params(average_tax_rate, wacc, wacc_details, risk_free_rate)
 
         valuation_params = _build_valuation_params(
-            raw_params, base_year, risk_free_rate, _is_ttm, _ttm_quarter, _ttm_label)
+            raw_params, base_year, risk_free_rate, _is_ttm, _ttm_quarter, _ttm_label,
+            forecast_year_1=forecast_year_1, fy_end_month=_fy_end_month)
 
         # ── DCF calculation & output ──
         results = calculate_dcf(base_year_data, valuation_params, financial_data, company_info, company_profile)
@@ -627,8 +649,13 @@ if __name__ == '__main__':
     mode_group.add_argument('-a', '--auto', action='store_true', help='Full auto mode: AI analysis + auto accept + auto export')
 
     parser.add_argument('--engine', choices=['claude', 'gemini', 'qwen'], help='Force a specific AI engine (default: auto-detect)')
+    parser.add_argument('--vivid', action='store_true', help='Use vivid (bright/bold) terminal colors')
 
     args = parser.parse_args()
+
+    # Apply --vivid before any output
+    if args.vivid:
+        S.enable_vivid_mode()
 
     # Apply --engine override before main()
     if args.engine:
