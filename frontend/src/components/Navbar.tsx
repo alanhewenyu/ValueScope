@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import SearchBar from "./SearchBar";
 import LanguageToggle from "./LanguageToggle";
@@ -11,6 +11,13 @@ export default function Navbar() {
   const { t, locale } = useI18n();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Private pages (Portfolio, History) only visible on localhost
+  const [isLocal, setIsLocal] = useState(false);
+  useEffect(() => {
+    const h = window.location.hostname;
+    setIsLocal(h === "localhost" || h === "127.0.0.1");
+  }, []);
 
   return (
     <>
@@ -33,12 +40,16 @@ export default function Navbar() {
             <Link href="/" className="hover:text-gray-900 dark:hover:text-white transition-colors">
               {t.home}
             </Link>
-            <Link href="/history" className="hover:text-gray-900 dark:hover:text-white transition-colors">
-              {locale === "zh" ? "估值记录" : "History"}
-            </Link>
-            <Link href="/portfolio" className="hover:text-gray-900 dark:hover:text-white transition-colors">
-              {locale === "zh" ? "投资组合" : "Portfolio"}
-            </Link>
+            {isLocal && (
+              <Link href="/history" className="hover:text-gray-900 dark:hover:text-white transition-colors">
+                {locale === "zh" ? "估值记录" : "History"}
+              </Link>
+            )}
+            {isLocal && (
+              <Link href="/portfolio" className="hover:text-gray-900 dark:hover:text-white transition-colors">
+                {locale === "zh" ? "投资组合" : "Portfolio"}
+              </Link>
+            )}
             <LanguageToggle />
             <button
               onClick={() => setSettingsOpen(true)}
@@ -78,20 +89,24 @@ export default function Navbar() {
                 >
                   {t.home}
                 </Link>
-                <Link
-                  href="/history"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
-                >
-                  {locale === "zh" ? "估值记录" : "History"}
-                </Link>
-                <Link
-                  href="/portfolio"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
-                >
-                  {locale === "zh" ? "投资组合" : "Portfolio"}
-                </Link>
+                {isLocal && (
+                  <Link
+                    href="/history"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                  >
+                    {locale === "zh" ? "估值记录" : "History"}
+                  </Link>
+                )}
+                {isLocal && (
+                  <Link
+                    href="/portfolio"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                  >
+                    {locale === "zh" ? "投资组合" : "Portfolio"}
+                  </Link>
+                )}
                 <div className="px-4 py-2">
                   <LanguageToggle />
                 </div>
