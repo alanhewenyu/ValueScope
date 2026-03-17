@@ -33,6 +33,10 @@ ValueScope 是一个基于 **Damodaran FCFF 标准化 DCF 引擎**的 AI 股票�
 
 ![网页版首页](assets/web-landing.png)
 
+### 网页版 — 概览与估值驱动因素
+
+![网页版概览](assets/web-overview.png)
+
 ### 网页版 — DCF 估值
 
 ![网页版估值](assets/web-valuation.png)
