@@ -89,6 +89,7 @@ def take_snapshot(dry_run=False):
     total_pnl_cny = 0.0
     stale_count = 0
     market_mv = {}
+    market_pnl = {}
 
     # Parallel price fetch
     from concurrent.futures import ThreadPoolExecutor
@@ -122,6 +123,7 @@ def take_snapshot(dry_run=False):
         total_cost_cny += cost_cny
         total_pnl_cny += pnl_cny
         market_mv[market] = market_mv.get(market, 0) + mv_cny
+        market_pnl[market] = market_pnl.get(market, 0) + pnl_cny
 
     print(f"\nPositions: {len(positions)} ({stale_count} stale prices)")
     print(f"Equity MV:  ¥{_fmt(equity_mv)}")
@@ -173,9 +175,26 @@ def take_snapshot(dry_run=False):
     if dry_run:
         print(f"\n[DRY RUN] Would write snapshot for {today}")
     else:
+        market_pnl_json = json.dumps(market_pnl, ensure_ascii=False)
         upsert_snapshot(conn, today, total_assets, net_assets,
                         equity_mv, cash_cny, total_leverage, total_pnl_cny,
-                        market_data=market_json, capital=capital)
+                        market_data=market_json, capital=capital,
+                        market_pnl=market_pnl_json)
+
+        # Auto-create YTD baselines if none exist for current year
+        from backend.services.portfolio_db import get_ytd_baselines, record_ytd_baselines
+        current_year = datetime.now().year
+        existing = get_ytd_baselines(conn, current_year)
+        if not existing and positions:
+            ticker_data = {}
+            for i, pos in enumerate(positions):
+                p = _fetched[i] if _fetched[i] is not None else pos["cost_price"]
+                ticker_data[pos["ticker"]] = (
+                    p, pos["currency"], pos["quantity"], pos["cost_price"]
+                )
+            record_ytd_baselines(conn, current_year, ticker_data, today)
+            print(f"  Auto-recorded YTD baselines for {current_year} ({len(ticker_data)} tickers)")
+
         conn.commit()
         print(f"\n✓ Snapshot saved for {today}")
 
@@ -249,6 +268,21 @@ def backup_db(keep_daily=7):
 
 if __name__ == "__main__":
     dry = "--dry-run" in sys.argv
-    take_snapshot(dry_run=dry)
+    from backend.services.portfolio_db import PORTFOLIOS, set_active_portfolio
+
+    if PORTFOLIOS:
+        # Multi-portfolio: snapshot each one
+        for name, path in PORTFOLIOS:
+            print(f"\n{'#'*55}")
+            print(f"# Portfolio: {name}")
+            print(f"{'#'*55}")
+            set_active_portfolio(path)
+            init_db()
+            take_snapshot(dry_run=dry)
+        # Restore to first (default) portfolio
+        set_active_portfolio(PORTFOLIOS[0][1])
+    else:
+        take_snapshot(dry_run=dry)
+
     if not dry:
         backup_db()

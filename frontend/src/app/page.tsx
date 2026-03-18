@@ -1,16 +1,33 @@
 "use client";
 
+import { useState, useEffect } from "react";
+import Link from "next/link";
 import SearchBar from "@/components/SearchBar";
 import LanguageToggle from "@/components/LanguageToggle";
 import { useI18n } from "@/lib/i18n";
 
 export default function Home() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const [isLocal, setIsLocal] = useState(false);
+  useEffect(() => {
+    const h = window.location.hostname;
+    setIsLocal(h === "localhost" || h === "127.0.0.1");
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Floating language toggle for home page */}
-      <div className="absolute top-4 right-4 z-40">
+      {/* Floating top-right nav */}
+      <div className="absolute top-4 right-4 z-40 flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+        {isLocal && (
+          <>
+            <Link href="/history" className="hover:text-gray-900 dark:hover:text-white transition-colors">
+              {locale === "zh" ? "估值记录" : "History"}
+            </Link>
+            <Link href="/portfolio" className="hover:text-gray-900 dark:hover:text-white transition-colors">
+              {locale === "zh" ? "投资组合" : "Portfolio"}
+            </Link>
+          </>
+        )}
         <LanguageToggle />
       </div>
       {/* Hero section */}

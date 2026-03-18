@@ -532,6 +532,10 @@ export interface PortfolioHolding {
   ytd_pnl: number | null;
   ytd_pnl_pct: number | null;
   ytd_pnl_cny: number | null;
+  sector: string;
+  industry: string;
+  dcf_price: number | null;
+  mos_pct: number | null;
   weight: number;
 }
 
@@ -541,7 +545,9 @@ export interface PortfolioSummary {
   leverage_cny: number;
   total_assets: number;
   net_assets: number;
+  capital: number;
   total_pnl_cny: number;
+  total_pnl_capital: number;
   total_cost_cny: number;
   total_pnl_pct: number;
   daily_pnl_cny: number;
@@ -559,16 +565,96 @@ export interface PortfolioData {
   fx: Record<string, number>;
   cash: CashBalance[];
   summary: PortfolioSummary;
+  ytd_realized_by_market?: Record<string, number>;
 }
 
 export interface NavHistoryPoint {
   date: string;
-  nav: number;
+  net_asset_value: number;
   capital_invested: number;
+  pnl: number;
+  equity_nav: number;
+  benchmark_value: number | null;
+}
+
+export interface ClosedTrade {
+  id: number;
+  ticker: string | null;
+  name: string;
+  market: string;
+  broker: string;
+  currency: string;
+  quantity: number | null;
+  cost_price: number | null;
+  close_price: number | null;
+  realized_pnl: number;
+  realized_pnl_cny: number | null;
+  close_date: string | null;
+  notes: string | null;
+  cost_total: number | null;
+}
+
+export interface Snapshot {
+  date: string;
+  total_assets: number | null;
+  net_assets: number | null;
+  equity_mv_cny: number | null;
+  cash_cny: number | null;
+  leverage_cny: number | null;
+  total_pnl_cny: number | null;
+  market_data: string | null;
+  capital: number | null;
+  market_pnl: string | null;
+  realized_pnl_cny: number | null;
+}
+
+export interface MarginBalance {
+  id: number;
+  broker: string;
+  category: string;
+  currency: string;
+  amount: number;
+}
+
+export interface PositionInput {
+  ticker: string;
+  name: string;
+  market: string;
+  broker: string;
+  quantity: number;
+  cost_price: number;
+  currency: string;
+}
+
+export interface CashInput {
+  account: string;
+  currency: string;
+  balance: number;
+}
+
+export interface ClosedTradeInput {
+  ticker: string;
+  name: string;
+  market: string;
+  broker: string;
+  quantity: number;
+  buy_price: number;
+  sell_price: number;
+  realized_pnl: number;
+  realized_pnl_cny: number;
+  currency: string;
 }
 
 export async function getPortfolioStatus(): Promise<PortfolioStatus> {
   return fetchAPI<PortfolioStatus>("/api/portfolio/status");
+}
+
+export interface PortfolioInfo { name: string; active: boolean; }
+export async function listPortfolios(): Promise<PortfolioInfo[]> {
+  return fetchAPI<PortfolioInfo[]>("/api/portfolio/portfolios");
+}
+export async function switchPortfolio(name: string): Promise<void> {
+  await fetchAPI<unknown>(`/api/portfolio/portfolios/switch?name=${encodeURIComponent(name)}`, { method: "POST" });
 }
 
 export async function getPortfolioHoldings(): Promise<PortfolioData> {
@@ -581,6 +667,148 @@ export async function getPortfolioFxRates(): Promise<Record<string, number>> {
 
 export async function getNavHistory(): Promise<NavHistoryPoint[]> {
   return fetchAPI<NavHistoryPoint[]>("/api/portfolio/nav-history");
+}
+
+export async function getClosedTrades(): Promise<ClosedTrade[]> {
+  return fetchAPI<ClosedTrade[]>("/api/portfolio/closed-trades");
+}
+
+export async function getSnapshots(limit = 90): Promise<Snapshot[]> {
+  return fetchAPI<Snapshot[]>(`/api/portfolio/snapshots?limit=${limit}`);
+}
+
+export async function getMarginBalances(): Promise<MarginBalance[]> {
+  return fetchAPI<MarginBalance[]>("/api/portfolio/margin");
+}
+
+export interface MarginInput {
+  broker: string;
+  category: string;
+  currency: string;
+  amount: number;
+}
+
+export async function updateMargin(data: MarginInput): Promise<{ ok: boolean }> {
+  return fetchAPI<{ ok: boolean }>("/api/portfolio/margin", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export interface BenchmarkPoint { date: string; close: number; }
+
+export async function getBenchmarks(start: string): Promise<Record<string, BenchmarkPoint[]>> {
+  return fetchAPI<Record<string, BenchmarkPoint[]>>(`/api/portfolio/benchmarks?start=${start}`);
+}
+
+export async function upsertPosition(data: PositionInput): Promise<{ ok: boolean }> {
+  return fetchAPI<{ ok: boolean }>("/api/portfolio/positions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deletePosition(ticker: string, broker: string): Promise<{ ok: boolean }> {
+  return fetchAPI<{ ok: boolean }>(`/api/portfolio/positions/${encodeURIComponent(ticker)}/${encodeURIComponent(broker)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function updateCash(data: CashInput): Promise<{ ok: boolean }> {
+  return fetchAPI<{ ok: boolean }>("/api/portfolio/cash", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteCash(account: string, currency: string): Promise<{ ok: boolean }> {
+  return fetchAPI<{ ok: boolean }>(`/api/portfolio/cash/${encodeURIComponent(account)}/${encodeURIComponent(currency)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function addClosedTrade(data: ClosedTradeInput): Promise<{ ok: boolean }> {
+  return fetchAPI<{ ok: boolean }>("/api/portfolio/closed-trades", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+// ── Account Settings (Capital Mode) ──
+
+export interface AccountSetting {
+  broker: string;
+  capital_mode: string;  // 'cost' | 'deposit'
+  deposit_cny: number;
+  deposit_fx: number;
+  notes: string | null;
+  updated_at: string;
+}
+
+export interface AccountSettingInput {
+  broker: string;
+  capital_mode: string;
+  deposit_cny?: number;
+  deposit_fx?: number;
+  notes?: string;
+}
+
+export async function getAccountSettings(): Promise<AccountSetting[]> {
+  return fetchAPI<AccountSetting[]>("/api/portfolio/account-settings");
+}
+
+export async function upsertAccountSetting(data: AccountSettingInput): Promise<{ ok: boolean }> {
+  return fetchAPI<{ ok: boolean }>("/api/portfolio/account-settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteAccountSetting(broker: string): Promise<{ ok: boolean }> {
+  return fetchAPI<{ ok: boolean }>(`/api/portfolio/account-settings/${encodeURIComponent(broker)}`, {
+    method: "DELETE",
+  });
+}
+
+// ── Deposit History API ──
+
+export interface DepositRecord {
+  id: number;
+  broker: string;
+  amount_cny: number;
+  fx_rate: number;
+  deposit_date: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface DepositRecordInput {
+  broker: string;
+  amount_cny: number;
+  fx_rate?: number;
+  deposit_date?: string;
+  notes?: string;
+}
+
+export async function getDepositHistory(broker: string): Promise<DepositRecord[]> {
+  return fetchAPI<DepositRecord[]>(`/api/portfolio/deposit-history/${encodeURIComponent(broker)}`);
+}
+
+export async function addDepositRecord(data: DepositRecordInput): Promise<{ ok: boolean }> {
+  return fetchAPI<{ ok: boolean }>("/api/portfolio/deposit-history", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteDepositRecord(id: number): Promise<{ ok: boolean }> {
+  return fetchAPI<{ ok: boolean }>(`/api/portfolio/deposit-history/${id}`, { method: "DELETE" });
 }
 
 // ── Valuation History API ──
@@ -633,12 +861,35 @@ export interface ValuationDetail extends ValuationRecord {
   total_debt: number | null;
   minority_interest: number | null;
   total_investments: number | null;
+  convergence: number | null;
+  rev_ic_ratio_1: number | null;
+  rev_ic_ratio_2: number | null;
+  rev_ic_ratio_3: number | null;
+  tax_rate: number | null;
+  terminal_wacc: number | null;
+  ronic: number | null;
+  risk_free_rate: number | null;
+  gap_analysis_text: string | null;
   summary_json: Record<string, unknown> | null;
   dcf_table_json: Record<string, unknown> | null;
   sensitivity_json: Record<string, unknown> | null;
   wacc_sensitivity_json: Record<string, unknown> | null;
   ai_parameters_json: Record<string, unknown> | null;
   ai_raw_text: string | null;
+}
+
+export interface CompareResult {
+  ticker: string;
+  price_per_share: number | null;
+  gap_dcf_price: number | null;
+  market_price: number | null;
+  gap_market_price: number | null;
+  gap_pct: number | null;
+  currency: string;
+  valuation_date: string;
+  current_price: number | null;
+  current_currency: string | null;
+  current_gap_pct: number | null;
 }
 
 export async function getHistoryStatus(): Promise<HistoryStatus> {
@@ -675,4 +926,35 @@ export async function getValuationDetail(id: number): Promise<ValuationDetail> {
 
 export async function deleteValuation(id: number): Promise<{ ok: boolean }> {
   return fetchAPI(`/api/history/${id}`, { method: "DELETE" });
+}
+
+export async function compareValuation(id: number): Promise<CompareResult> {
+  return fetchAPI<CompareResult>(`/api/history/${id}/compare`);
+}
+
+// ── Portfolio Import / Export ──
+
+export interface ImportResult {
+  ok: boolean;
+  type: string;
+  imported: number;
+  accounts_created: string[];
+  errors: string[];
+}
+
+export function getImportTemplateUrl(type: "positions" | "cash"): string {
+  return `${API_BASE}/api/portfolio/import-template/${type}`;
+}
+
+export async function importCSV(file: File): Promise<ImportResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return fetchAPI<ImportResult>("/api/portfolio/import", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export async function exportPortfolio(): Promise<Record<string, unknown[]>> {
+  return fetchAPI<Record<string, unknown[]>>("/api/portfolio/export");
 }

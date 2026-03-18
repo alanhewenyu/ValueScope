@@ -68,17 +68,13 @@ DEPOSIT_BROKERS: set[str] = set(b.strip() for b in _raw_brokers.split(',') if b.
 def set_active_portfolio(db_path: str, capital: float = 0,
                          deposit_fx: float = 1.0, b_capital: float = 0,
                          deposit_brokers: set[str] | None = None):
-    """Switch the active database and capital configuration."""
-    global DB_PATH, DEPOSIT_CAPITAL, DEPOSIT_FX_RATE, B_SHARE_CAPITAL, DEPOSIT_MODE, DEPOSIT_BROKERS
+    """Switch the active database.
+
+    Capital configuration now lives in each DB's account_settings table,
+    so only DB_PATH needs to change. Legacy params kept for compatibility.
+    """
+    global DB_PATH
     DB_PATH = db_path
-    DEPOSIT_CAPITAL = capital
-    DEPOSIT_FX_RATE = deposit_fx
-    B_SHARE_CAPITAL = b_capital
-    DEPOSIT_MODE = DEPOSIT_CAPITAL > 0 or B_SHARE_CAPITAL > 0
-    if deposit_brokers is not None:
-        DEPOSIT_BROKERS = deposit_brokers
-    elif not DEPOSIT_MODE:
-        DEPOSIT_BROKERS = set()
 
 
 # ── Schema ──
@@ -156,6 +152,26 @@ CREATE TABLE IF NOT EXISTS industry_cache (
     industry   TEXT,
     fetched_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
+
+CREATE TABLE IF NOT EXISTS account_settings (
+    broker        TEXT PRIMARY KEY,
+    capital_mode  TEXT NOT NULL DEFAULT 'cost',
+    deposit_cny   REAL NOT NULL DEFAULT 0,
+    deposit_fx    REAL NOT NULL DEFAULT 1.0,
+    notes         TEXT,
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS deposit_history (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    broker       TEXT NOT NULL,
+    amount_cny   REAL NOT NULL,
+    fx_rate      REAL NOT NULL DEFAULT 1.0,
+    deposit_date TEXT,
+    notes        TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_deposit_broker ON deposit_history(broker);
 
 CREATE TABLE IF NOT EXISTS daily_snapshots (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -454,6 +470,147 @@ def init_db(db_path: str | None = None) -> None:
         _migrate_ytd_add_qty_cost(conn)
         _migrate_stock_pnl_add_market_pk(conn)
         _migrate_backfill_stock_pnl_ytd_base(conn)
+        _migrate_seed_account_settings(conn)
+
+
+def _migrate_seed_account_settings(conn):
+    """Seed account_settings from env vars on first run, so existing
+    configuration is preserved when switching from env to DB-driven capital.
+
+    Only seeds for the DEFAULT portfolio (matching PORTFOLIO_DB_PATH env).
+    Multi-portfolio setups manage their own settings per DB.
+    """
+    try:
+        existing = conn.execute("SELECT COUNT(*) FROM account_settings").fetchone()[0]
+        if existing > 0:
+            return  # already seeded
+    except Exception:
+        return
+
+    # Skip env-based seeding for non-default portfolios in multi-portfolio setup
+    if PORTFOLIOS:
+        default_path = os.environ.get('PORTFOLIO_DB_PATH', os.path.join(_DATA_DIR, 'portfolio.db'))
+        if os.path.abspath(DB_PATH) != os.path.abspath(default_path):
+            return
+
+    # Seed from env vars (one-time migration)
+    if DEPOSIT_CAPITAL > 0:
+        for broker in DEPOSIT_BROKERS:
+            conn.execute(
+                "INSERT OR IGNORE INTO account_settings (broker, capital_mode, deposit_cny, deposit_fx) "
+                "VALUES (?, 'deposit', ?, ?)",
+                (broker, DEPOSIT_CAPITAL, DEPOSIT_FX_RATE))
+    if B_SHARE_CAPITAL > 0:
+        conn.execute(
+            "INSERT OR IGNORE INTO account_settings (broker, capital_mode, deposit_cny, deposit_fx) "
+            "VALUES (?, 'deposit', ?, 1.0)",
+            ('B股', B_SHARE_CAPITAL))
+    conn.commit()
+
+
+# ── Account settings helpers ──
+
+def get_account_settings(conn: sqlite3.Connection) -> list[dict]:
+    """Return all account settings as list of dicts."""
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT * FROM account_settings ORDER BY broker").fetchall()
+    return [dict(r) for r in rows]
+
+
+def upsert_account_setting(conn: sqlite3.Connection, broker: str,
+                           capital_mode: str, deposit_cny: float = 0,
+                           deposit_fx: float = 1.0, notes: str = '') -> None:
+    """Insert or update account capital settings.
+    Also ensures a CNY cash row exists for this account (balance 0 if new).
+    """
+    conn.execute("""
+        INSERT INTO account_settings (broker, capital_mode, deposit_cny, deposit_fx, notes, updated_at)
+        VALUES (?, ?, ?, ?, ?, datetime('now', 'localtime'))
+        ON CONFLICT(broker) DO UPDATE SET
+            capital_mode = excluded.capital_mode,
+            deposit_cny = excluded.deposit_cny,
+            deposit_fx = excluded.deposit_fx,
+            notes = excluded.notes,
+            updated_at = excluded.updated_at
+    """, (broker, capital_mode, deposit_cny, deposit_fx, notes))
+    # Auto-create cash row if none exists for this account
+    # Use the most common currency among this broker's positions, default CNY
+    existing = conn.execute(
+        "SELECT 1 FROM cash_balances WHERE account=? LIMIT 1", (broker,)
+    ).fetchone()
+    if not existing:
+        row = conn.execute(
+            "SELECT currency, COUNT(*) AS cnt FROM positions "
+            "WHERE broker=? AND status='open' GROUP BY currency ORDER BY cnt DESC LIMIT 1",
+            (broker,)
+        ).fetchone()
+        currency = row[0] if row else 'CNY'
+        conn.execute("""
+            INSERT INTO cash_balances (account, currency, balance, updated_at)
+            VALUES (?, ?, 0, datetime('now','localtime'))
+        """, (broker, currency))
+
+
+def delete_account_setting(conn: sqlite3.Connection, broker: str) -> int:
+    """Delete account setting. Returns rows affected."""
+    cur = conn.execute("DELETE FROM account_settings WHERE broker=?", (broker,))
+    return cur.rowcount
+
+
+# ── Deposit history ──
+
+def get_deposit_history(conn: sqlite3.Connection, broker: str) -> list[dict]:
+    """Return deposit history records for a broker, newest first."""
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT * FROM deposit_history WHERE broker=? ORDER BY created_at DESC",
+        (broker,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _recalc_deposit_totals(conn: sqlite3.Connection, broker: str) -> None:
+    """Recalculate deposit_cny and weighted avg FX from deposit_history,
+    then upsert into account_settings."""
+    row = conn.execute("""
+        SELECT COALESCE(SUM(amount_cny), 0) AS total,
+               CASE WHEN SUM(amount_cny) > 0
+                    THEN SUM(amount_cny * fx_rate) / SUM(amount_cny)
+                    ELSE 1.0 END AS avg_fx
+        FROM deposit_history WHERE broker=?
+    """, (broker,)).fetchone()
+    total_cny = row["total"] if row else 0
+    avg_fx = row["avg_fx"] if row else 1.0
+    conn.execute("""
+        INSERT INTO account_settings (broker, capital_mode, deposit_cny, deposit_fx, updated_at)
+        VALUES (?, 'deposit', ?, ?, datetime('now','localtime'))
+        ON CONFLICT(broker) DO UPDATE SET
+            deposit_cny = excluded.deposit_cny,
+            deposit_fx = excluded.deposit_fx,
+            updated_at = excluded.updated_at
+    """, (broker, total_cny, avg_fx))
+
+
+def add_deposit_record(conn: sqlite3.Connection, broker: str,
+                       amount_cny: float, fx_rate: float = 1.0,
+                       deposit_date: str = '', notes: str = '') -> None:
+    """Add a deposit record and recalculate account_settings totals."""
+    conn.execute("""
+        INSERT INTO deposit_history (broker, amount_cny, fx_rate, deposit_date, notes)
+        VALUES (?, ?, ?, ?, ?)
+    """, (broker, amount_cny, fx_rate, deposit_date or None, notes or None))
+    _recalc_deposit_totals(conn, broker)
+
+
+def delete_deposit_record(conn: sqlite3.Connection, record_id: int) -> str:
+    """Delete a deposit record by ID, recalculate totals. Returns broker name."""
+    row = conn.execute("SELECT broker FROM deposit_history WHERE id=?", (record_id,)).fetchone()
+    if not row:
+        return ""
+    broker = row["broker"]
+    conn.execute("DELETE FROM deposit_history WHERE id=?", (record_id,))
+    _recalc_deposit_totals(conn, broker)
+    return broker
 
 
 # ── Capital computation ──
@@ -461,43 +618,62 @@ def init_db(db_path: str | None = None) -> None:
 def compute_capital(conn: sqlite3.Connection, fx: dict[str, float]) -> float:
     """Compute total invested capital (CNY).
 
-    Deposit mode: Capital = deposit + B-share deposit + other position costs + cash - off-exchange leverage - realized P&L
-    Cost mode (default): Capital = all position costs + cash - off-exchange leverage - realized P&L
+    Every account must be registered in account_settings with a capital_mode:
+      - 'deposit': use fixed deposit_cny (ignores position cost, cash, realized P&L)
+      - 'cost':    use position cost × FX + cash − realized P&L
+
+    Capital = Σ deposit_cny (deposit accounts)
+            + Σ position_cost (cost accounts)
+            + Σ cash (cost accounts)
+            − off-exchange leverage
+            − Σ realized P&L (cost accounts)
+
+    All matching is purely by broker name — no market-level logic needed.
     """
+    conn.row_factory = sqlite3.Row
+    settings = conn.execute(
+        "SELECT broker, capital_mode, deposit_cny FROM account_settings"
+    ).fetchall()
+
+    deposit_brokers: dict[str, float] = {}   # broker -> deposit_cny
+    cost_brokers: set[str] = set()
+    for r in settings:
+        if r['capital_mode'] == 'deposit':
+            deposit_brokers[r['broker']] = r['deposit_cny']
+        else:
+            cost_brokers.add(r['broker'])
+
+    # Deposit total
+    deposit_total = sum(deposit_brokers.values())
+
+    # Position cost (cost-mode accounts only)
     position_cost = 0.0
     for row in conn.execute(
-            "SELECT broker, market, currency, quantity, cost_price "
+            "SELECT broker, currency, quantity, cost_price "
             "FROM positions WHERE status='open'"):
-        if DEPOSIT_MODE and (row['broker'] in DEPOSIT_BROKERS or row['market'] == 'B股'):
-            continue
-        rate = fx.get(row['currency'], 1.0)
-        position_cost += row['quantity'] * row['cost_price'] * rate
+        if row['broker'] in cost_brokers:
+            position_cost += row['quantity'] * row['cost_price'] * fx.get(row['currency'], 1.0)
 
+    # Cash (cost-mode accounts only; also include accounts not in any setting like banks)
     cash_cny = 0.0
     for row in conn.execute("SELECT account, currency, balance FROM cash_balances"):
-        if DEPOSIT_MODE and row['account'] in DEPOSIT_BROKERS:
-            continue
-        cash_cny += row['balance'] * fx.get(row['currency'], 1.0)
+        if row['account'] not in deposit_brokers:
+            cash_cny += row['balance'] * fx.get(row['currency'], 1.0)
 
+    # Off-exchange leverage
     margin_off = 0.0
     for row in conn.execute(
             "SELECT currency, amount FROM margin_balances WHERE category='off_exchange'"):
         margin_off += row['amount'] * fx.get(row['currency'], 1.0)
 
+    # Realized P&L (cost-mode accounts only)
     realised_pl = 0.0
-    if DEPOSIT_MODE:
-        for row in conn.execute(
-                "SELECT broker, market, COALESCE(realized_pnl_cny, 0) AS rpl FROM closed_trades"):
-            if row['broker'] in DEPOSIT_BROKERS or row['market'] == 'B股':
-                continue
-            realised_pl += row['rpl']
-    else:
-        for row in conn.execute(
-                "SELECT COALESCE(realized_pnl_cny, 0) AS rpl FROM closed_trades"):
+    for row in conn.execute(
+            "SELECT broker, COALESCE(realized_pnl_cny, 0) AS rpl FROM closed_trades"):
+        if row['broker'] in cost_brokers:
             realised_pl += row['rpl']
 
-    base = (DEPOSIT_CAPITAL + B_SHARE_CAPITAL + position_cost) if DEPOSIT_MODE else position_cost
-    return base + cash_cny - margin_off - realised_pl
+    return deposit_total + position_cost + cash_cny - margin_off - realised_pl
 
 
 # ── DCF valuation integration (read-only) ──
