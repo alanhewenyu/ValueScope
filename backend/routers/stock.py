@@ -530,7 +530,7 @@ def get_estimates(
 
     # Limit results
     past_quarters = past_quarters[:8]
-    forward_quarters = forward_quarters[:4]
+    forward_quarters = forward_quarters[:12]
 
     # Count beats
     beat_count = sum(
