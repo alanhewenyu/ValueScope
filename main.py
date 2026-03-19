@@ -410,6 +410,19 @@ def main(args):
             if auto_mode:
                 sys.exit(1)
             continue
+        # Freshness check — detect stale data, supplement from akshare if available
+        try:
+            from modeling.freshness import check_data_freshness
+            financial_data, _freshness = check_data_freshness(args.t, financial_data, args.apikey)
+            _ds = _freshness.get("data_source", "api")
+            _ep = _freshness.get("expected_period", "")
+            if _freshness.get("is_stale") and _ds == "api":
+                print(S.warning(f"  ⚠ 数据滞后: {_ep} 财报已披露，当前数据尚未更新。请参阅公司最新公告。"))
+            elif _freshness.get("is_stale") and "akshare" in _ds:
+                print(S.info(f"  ⓘ 已补充最新数据: {_ep} 数据来源: 东方财富。原数据源更新后将自动切换。"))
+        except Exception:
+            pass
+
         summary_df = financial_data['summary']
         company_profile = _fill_profile_from_financial_data(company_profile, financial_data)
         # Beta: calculate AFTER parallel fetch to avoid concurrent connection contention
@@ -430,7 +443,7 @@ def main(args):
 
         ttm_note = financial_data.get('ttm_note', '')
         if ttm_note:
-            print(S.muted(f"  ⓘ TTM Note: {ttm_note}"))
+            print(S.muted(f"  ⓘ Note: {ttm_note}"))
             print()
 
         # ── Key financial driver charts ──

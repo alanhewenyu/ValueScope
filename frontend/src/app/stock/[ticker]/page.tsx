@@ -216,6 +216,7 @@ export default function StockPage() {
             ticker={decodedTicker}
             scores={scores}
             relVal={relVal}
+            freshness={financials?.freshness}
           />
         )}
         {activeTab === "dcf" && <DCFTab ticker={decodedTicker} waccData={wacc} financials={financials} profile={profile} prefetchedDefaults={prefetchedDefaults} />}

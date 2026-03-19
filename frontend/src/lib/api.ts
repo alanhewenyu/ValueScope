@@ -62,6 +62,13 @@ export interface FinancialData {
   ttm_end_date: string;
   average_tax_rate: number;
   fy_end_month: number;
+  freshness?: FreshnessInfo;
+}
+
+export interface FreshnessInfo {
+  is_stale: boolean;
+  expected_period?: string;
+  data_source: string;
 }
 
 export interface DCFResult {

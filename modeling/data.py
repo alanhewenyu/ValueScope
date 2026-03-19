@@ -2037,7 +2037,26 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                 if ttm_note:
                     ttm_data['_ttm_note'] = ttm_note
 
-                summary_data.insert(0, ttm_data)
+                # Skip TTM if the annual data already covers the same or later period.
+                # e.g. FY2025 (date=2025-12-31) already exists → Q3 TTM (date=2025-09-30) is redundant.
+                _ttm_date = ttm_data.get('Date', '')
+                _fy_date = summary_data[0].get('Date', '') if summary_data else ''
+                _skip_ttm = False
+                if _ttm_date and _fy_date:
+                    try:
+                        if _fy_date[:10] >= _ttm_date[:10]:
+                            _skip_ttm = True
+                    except (TypeError, ValueError):
+                        pass
+
+                if not _skip_ttm:
+                    summary_data.insert(0, ttm_data)
+                else:
+                    # TTM skipped — clear TTM metadata so downstream
+                    # (charts, DCF base year) doesn't reference stale TTM info.
+                    _ttm_latest_quarter = ''
+                    _ttm_end_date = ''
+                    _need_ttm = False
 
         avg_tax_rate = sum(tax_rates) / len(tax_rates) if tax_rates else 0
 

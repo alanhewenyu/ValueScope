@@ -247,6 +247,14 @@ def get_financials(
     if financial_data is None:
         raise HTTPException(status_code=404, detail=f"Financial data not found: {ticker}")
 
+    # Freshness check — detects when FMP data lags behind actual earnings releases
+    freshness_info = {"is_stale": False, "data_source": "api"}
+    try:
+        from modeling.freshness import check_data_freshness
+        financial_data, freshness_info = check_data_freshness(normalized, financial_data, apikey)
+    except Exception as e:
+        logger.debug("Freshness check skipped: %s", e)
+
     profile = fetch_company_profile(normalized, apikey)
     profile = _fill_profile_from_financial_data(profile, financial_data)
 
@@ -259,6 +267,16 @@ def get_financials(
     # Convert summary DataFrame to JSON-serializable format
     summary_df = financial_data["summary"]
     formatted = format_summary_df(summary_df)
+
+    # Mark fallback cells with * in formatted_summary (akshare supplemented data)
+    _fallback_rows = financial_data.get("_freshness_fallback_rows", [])
+    if _fallback_rows and len(formatted.columns) > 0:
+        col0 = formatted.columns[0]  # akshare column (leftmost)
+        for row_name in _fallback_rows:
+            if row_name in formatted.index:
+                val = str(formatted.at[row_name, col0])
+                if val and val != "N/A":
+                    formatted.at[row_name, col0] = val + " *"
 
     # Build response
     result = {
@@ -281,8 +299,11 @@ def get_financials(
         "ttm_end_date": financial_data.get("ttm_end_date", ""),
         "average_tax_rate": financial_data.get("average_tax_rate", 0),
         "fy_end_month": financial_data.get("fy_end_month", 12),
+        "freshness": freshness_info,
     }
-    cache_put(ck, result, ttl=3600)  # 1 hour
+    # Skip 1-hour cache when AI data is in use (need to check for API catch-up each time)
+    if freshness_info.get("data_source", "api") == "api":
+        cache_put(ck, result, ttl=3600)  # 1 hour
     return result
 
 

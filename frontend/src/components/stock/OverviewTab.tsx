@@ -21,6 +21,7 @@ import FinancialTable from "@/components/FinancialTable";
 import {
   type CompanyProfile,
   type FinancialData,
+  type FreshnessInfo,
   type RelativeValuationData,
   type ScoresData,
 } from "@/lib/api";
@@ -62,6 +63,7 @@ export default function OverviewTab({
   ticker,
   scores,
   relVal,
+  freshness,
 }: {
   profile: CompanyProfile | null;
   financials: FinancialData | null;
@@ -73,8 +75,9 @@ export default function OverviewTab({
   ticker: string;
   scores: ScoresData | null;
   relVal: RelativeValuationData | null;
+  freshness?: FreshnessInfo;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   // ── Extract chart data from financials ──
   const chartData = (() => {
@@ -406,6 +409,31 @@ export default function OverviewTab({
 
       {financials && (
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
+          {/* Freshness indicator */}
+          {freshness?.is_stale && freshness.data_source === "api" && (
+            <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+                {locale === "zh" ? "数据滞后" : "Data Lag"}
+              </span>
+              <span className="text-gray-500 dark:text-gray-400">
+                {locale === "zh"
+                  ? `${freshness.expected_period} 财报已披露，当前数据尚未更新。请参阅公司最新公告。`
+                  : `${freshness.expected_period} earnings released but data not yet updated. Please refer to the latest company announcement.`}
+              </span>
+            </div>
+          )}
+          {freshness?.is_stale && freshness.data_source !== "api" && (
+            <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                {locale === "zh" ? "已补充最新数据" : "Supplemented"}
+              </span>
+              <span className="text-gray-500 dark:text-gray-400">
+                {locale === "zh"
+                  ? `${freshness.expected_period} 数据来源: 东方财富。API 更新后将自动切换至原数据源。`
+                  : `${freshness.expected_period} data from EastMoney. Will auto-switch to primary source once API updates.`}
+              </span>
+            </div>
+          )}
           <FinancialTable
             title={t.historicalFinancials(financials.company_name)}
             columns={financials.formatted_summary.columns}
