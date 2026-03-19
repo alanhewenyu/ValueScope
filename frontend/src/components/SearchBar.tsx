@@ -12,6 +12,54 @@ interface SearchBarProps {
   className?: string;
 }
 
+// ── Local ticker cache (loaded once from /tickers.json) ──
+
+interface TickerEntry { s: string; n: string; x?: string }
+let _tickerCache: TickerEntry[] | null = null;
+let _tickerLoading = false;
+
+function ensureTickerCache() {
+  if (_tickerCache || _tickerLoading) return;
+  _tickerLoading = true;
+  fetch("/tickers.json")
+    .then((r) => r.json())
+    .then((data: TickerEntry[]) => { _tickerCache = data; })
+    .catch(() => { _tickerCache = []; })
+    .finally(() => { _tickerLoading = false; });
+}
+
+function localSearch(q: string, limit = 8): SearchResult[] {
+  if (!_tickerCache || !q) return [];
+  const ql = q.toLowerCase();
+  const qu = q.toUpperCase();
+  // For numeric input, also try zero-padded HK format
+  const qPadded = /^\d{1,5}$/.test(q) ? q.padStart(5, "0") + ".HK" : "";
+
+  const exact: SearchResult[] = [];
+  const starts: SearchResult[] = [];
+  const contains: SearchResult[] = [];
+
+  for (const t of _tickerCache) {
+    const sl = t.s.toLowerCase();
+    const nl = t.n.toLowerCase();
+    const entry: SearchResult = { symbol: t.s, name: t.n, exchange: t.x || "" };
+
+    if (sl === ql || t.s === qPadded) {
+      exact.push(entry);
+    } else if (t.s.startsWith(qu) || (qPadded && t.s.startsWith(qPadded.replace(".HK", "")))) {
+      starts.push(entry);
+    } else if (sl.includes(ql) || nl.includes(ql)) {
+      contains.push(entry);
+    }
+
+    if (exact.length + starts.length + contains.length >= limit * 3) break;
+  }
+
+  return [...exact, ...starts, ...contains].slice(0, limit);
+}
+
+// ── SearchBar component ──
+
 export default function SearchBar({ size = "md", className = "" }: SearchBarProps) {
   const router = useRouter();
   const { t } = useI18n();
@@ -24,7 +72,10 @@ export default function SearchBar({ size = "md", className = "" }: SearchBarProp
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const searchIdRef = useRef(0); // Tracks latest search to discard stale results
+  const searchIdRef = useRef(0);
+
+  // Pre-load ticker cache on mount
+  useEffect(() => { ensureTickerCache(); }, []);
 
   const doSearch = useCallback(async (q: string) => {
     if (q.length < 1) {
@@ -32,18 +83,38 @@ export default function SearchBar({ size = "md", className = "" }: SearchBarProp
       setShowDropdown(false);
       return;
     }
+
     const thisSearchId = ++searchIdRef.current;
-    setLoading(true);
+
+    // Layer 1: instant local search (no network)
+    const local = localSearch(q);
+    if (local.length > 0) {
+      setResults(local);
+      setShowDropdown(true);
+      setSelectedIdx(-1);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
+    // Layer 2: backend API search (A-shares by name, FMP supplementary)
     try {
-      const data = await searchStocks(q, fmpApiKey);
-      // Only apply results if this is still the latest search
+      const apiData = await searchStocks(q, fmpApiKey);
       if (thisSearchId !== searchIdRef.current) return;
-      setResults(data);
-      setShowDropdown(data.length > 0);
+      // Merge: deduplicate, API results supplement local
+      const seen = new Set(local.map((r) => r.symbol));
+      const merged = [...local];
+      for (const item of apiData) {
+        if (!seen.has(item.symbol)) {
+          merged.push(item);
+          seen.add(item.symbol);
+        }
+      }
+      setResults(merged.slice(0, 8));
+      setShowDropdown(merged.length > 0);
       setSelectedIdx(-1);
     } catch {
-      if (thisSearchId !== searchIdRef.current) return;
-      setResults([]);
+      // Keep local results if API fails
     } finally {
       if (thisSearchId === searchIdRef.current) setLoading(false);
     }
@@ -53,6 +124,13 @@ export default function SearchBar({ size = "md", className = "" }: SearchBarProp
     const val = e.target.value;
     setQuery(val);
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    // Instant local search + debounced API search
+    const local = localSearch(val);
+    if (local.length > 0) {
+      setResults(local);
+      setShowDropdown(true);
+      setSelectedIdx(-1);
+    }
     debounceRef.current = setTimeout(() => doSearch(val), 300);
   };
 
@@ -62,16 +140,13 @@ export default function SearchBar({ size = "md", className = "" }: SearchBarProp
     router.push(`/stock/${encodeURIComponent(symbol)}`);
   };
 
-  // Check if input contains Chinese characters (needs search-first, not direct navigate)
   const isChinese = (s: string) => /[\u4e00-\u9fff]/.test(s);
 
   const navigateOrSearch = async (raw: string) => {
-    // If there are already search results, navigate to the first one
     if (results.length > 0) {
       navigate(results[0].symbol);
       return;
     }
-    // If input is Chinese or digits (potential A-share), search first then navigate
     if (isChinese(raw) || /^\d{1,6}$/.test(raw)) {
       try {
         const data = await searchStocks(raw, fmpApiKey);
@@ -81,7 +156,6 @@ export default function SearchBar({ size = "md", className = "" }: SearchBarProp
         }
       } catch { /* fall through */ }
     }
-    // Fallback: navigate directly (works for AAPL, 0700.HK, etc.)
     navigate(raw.toUpperCase());
   };
 
@@ -110,7 +184,6 @@ export default function SearchBar({ size = "md", className = "" }: SearchBarProp
     }
   };
 
-  // Close dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (
