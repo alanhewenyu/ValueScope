@@ -402,19 +402,22 @@ def get_estimates(
     url_annual = f"{base}/analyst-estimates/{normalized}?apikey={apikey}&period=annual&limit=5"
     url_profile = f"{base}/profile/{normalized}?apikey={apikey}"
     url_income = f"{base}/income-statement/{normalized}?apikey={apikey}&period=annual&limit=2"
+    url_grades = f"{base}/grade/{normalized}?apikey={apikey}&limit=15"
 
     try:
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=6) as executor:
             fut_surprises = executor.submit(get_jsonparsed_data, url_surprises)
             fut_estimates = executor.submit(get_jsonparsed_data, url_estimates)
             fut_annual = executor.submit(get_jsonparsed_data, url_annual)
             fut_profile = executor.submit(get_jsonparsed_data, url_profile)
             fut_income = executor.submit(get_jsonparsed_data, url_income)
+            fut_grades = executor.submit(get_jsonparsed_data, url_grades)
             surprises = fut_surprises.result() or []
             estimates = fut_estimates.result() or []
             annual_estimates = fut_annual.result() or []
             profile_data = fut_profile.result() or []
             income_data = fut_income.result() or []
+            grades_data = fut_grades.result() or []
     except Exception as e:
         logger.debug("Estimates fetch failed for %s: %s", ticker, e)
         return {"available": False, "reason": "Failed to fetch estimates data"}
@@ -640,12 +643,54 @@ def get_estimates(
             first_fwd_rev = forward_annual[0]["estimated_revenue"]
             forward_annual[0]["revenue_growth"] = round((first_fwd_rev / last_actual_rev - 1) * 100, 1)
 
+    # Process analyst rating changes
+    if not isinstance(grades_data, list):
+        grades_data = []
+    rating_changes = []
+    upgrades = 0
+    downgrades = 0
+    maintains = 0
+    for g in grades_data:
+        prev = g.get("previousGrade", "")
+        new = g.get("newGrade", "")
+        company = g.get("gradingCompany", "")
+        date = g.get("date", "")
+        changed = prev != new and prev and new
+        if changed:
+            # Simple heuristic: check if it's upgrade or downgrade
+            buy_terms = {"Buy", "Overweight", "Outperform", "Strong Buy", "Positive", "Strong-Buy"}
+            hold_terms = {"Hold", "Neutral", "Equal-Weight", "Market Perform", "Peer Perform", "Equal Weight", "Sector Perform"}
+            sell_terms = {"Sell", "Underweight", "Underperform", "Reduce", "Strong Sell"}
+            def _score(grade):
+                if grade in buy_terms: return 3
+                if grade in hold_terms: return 2
+                if grade in sell_terms: return 1
+                return 2  # unknown → neutral
+            if _score(new) > _score(prev):
+                upgrades += 1
+                direction = "upgrade"
+            else:
+                downgrades += 1
+                direction = "downgrade"
+        else:
+            maintains += 1
+            direction = "maintain"
+        rating_changes.append({
+            "date": date,
+            "company": company,
+            "previous": prev,
+            "new": new,
+            "direction": direction,
+        })
+
     result = {
         "available": True,
         "ticker": normalized,
         "estimates": past_quarters,
         "forward_estimates": forward_annual,
         "actual_years": actual_years,
+        "rating_changes": rating_changes[:10],
+        "rating_summary": {"upgrades": upgrades, "downgrades": downgrades, "maintains": maintains},
         "beat_count": beat_count,
         "total_count": len(past_quarters),
         "eps_currency": eps_currency,

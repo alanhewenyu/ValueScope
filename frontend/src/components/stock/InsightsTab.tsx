@@ -234,9 +234,57 @@ export default function InsightsTab({
         </div>
       )}
 
+      {/* Analyst Rating Changes */}
+      {estimates && (estimates as any).rating_changes?.length > 0 && (() => {
+        const changes = (estimates as any).rating_changes as { date: string; company: string; previous: string; new: string; direction: string }[];
+        const summary = (estimates as any).rating_summary as { upgrades: number; downgrades: number; maintains: number };
+        const dirColor = (d: string) =>
+          d === "upgrade" ? "text-green-600 dark:text-green-400"
+          : d === "downgrade" ? "text-red-600 dark:text-red-400"
+          : "text-gray-400";
+        const dirIcon = (d: string) => d === "upgrade" ? "↑" : d === "downgrade" ? "↓" : "→";
+        return (
+          <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+              Analyst Rating Changes
+            </h3>
+            {/* Summary chips */}
+            <div className="flex gap-3 mb-4 text-sm">
+              {summary.upgrades > 0 && (
+                <span className="px-2.5 py-1 rounded-full bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 font-medium">
+                  ↑ {summary.upgrades} Upgrade{summary.upgrades > 1 ? "s" : ""}
+                </span>
+              )}
+              {summary.downgrades > 0 && (
+                <span className="px-2.5 py-1 rounded-full bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 font-medium">
+                  ↓ {summary.downgrades} Downgrade{summary.downgrades > 1 ? "s" : ""}
+                </span>
+              )}
+              {summary.maintains > 0 && (
+                <span className="px-2.5 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">
+                  → {summary.maintains} Maintained
+                </span>
+              )}
+            </div>
+            {/* Changes list */}
+            <div className="space-y-1.5">
+              {changes.map((c, i) => (
+                <div key={i} className="flex items-center gap-3 text-sm py-1 border-b border-gray-50 dark:border-gray-800 last:border-0">
+                  <span className="text-xs text-gray-400 w-20 shrink-0">{c.date.slice(0, 10)}</span>
+                  <span className="text-gray-600 dark:text-gray-300 w-28 shrink-0 truncate">{c.company}</span>
+                  <span className={`font-medium ${dirColor(c.direction)}`}>
+                    {c.previous} {dirIcon(c.direction)} {c.new}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Data source note */}
       <p className="text-[10px] text-gray-400 dark:text-gray-500 text-right">
-        Data source: Financial Modeling Prep (FMP) · Analyst consensus estimates
+        Data source: Financial Modeling Prep (FMP) · Analyst consensus estimates & ratings
       </p>
     </div>
   );
