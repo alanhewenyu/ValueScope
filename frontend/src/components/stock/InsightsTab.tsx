@@ -116,28 +116,6 @@ function AnalystEstimatesSection({ estimates }: { estimates: EstimatesData }) {
         {forwardQuarters.length > 0 && (() => {
           const epsCur = (estimates as any).eps_currency || "USD";
           const finCur = (estimates as any).financials_currency || "USD";
-
-          // Group by fiscal year for annual totals
-          const byYear: Record<string, any[]> = {};
-          for (const q of forwardQuarters) {
-            const fy = q.period?.replace(/Q\d\s*/, "") || "?";
-            if (!byYear[fy]) byYear[fy] = [];
-            byYear[fy].push(q);
-          }
-
-          // Build rows: quarters + annual subtotal per year
-          const rows: { type: "quarter" | "annual"; data: any; year?: string }[] = [];
-          for (const [year, qs] of Object.entries(byYear)) {
-            for (const q of qs) rows.push({ type: "quarter", data: q });
-            if (qs.length > 1) {
-              const totalEps = qs.reduce((s: number, q: any) => s + (q.estimated_eps || 0), 0);
-              const totalRev = qs.reduce((s: number, q: any) => s + (q.estimated_revenue || 0), 0);
-              const totalEbit = qs.reduce((s: number, q: any) => s + (q.estimated_ebit || 0), 0);
-              const margin = totalRev ? (totalEbit / totalRev * 100) : null;
-              rows.push({ type: "annual", year, data: { eps: totalEps, rev: totalRev, ebit: totalEbit, margin } });
-            }
-          }
-
           return (
             <div>
               <h4 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
@@ -156,41 +134,24 @@ function AnalystEstimatesSection({ estimates }: { estimates: EstimatesData }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((row, i) => row.type === "quarter" ? (
-                      <tr key={i} className="border-b border-gray-100 dark:border-gray-800">
-                        <td className="py-2 pr-4 text-gray-700 dark:text-gray-300">{row.data.period}</td>
+                    {forwardQuarters.map((q: any, i: number) => (
+                      <tr key={i} className="border-b border-gray-100 dark:border-gray-800 last:border-0">
+                        <td className="py-2 pr-4 font-medium text-gray-900 dark:text-white">{q.period}</td>
                         <td className="py-2 px-3 text-right text-gray-700 dark:text-gray-300">
-                          {row.data.estimated_eps?.toFixed(2) ?? "—"}
+                          {q.estimated_eps?.toFixed(2) ?? "—"}
                         </td>
                         <td className="py-2 px-3 text-right text-gray-700 dark:text-gray-300">
-                          {row.data.estimated_revenue ? formatNumber(row.data.estimated_revenue / 1e6, 0) + "M" : "—"}
+                          {q.estimated_revenue ? formatNumber(q.estimated_revenue / 1e6, 0) + "M" : "—"}
                         </td>
                         <td className="py-2 px-3 text-right text-gray-700 dark:text-gray-300">
-                          {row.data.estimated_ebit ? formatNumber(row.data.estimated_ebit / 1e6, 0) + "M" : "—"}
+                          {q.estimated_ebit ? formatNumber(q.estimated_ebit / 1e6, 0) + "M" : "—"}
                         </td>
                         <td className="py-2 px-3 text-right text-gray-700 dark:text-gray-300">
-                          {row.data.ebit_margin != null ? row.data.ebit_margin + "%" : "—"}
+                          {q.ebit_margin != null ? q.ebit_margin + "%" : "—"}
                         </td>
                         <td className="py-2 pl-3 text-right text-gray-400">
-                          {row.data.number_of_analysts || "—"}
+                          {q.number_of_analysts || "—"}
                         </td>
-                      </tr>
-                    ) : (
-                      <tr key={i} className="border-b-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50 font-semibold">
-                        <td className="py-2 pr-4 text-gray-900 dark:text-white">{row.year} Total</td>
-                        <td className="py-2 px-3 text-right text-gray-900 dark:text-white">
-                          {row.data.eps.toFixed(2)}
-                        </td>
-                        <td className="py-2 px-3 text-right text-gray-900 dark:text-white">
-                          {formatNumber(row.data.rev / 1e6, 0)}M
-                        </td>
-                        <td className="py-2 px-3 text-right text-gray-900 dark:text-white">
-                          {formatNumber(row.data.ebit / 1e6, 0)}M
-                        </td>
-                        <td className="py-2 px-3 text-right text-gray-900 dark:text-white">
-                          {row.data.margin != null ? row.data.margin.toFixed(1) + "%" : "—"}
-                        </td>
-                        <td className="py-2 pl-3 text-right text-gray-400"></td>
                       </tr>
                     ))}
                   </tbody>

@@ -399,15 +399,18 @@ def get_estimates(
     base = "https://financialmodelingprep.com/api/v3"
     url_surprises = f"{base}/earnings-surprises/{normalized}?apikey={apikey}"
     url_estimates = f"{base}/analyst-estimates/{normalized}?apikey={apikey}&period=quarter"
+    url_annual = f"{base}/analyst-estimates/{normalized}?apikey={apikey}&period=annual&limit=5"
     url_profile = f"{base}/profile/{normalized}?apikey={apikey}"
 
     try:
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        with ThreadPoolExecutor(max_workers=4) as executor:
             fut_surprises = executor.submit(get_jsonparsed_data, url_surprises)
             fut_estimates = executor.submit(get_jsonparsed_data, url_estimates)
+            fut_annual = executor.submit(get_jsonparsed_data, url_annual)
             fut_profile = executor.submit(get_jsonparsed_data, url_profile)
             surprises = fut_surprises.result() or []
             estimates = fut_estimates.result() or []
+            annual_estimates = fut_annual.result() or []
             profile_data = fut_profile.result() or []
     except Exception as e:
         logger.debug("Estimates fetch failed for %s: %s", ticker, e)
@@ -524,13 +527,40 @@ def get_estimates(
             })
             forward_quarters.append(entry)
 
-    # Sort: past newest first, future oldest first
+    # Sort: past newest first
     past_quarters.sort(key=lambda x: x["date"], reverse=True)
-    forward_quarters.sort(key=lambda x: x["date"])
-
-    # Limit results
     past_quarters = past_quarters[:8]
-    forward_quarters = forward_quarters[:12]
+
+    # Build annual forward estimates from FMP annual data
+    if not isinstance(annual_estimates, list):
+        annual_estimates = []
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    forward_annual = []
+    for est in annual_estimates:
+        est_date = est.get("date", "")
+        if not est_date or est_date <= today_str:
+            continue
+        eps = est.get("estimatedEpsAvg", 0) or 0
+        rev = est.get("estimatedRevenueAvg", 0) or 0
+        ebit = est.get("estimatedEbitAvg", 0) or 0
+        n_analysts = est.get("numberAnalystsEstimatedEps", 0) or 0
+        # Only convert EPS
+        eps_converted = eps / fx_rate if fx_rate != 1.0 else eps
+        margin = round((ebit / rev) * 100, 1) if rev else None
+        try:
+            dt = datetime.strptime(est_date, "%Y-%m-%d")
+            period_label = f"FY{dt.year}"
+        except ValueError:
+            period_label = est_date
+        forward_annual.append({
+            "period": period_label,
+            "estimated_eps": round(eps_converted, 4),
+            "estimated_revenue": rev,
+            "estimated_ebit": ebit,
+            "ebit_margin": margin,
+            "number_of_analysts": n_analysts,
+        })
+    forward_annual.sort(key=lambda x: x["period"])
 
     # Count beats
     beat_count = sum(
@@ -540,12 +570,11 @@ def get_estimates(
     )
 
     # Determine currencies for display
-    eps_currency = "USD"  # EPS always in trading currency
+    eps_currency = "USD"
     financials_currency = "CNY" if fx_rate != 1.0 else "USD"
     if isinstance(profile_data, list) and profile_data:
         trading_cur = profile_data[0].get("currency", "USD")
         eps_currency = trading_cur
-        # For non-ADR, financials_currency = trading currency
         if fx_rate == 1.0:
             financials_currency = trading_cur
 
@@ -553,7 +582,7 @@ def get_estimates(
         "available": True,
         "ticker": normalized,
         "estimates": past_quarters,
-        "forward_estimates": forward_quarters,
+        "forward_estimates": forward_annual,
         "beat_count": beat_count,
         "total_count": len(past_quarters),
         "eps_currency": eps_currency,
