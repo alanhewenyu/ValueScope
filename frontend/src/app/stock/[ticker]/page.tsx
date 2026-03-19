@@ -889,35 +889,21 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
               {t.costOfCapital}
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <DCFInputField
+                label={t.taxRate}
+                desc={t.autoCalculatedEditable}
+                value={taxRate}
+                onChange={setTaxRate}
+                step={0.5}
+                historyHint={hist?.tax_rate ? <HistoryHint metric={hist.tax_rate} t={t} periodLabel={periodLabel} /> : undefined}
+              />
               <div>
-                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">
-                  {t.taxRate}
-                </label>
-                <div className="text-[10px] text-gray-400 dark:text-gray-500 mb-1 italic">
-                  {t.autoCalculatedEditable}
-                </div>
-                <input
-                  type="number"
-                  value={taxRate}
-                  onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) setTaxRate(v); }}
-                  step={0.5}
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-                {hist?.tax_rate && <HistoryHint metric={hist.tax_rate} t={t} periodLabel={periodLabel} />}
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">
-                  {t.waccRate}
-                </label>
-                <div className="text-[10px] text-gray-400 dark:text-gray-500 mb-1 italic">
-                  {t.autoCalculatedEditable}
-                </div>
-                <input
-                  type="number"
+                <DCFInputField
+                  label={t.waccRate}
+                  desc={t.autoCalculatedEditable}
                   value={waccRate}
-                  onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) setWaccRate(v); }}
+                  onChange={setWaccRate}
                   step={0.1}
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
                 {/* WACC calculation breakdown */}
                 {waccData?.details && (
