@@ -18,12 +18,37 @@ interface TickerEntry { s: string; n: string; x?: string }
 let _tickerCache: TickerEntry[] | null = null;
 let _tickerLoading = false;
 
+/** Normalize symbol for dedup: strip leading zeros from HK codes, unify suffix */
+function normalizeSymbol(s: string): string {
+  // 00700.HK → 0700.HK (strip one leading zero for 5-digit HK codes)
+  const m = s.match(/^0(\d{4})\.HK$/);
+  if (m) return m[1] + ".HK";
+  return s;
+}
+
 function ensureTickerCache() {
   if (_tickerCache || _tickerLoading) return;
   _tickerLoading = true;
   fetch("/tickers.json")
     .then((r) => r.json())
-    .then((data: TickerEntry[]) => { _tickerCache = data; })
+    .then((data: TickerEntry[]) => {
+      // Deduplicate: e.g. 600519.SS + 600519.SZ → keep .SS only
+      const seen = new Set<string>();
+      _tickerCache = data.filter((t) => {
+        // For A-shares: code prefix determines correct exchange
+        const code = t.s.split(".")[0];
+        if (/^\d{6}$/.test(code)) {
+          const prefix = code.slice(0, 3);
+          const isSSE = ["600", "601", "603", "605", "688"].includes(prefix);
+          const isSZSE = ["000", "001", "002", "003", "300", "301"].includes(prefix);
+          if (isSSE && t.s.endsWith(".SZ")) return false;  // wrong exchange
+          if (isSZSE && t.s.endsWith(".SS")) return false;  // wrong exchange
+        }
+        if (seen.has(t.s)) return false;
+        seen.add(t.s);
+        return true;
+      });
+    })
     .catch(() => { _tickerCache = []; })
     .finally(() => { _tickerLoading = false; });
 }
@@ -101,13 +126,14 @@ export default function SearchBar({ size = "md", className = "" }: SearchBarProp
     try {
       const apiData = await searchStocks(q, fmpApiKey);
       if (thisSearchId !== searchIdRef.current) return;
-      // Merge: deduplicate, API results supplement local
-      const seen = new Set(local.map((r) => r.symbol));
+      // Merge: deduplicate using normalized symbols (handles 00700.HK vs 0700.HK)
+      const seen = new Set(local.map((r) => normalizeSymbol(r.symbol)));
       const merged = [...local];
       for (const item of apiData) {
-        if (!seen.has(item.symbol)) {
+        const norm = normalizeSymbol(item.symbol);
+        if (!seen.has(norm)) {
           merged.push(item);
-          seen.add(item.symbol);
+          seen.add(norm);
         }
       }
       setResults(merged.slice(0, 8));
