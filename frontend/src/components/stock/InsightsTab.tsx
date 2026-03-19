@@ -129,6 +129,8 @@ function AnalystEstimatesSection({ estimates }: { estimates: EstimatesData }) {
                       <th className="text-right py-2 px-3 font-medium">EPS ({epsCur})</th>
                       <th className="text-right py-2 px-3 font-medium">Revenue ({finCur})</th>
                       <th className="text-right py-2 px-3 font-medium">Rev Growth</th>
+                      <th className="text-right py-2 px-3 font-medium">Net Income ({finCur})</th>
+                      <th className="text-right py-2 px-3 font-medium">NI%</th>
                       <th className="text-right py-2 pl-3 font-medium">Analysts</th>
                     </tr>
                   </thead>
@@ -149,6 +151,12 @@ function AnalystEstimatesSection({ estimates }: { estimates: EstimatesData }) {
                             : "text-gray-500"
                         }`}>
                           {q.revenue_growth != null ? (q.revenue_growth > 0 ? "+" : "") + q.revenue_growth + "%" : "—"}
+                        </td>
+                        <td className="py-2 px-3 text-right text-gray-700 dark:text-gray-300">
+                          {q.estimated_net_income ? formatNumber(q.estimated_net_income / 1e6, 0) + "M" : "—"}
+                        </td>
+                        <td className="py-2 px-3 text-right text-gray-700 dark:text-gray-300">
+                          {q.net_income_margin != null ? q.net_income_margin + "%" : "—"}
                         </td>
                         <td className="py-2 pl-3 text-right text-gray-400">
                           {q.number_of_analysts || "—"}

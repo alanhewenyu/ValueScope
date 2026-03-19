@@ -543,8 +543,10 @@ def get_estimates(
             continue
         rev = est.get("estimatedRevenueAvg", 0) or 0
         eps = est.get("estimatedEpsAvg", 0) or 0
+        ni = est.get("estimatedNetIncomeAvg", 0) or 0
         n_analysts = est.get("numberAnalystsEstimatedEps", 0) or 0
         eps_converted = eps / fx_rate if fx_rate != 1.0 else eps
+        ni_margin = round((ni / rev) * 100, 1) if rev else None
         try:
             dt = datetime.strptime(est_date, "%Y-%m-%d")
             period_label = f"FY{dt.year}"
@@ -555,8 +557,10 @@ def get_estimates(
             "period": period_label,
             "estimated_eps": round(eps_converted, 4),
             "estimated_revenue": rev,
+            "estimated_net_income": ni,
+            "net_income_margin": ni_margin,
             "number_of_analysts": n_analysts,
-            "rev_raw": rev,  # for YoY calc
+            "rev_raw": rev,
         })
 
     # Calculate YoY revenue growth and filter to future only
@@ -572,6 +576,8 @@ def get_estimates(
             "estimated_eps": entry["estimated_eps"],
             "estimated_revenue": entry["estimated_revenue"],
             "revenue_growth": rev_growth,
+            "estimated_net_income": entry["estimated_net_income"],
+            "net_income_margin": entry["net_income_margin"],
             "number_of_analysts": entry["number_of_analysts"],
         })
 
