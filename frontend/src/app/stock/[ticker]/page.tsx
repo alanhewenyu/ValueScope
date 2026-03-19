@@ -42,7 +42,7 @@ type TabId = "overview" | "dcf" | "relative" | "scoring";
 export default function StockPage() {
   const params = useParams();
   const ticker = (params.ticker as string) || "";
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { fmpApiKey, serperApiKey, deepseekApiKey, ready } = useSettings();
 
   const [profile, setProfile] = useState<CompanyProfile | null>(null);
@@ -127,6 +127,9 @@ export default function StockPage() {
   }
 
   if (error) {
+    // Check if this looks like a US stock (no dot suffix) and user has no FMP API key
+    const isLikelyUS = !decodeURIComponent(ticker).includes(".");
+    const needsApiKey = isLikelyUS && !fmpApiKey;
     return (
       <>
         <Navbar />
@@ -136,6 +139,13 @@ export default function StockPage() {
             <p className="text-sm text-gray-400">
               {t.errorHelp}
             </p>
+            {needsApiKey && (
+              <p className="text-sm text-amber-600 dark:text-amber-400 mt-3">
+                {locale === "zh"
+                  ? "美股数据需要 FMP API Key，请点击右上角 ⚙ 设置。"
+                  : "US stock data requires an FMP API Key. Please set it in ⚙ Settings (top right)."}
+              </p>
+            )}
           </div>
         </div>
       </>

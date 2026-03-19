@@ -62,12 +62,29 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [deepseekApiKey, setDeepseekState] = useState("");
   const [ready, setReady] = useState(false);
 
-  // Read from localStorage on client mount
+  // Read from localStorage on client mount, then try server config for auto-fill
   useEffect(() => {
-    setFmpState(readKey(KEY_FMP));
-    setSerperState(readKey(KEY_SERPER));
-    setDeepseekState(readKey(KEY_DEEPSEEK));
+    const localFmp = readKey(KEY_FMP);
+    const localSerper = readKey(KEY_SERPER);
+    const localDeepseek = readKey(KEY_DEEPSEEK);
+    setFmpState(localFmp);
+    setSerperState(localSerper);
+    setDeepseekState(localDeepseek);
     setReady(true);
+
+    // Auto-fill from server config if user hasn't set keys locally
+    if (!localFmp) {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      fetch(`${apiBase}/api/stock/server-config`)
+        .then((r) => r.json())
+        .then((cfg) => {
+          if (cfg.fmpApiKey && !readKey(KEY_FMP)) {
+            setFmpState(cfg.fmpApiKey);
+            writeKey(KEY_FMP, cfg.fmpApiKey);
+          }
+        })
+        .catch(() => {}); // silently fail (e.g. production without server key)
+    }
   }, []);
 
   const setFmpApiKey = useCallback((key: string) => {

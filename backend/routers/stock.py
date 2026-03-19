@@ -74,6 +74,20 @@ class SearchResult(BaseModel):
     exchange: str = ""
 
 
+@router.get("/server-config")
+def get_server_config():
+    """Return server-side API keys for auto-fill (localhost use only).
+
+    The frontend Settings component uses this to pre-fill API keys
+    so local users don't have to manually enter them.
+    """
+    import os
+    fmp_key = os.environ.get("FMP_API_KEY", "")
+    return {
+        "fmpApiKey": fmp_key,
+    }
+
+
 class CompanyProfile(BaseModel):
     symbol: str
     company_name: str
