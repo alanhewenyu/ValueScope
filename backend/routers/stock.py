@@ -433,9 +433,8 @@ def get_estimates(
         # Chinese ADRs: estimates in CNY, actuals in USD
         if country == "CN" and trading_currency == "USD":
             try:
-                import yfinance as yf
-                # CNYUSD=X: 1 CNY = ~0.145 USD; invert to get USD/CNY ≈ 6.9
-                cny_usd = float(yf.Ticker("CNYUSD=X").fast_info.last_price)
+                from modeling.yfinance_data import fetch_forex_yfinance
+                cny_usd = fetch_forex_yfinance("CNY", "USD")
                 fx_rate = (1.0 / cny_usd) if cny_usd and cny_usd > 0 else 7.0
             except Exception:
                 fx_rate = 7.0
