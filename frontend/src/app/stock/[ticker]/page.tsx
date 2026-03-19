@@ -633,7 +633,13 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
   return (
     <div ref={resultRef} className={`scroll-mt-20 ${result && !paramsCollapsed ? "xl:flex xl:gap-6 xl:items-start" : "space-y-6"}`}>
       {/* Parameter Form */}
-      <div className={`bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 ${result && !paramsCollapsed ? "mb-6 xl:mb-0 xl:w-[420px] xl:flex-shrink-0 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto xl:flex xl:flex-col" : "p-6"}`}>
+      <div className={`relative bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 ${result && !paramsCollapsed ? "mb-6 xl:mb-0 xl:w-[420px] xl:flex-shrink-0 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto xl:flex xl:flex-col" : "p-6"}`}>
+        {defaultsLoading && (
+          <div className="absolute inset-0 z-20 bg-white/70 dark:bg-gray-900/70 rounded-xl flex items-center justify-center backdrop-blur-[1px]">
+            <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+            <span className="ml-2 text-sm text-gray-500">{t.loadingDefaults}</span>
+          </div>
+        )}
         <div className={`flex items-center justify-between gap-2 mb-2 flex-wrap ${result && !paramsCollapsed ? "sticky top-0 z-10 bg-white dark:bg-gray-900 px-6 pt-6 pb-2 -mb-0 rounded-t-xl" : ""}`}>
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2 whitespace-nowrap">
             {t.dcfValuation}
