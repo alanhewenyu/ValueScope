@@ -92,17 +92,19 @@ export default function StockPage() {
         }
         setFinancials(f);
         // Phase 2: Secondary data — loaded after page renders
-        getWACC(decodedTicker, apikey)
-          .then((d) => { if (!cancelled) setWacc(d); })
-          .catch(() => {});
+        // Phase 2a: visible on overview tab
         getScores(decodedTicker, apikey)
           .then((d) => { if (!cancelled) setScores(d); })
           .catch(() => {});
         getRelativeValuation(decodedTicker, apikey, 5)
           .then((d) => { if (!cancelled) setRelVal(d); })
           .catch(() => {});
+        // Phase 2b: only needed for DCF tab
         getDCFDefaults(decodedTicker, apikey)
           .then((d) => { if (!cancelled) setPrefetchedDefaults(d); })
+          .catch(() => {});
+        getWACC(decodedTicker, apikey)
+          .then((d) => { if (!cancelled) setWacc(d); })
           .catch(() => {});
       })
       .finally(() => { if (!cancelled) setLoading(false); });
