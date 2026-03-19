@@ -73,8 +73,10 @@ function AnalystEstimatesSection({ estimates }: { estimates: EstimatesData }) {
                   }}
                   formatter={(value, name) => {
                     const v = Number(value);
+                    const cur = ((estimates as any).eps_currency) || "USD";
+                    const sym = cur === "USD" ? "$" : cur + " ";
                     const label = name === "estimated" ? t.estimated : t.actual;
-                    return [v != null && !isNaN(v) ? `$${v.toFixed(2)}` : "—", label];
+                    return [v != null && !isNaN(v) ? `${sym}${v.toFixed(2)}` : "—", label];
                   }}
                 />
                 <Legend
@@ -102,41 +104,53 @@ function AnalystEstimatesSection({ estimates }: { estimates: EstimatesData }) {
           </div>
         )}
 
-        {forwardQuarters.length > 0 && (
-          <div>
-            <h4 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
-              {t.forwardEstimates}
-            </h4>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                    <th className="text-left py-2 pr-4 font-medium">Period</th>
-                    <th className="text-right py-2 px-3 font-medium">EPS ({t.estimated})</th>
-                    <th className="text-right py-2 px-3 font-medium">Revenue ({t.estimated})</th>
-                    <th className="text-right py-2 pl-3 font-medium">Analysts</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {forwardQuarters.map((q, i) => (
-                    <tr key={i} className="border-b border-gray-100 dark:border-gray-800 last:border-0">
-                      <td className="py-2 pr-4 text-gray-700 dark:text-gray-300">{q.period}</td>
-                      <td className="py-2 px-3 text-right text-gray-700 dark:text-gray-300">
-                        ${q.estimated_eps.toFixed(2)}
-                      </td>
-                      <td className="py-2 px-3 text-right text-gray-700 dark:text-gray-300">
-                        {q.estimated_revenue ? formatNumber(q.estimated_revenue / 1e6, 0) + "M" : "—"}
-                      </td>
-                      <td className="py-2 pl-3 text-right text-gray-400">
-                        {q.number_of_analysts || "—"}
-                      </td>
+        {forwardQuarters.length > 0 && (() => {
+          const epsCur = (estimates as any).eps_currency || "USD";
+          const finCur = (estimates as any).financials_currency || "USD";
+          return (
+            <div>
+              <h4 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+                {t.forwardEstimates}
+              </h4>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                      <th className="text-left py-2 pr-4 font-medium">Period</th>
+                      <th className="text-right py-2 px-3 font-medium">EPS ({epsCur})</th>
+                      <th className="text-right py-2 px-3 font-medium">Revenue ({finCur})</th>
+                      <th className="text-right py-2 px-3 font-medium">EBIT ({finCur})</th>
+                      <th className="text-right py-2 px-3 font-medium">EBIT%</th>
+                      <th className="text-right py-2 pl-3 font-medium">Analysts</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {forwardQuarters.map((q: any, i: number) => (
+                      <tr key={i} className="border-b border-gray-100 dark:border-gray-800 last:border-0">
+                        <td className="py-2 pr-4 text-gray-700 dark:text-gray-300">{q.period}</td>
+                        <td className="py-2 px-3 text-right text-gray-700 dark:text-gray-300">
+                          {q.estimated_eps?.toFixed(2) ?? "—"}
+                        </td>
+                        <td className="py-2 px-3 text-right text-gray-700 dark:text-gray-300">
+                          {q.estimated_revenue ? formatNumber(q.estimated_revenue / 1e6, 0) + "M" : "—"}
+                        </td>
+                        <td className="py-2 px-3 text-right text-gray-700 dark:text-gray-300">
+                          {q.estimated_ebit ? formatNumber(q.estimated_ebit / 1e6, 0) + "M" : "—"}
+                        </td>
+                        <td className="py-2 px-3 text-right text-gray-700 dark:text-gray-300">
+                          {q.ebit_margin != null ? q.ebit_margin + "%" : "—"}
+                        </td>
+                        <td className="py-2 pl-3 text-right text-gray-400">
+                          {q.number_of_analysts || "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     </div>
   );

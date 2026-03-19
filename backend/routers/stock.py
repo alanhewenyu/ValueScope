@@ -475,14 +475,16 @@ def get_estimates(
         except ValueError:
             pass
 
-        estimated_eps = est.get("estimatedEpsAvg", 0) or 0
+        estimated_eps_raw = est.get("estimatedEpsAvg", 0) or 0
         estimated_revenue = est.get("estimatedRevenueAvg", 0) or 0
+        estimated_ebit = est.get("estimatedEbitAvg", 0) or 0
         num_analysts = est.get("numberAnalystsEstimatedEps", 0) or 0
 
-        # Apply currency conversion (convert estimates from CNY to USD)
-        if fx_rate != 1.0:
-            estimated_eps = estimated_eps / fx_rate
-            estimated_revenue = estimated_revenue / fx_rate
+        # Only convert EPS for ADR comparison; keep revenue/EBIT in original currency
+        estimated_eps = estimated_eps_raw / fx_rate if fx_rate != 1.0 else estimated_eps_raw
+
+        # EBIT Margin (%)
+        ebit_margin = round((estimated_ebit / estimated_revenue) * 100, 1) if estimated_revenue else None
 
         # Derive period label from date
         try:
@@ -492,6 +494,15 @@ def get_estimates(
         except ValueError:
             period_label = est_date
 
+        entry = {
+            "period": period_label,
+            "estimated_eps": round(estimated_eps, 4) if estimated_eps else 0,
+            "estimated_revenue": estimated_revenue,
+            "estimated_ebit": estimated_ebit,
+            "ebit_margin": ebit_margin,
+            "number_of_analysts": num_analysts,
+        }
+
         if matched_surprise and est_date <= today_str:
             actual_eps = matched_surprise.get("actualEarningResult")
             if actual_eps is not None and estimated_eps:
@@ -499,25 +510,19 @@ def get_estimates(
             else:
                 surprise_pct = None
 
-            past_quarters.append({
+            entry.update({
                 "date": matched_surprise.get("date", est_date),
-                "period": period_label,
-                "estimated_eps": round(estimated_eps, 4) if estimated_eps else 0,
                 "actual_eps": round(actual_eps, 4) if actual_eps is not None else None,
                 "eps_surprise_pct": surprise_pct,
-                "estimated_revenue": estimated_revenue,
-                "number_of_analysts": num_analysts,
             })
+            past_quarters.append(entry)
         elif est_date > today_str:
-            forward_quarters.append({
+            entry.update({
                 "date": est_date,
-                "period": period_label,
-                "estimated_eps": round(estimated_eps, 4) if estimated_eps else 0,
                 "actual_eps": None,
                 "eps_surprise_pct": None,
-                "estimated_revenue": estimated_revenue,
-                "number_of_analysts": num_analysts,
             })
+            forward_quarters.append(entry)
 
     # Sort: past newest first, future oldest first
     past_quarters.sort(key=lambda x: x["date"], reverse=True)
@@ -534,6 +539,16 @@ def get_estimates(
         and q["actual_eps"] > q["estimated_eps"]
     )
 
+    # Determine currencies for display
+    eps_currency = "USD"  # EPS always in trading currency
+    financials_currency = "CNY" if fx_rate != 1.0 else "USD"
+    if isinstance(profile_data, list) and profile_data:
+        trading_cur = profile_data[0].get("currency", "USD")
+        eps_currency = trading_cur
+        # For non-ADR, financials_currency = trading currency
+        if fx_rate == 1.0:
+            financials_currency = trading_cur
+
     result = {
         "available": True,
         "ticker": normalized,
@@ -541,6 +556,8 @@ def get_estimates(
         "forward_estimates": forward_quarters,
         "beat_count": beat_count,
         "total_count": len(past_quarters),
+        "eps_currency": eps_currency,
+        "financials_currency": financials_currency,
     }
     if currency_note:
         result["currency_note"] = currency_note
