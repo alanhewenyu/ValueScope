@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -202,6 +203,107 @@ function AnalystEstimatesSection({ estimates }: { estimates: EstimatesData }) {
   );
 }
 
+// ── Analyst Rating Changes Section ──
+
+type RatingChange = { date: string; company: string; previous: string; new: string; direction: string };
+type TimeRange = "3m" | "6m" | "1y" | "all";
+
+function RatingChangesSection({ changes }: { changes: RatingChange[] }) {
+  const [range, setRange] = useState<TimeRange>("3m");
+
+  const filtered = useMemo(() => {
+    if (range === "all") return changes;
+    const now = new Date();
+    const months = range === "3m" ? 3 : range === "6m" ? 6 : 12;
+    const cutoff = new Date(now.getFullYear(), now.getMonth() - months, now.getDate());
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    return changes.filter((c) => c.date >= cutoffStr);
+  }, [changes, range]);
+
+  const summary = useMemo(() => {
+    let up = 0, down = 0, maintain = 0;
+    for (const c of filtered) {
+      if (c.direction === "upgrade") up++;
+      else if (c.direction === "downgrade") down++;
+      else maintain++;
+    }
+    return { upgrades: up, downgrades: down, maintains: maintain };
+  }, [filtered]);
+
+  const dirColor = (d: string) =>
+    d === "upgrade" ? "text-green-600 dark:text-green-400"
+    : d === "downgrade" ? "text-red-600 dark:text-red-400"
+    : "text-gray-400";
+  const dirIcon = (d: string) => d === "upgrade" ? "↑" : d === "downgrade" ? "↓" : "→";
+
+  const ranges: { key: TimeRange; label: string }[] = [
+    { key: "3m", label: "3M" },
+    { key: "6m", label: "6M" },
+    { key: "1y", label: "1Y" },
+    { key: "all", label: "All" },
+  ];
+
+  return (
+    <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          Analyst Rating Changes
+        </h3>
+        <div className="flex gap-1">
+          {ranges.map((r) => (
+            <button
+              key={r.key}
+              onClick={() => setRange(r.key)}
+              className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                range === r.key
+                  ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
+                  : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {/* Summary chips */}
+      <div className="flex gap-3 mb-4 text-sm">
+        {summary.upgrades > 0 && (
+          <span className="px-2.5 py-1 rounded-full bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 font-medium">
+            ↑ {summary.upgrades} Upgrade{summary.upgrades > 1 ? "s" : ""}
+          </span>
+        )}
+        {summary.downgrades > 0 && (
+          <span className="px-2.5 py-1 rounded-full bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 font-medium">
+            ↓ {summary.downgrades} Downgrade{summary.downgrades > 1 ? "s" : ""}
+          </span>
+        )}
+        {summary.maintains > 0 && (
+          <span className="px-2.5 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">
+            → {summary.maintains} Maintained
+          </span>
+        )}
+        {filtered.length === 0 && (
+          <span className="text-sm text-gray-400">No rating changes in this period</span>
+        )}
+      </div>
+      {/* Changes list */}
+      {filtered.length > 0 && (
+        <div className="space-y-1.5">
+          {filtered.map((c, i) => (
+            <div key={i} className="flex items-center gap-3 text-sm py-1 border-b border-gray-50 dark:border-gray-800 last:border-0">
+              <span className="text-xs text-gray-400 w-20 shrink-0">{c.date.slice(0, 10)}</span>
+              <span className="text-gray-600 dark:text-gray-300 w-28 shrink-0 truncate">{c.company}</span>
+              <span className={`font-medium ${dirColor(c.direction)}`}>
+                {c.previous} {dirIcon(c.direction)} {c.new}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── InsightsTab ──
 
 export default function InsightsTab({
@@ -235,52 +337,11 @@ export default function InsightsTab({
       )}
 
       {/* Analyst Rating Changes */}
-      {estimates && (estimates as any).rating_changes?.length > 0 && (() => {
-        const changes = (estimates as any).rating_changes as { date: string; company: string; previous: string; new: string; direction: string }[];
-        const summary = (estimates as any).rating_summary as { upgrades: number; downgrades: number; maintains: number };
-        const dirColor = (d: string) =>
-          d === "upgrade" ? "text-green-600 dark:text-green-400"
-          : d === "downgrade" ? "text-red-600 dark:text-red-400"
-          : "text-gray-400";
-        const dirIcon = (d: string) => d === "upgrade" ? "↑" : d === "downgrade" ? "↓" : "→";
-        return (
-          <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-              Analyst Rating Changes
-            </h3>
-            {/* Summary chips */}
-            <div className="flex gap-3 mb-4 text-sm">
-              {summary.upgrades > 0 && (
-                <span className="px-2.5 py-1 rounded-full bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 font-medium">
-                  ↑ {summary.upgrades} Upgrade{summary.upgrades > 1 ? "s" : ""}
-                </span>
-              )}
-              {summary.downgrades > 0 && (
-                <span className="px-2.5 py-1 rounded-full bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 font-medium">
-                  ↓ {summary.downgrades} Downgrade{summary.downgrades > 1 ? "s" : ""}
-                </span>
-              )}
-              {summary.maintains > 0 && (
-                <span className="px-2.5 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">
-                  → {summary.maintains} Maintained
-                </span>
-              )}
-            </div>
-            {/* Changes list */}
-            <div className="space-y-1.5">
-              {changes.map((c, i) => (
-                <div key={i} className="flex items-center gap-3 text-sm py-1 border-b border-gray-50 dark:border-gray-800 last:border-0">
-                  <span className="text-xs text-gray-400 w-20 shrink-0">{c.date.slice(0, 10)}</span>
-                  <span className="text-gray-600 dark:text-gray-300 w-28 shrink-0 truncate">{c.company}</span>
-                  <span className={`font-medium ${dirColor(c.direction)}`}>
-                    {c.previous} {dirIcon(c.direction)} {c.new}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
+      {estimates && (estimates as any).rating_changes?.length > 0 && (
+        <RatingChangesSection
+          changes={(estimates as any).rating_changes}
+        />
+      )}
 
       {/* Data source note */}
       <p className="text-[10px] text-gray-400 dark:text-gray-500 text-right">

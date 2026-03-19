@@ -402,7 +402,7 @@ def get_estimates(
     url_annual = f"{base}/analyst-estimates/{normalized}?apikey={apikey}&period=annual&limit=5"
     url_profile = f"{base}/profile/{normalized}?apikey={apikey}"
     url_income = f"{base}/income-statement/{normalized}?apikey={apikey}&period=annual&limit=2"
-    url_grades = f"{base}/grade/{normalized}?apikey={apikey}&limit=15"
+    url_grades = f"{base}/grade/{normalized}?apikey={apikey}&limit=50"
 
     try:
         with ThreadPoolExecutor(max_workers=6) as executor:
