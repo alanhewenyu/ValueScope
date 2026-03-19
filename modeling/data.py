@@ -216,14 +216,23 @@ def get_jsonparsed_data(url, timeout=15):
         print(f"Error retrieving {url}: {e}")
         raise
 
+_forex_fmp_cache = {}  # {apikey: (timestamp, data)}
+_forex_fmp_ttl = 3600  # 1 hour
+
 def fetch_forex_data(apikey):
+    # Check cache first
+    cached = _forex_fmp_cache.get(apikey)
+    if cached and (time.time() - cached[0]) < _forex_fmp_ttl:
+        return cached[1]
     # Stable API has no free bulk forex endpoint; use legacy (still active)
     url = f'https://financialmodelingprep.com/api/v3/quotes/forex?apikey={apikey}'
     try:
         data = get_jsonparsed_data(url)
         if not data or not isinstance(data, list):
             return {}
-        return {item['name']: item['price'] for item in data if 'name' in item and 'price' in item}
+        result = {item['name']: item['price'] for item in data if 'name' in item and 'price' in item}
+        _forex_fmp_cache[apikey] = (time.time(), result)
+        return result
     except Exception as e:
         print(S.warning(f"⚠ fetch_forex_data failed: {e}"))
         return {}
@@ -264,10 +273,18 @@ def fetch_forex_akshare(from_currency, to_currency):
         return None
 
 
+_mrp_cache = {}  # {apikey: (timestamp, data)}
+_mrp_ttl = 3600  # 1 hour
+
 def fetch_market_risk_premium(apikey):
+    cached = _mrp_cache.get(apikey)
+    if cached and (time.time() - cached[0]) < _mrp_ttl:
+        return cached[1]
     url = f'https://financialmodelingprep.com/stable/market-risk-premium?apikey={apikey}'
     data = get_jsonparsed_data(url)
-    return {item['country']: item['totalEquityRiskPremium'] for item in data}
+    result = {item['country']: item['totalEquityRiskPremium'] for item in data}
+    _mrp_cache[apikey] = (time.time(), result)
+    return result
 
 def get_company_share_float(ticker, apikey='', company_profile=None):
     if is_a_share(ticker):

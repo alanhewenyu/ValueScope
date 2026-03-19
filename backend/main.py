@@ -39,10 +39,16 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 from backend.routers import stock, valuation, relative, portfolio, history
 
-# Pre-load stock lists in background so first search is instant
-import threading
+# Pre-load data in background so first requests are faster
+import threading, os
 threading.Thread(target=stock._get_a_share_list, daemon=True).start()
 threading.Thread(target=stock._get_ticker_list, daemon=True).start()
+# Pre-warm forex and market risk premium caches (FMP API, ~3s total)
+_fmp_key = os.environ.get("FMP_API_KEY", "")
+if _fmp_key:
+    from modeling.data import fetch_forex_data, fetch_market_risk_premium
+    threading.Thread(target=fetch_forex_data, args=(_fmp_key,), daemon=True).start()
+    threading.Thread(target=fetch_market_risk_premium, args=(_fmp_key,), daemon=True).start()
 
 app = FastAPI(
     title="ValueScope API",
