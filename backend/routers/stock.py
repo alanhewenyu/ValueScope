@@ -29,8 +29,9 @@ from backend.cache import get as cache_get, put as cache_put, make_key
 
 router = APIRouter()
 
-# ── Cached A-share code→name map for fast prefix search ──
+# ── Cached stock lists for fast prefix search ──
 _a_share_cache: list[tuple[str, str]] | None = None  # [(code, name), ...]
+_ticker_cache: list[dict] | None = None  # [{"s": symbol, "n": name, "x": exchange}, ...]
 
 
 def _get_a_share_list() -> list[tuple[str, str]]:
@@ -46,6 +47,23 @@ def _get_a_share_list() -> list[tuple[str, str]]:
         logger.warning("Failed to load A-share list: %s", e)
         _a_share_cache = []
     return _a_share_cache
+
+
+def _get_ticker_list() -> list[dict]:
+    """Load pre-built ticker list (US/HK/JP stocks) from tickers.json."""
+    global _ticker_cache
+    if _ticker_cache is not None:
+        return _ticker_cache
+    try:
+        import os
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                            ".streamlit", "static", "tickers.json")
+        with open(path, "r", encoding="utf-8") as f:
+            _ticker_cache = json.loads(f.read())
+    except Exception as e:
+        logger.warning("Failed to load tickers.json: %s", e)
+        _ticker_cache = []
+    return _ticker_cache
 
 
 # ── Response models ──
@@ -81,11 +99,12 @@ def search_stocks(
 ):
     """Search stocks by ticker symbol or company name.
 
-    For A-shares and HK stocks, search works without API key.
-    For US stocks, FMP API key is required for name-based search.
+    Uses local cached lists (A-shares from akshare, US/HK/JP from tickers.json)
+    for instant results. FMP API is supplementary (broader but requires key).
     """
     results = []
     q_stripped = q.strip()
+    q_upper = q_stripped.upper()
 
     # A-share prefix search: digits (partial or full) → instant local match
     # Skip for 4-5 digit codes starting with 0 (likely HK stocks, not A-shares)
@@ -117,25 +136,39 @@ def search_stocks(
                 if len(results) >= limit:
                     break
 
-    # Direct ticker validation — check if input looks like a valid ticker
+    # Local ticker list search (US/HK/JP — instant, no API needed)
     if len(results) < limit:
-        is_valid, _ = validate_ticker(q)
-        if is_valid:
-            normalized = _normalize_ticker(q)
-            seen = {r.symbol for r in results}
-            if normalized not in seen:
-                try:
-                    profile = fetch_company_profile(normalized, apikey)
-                    if profile and profile.get("companyName"):
-                        results.append(SearchResult(
-                            symbol=normalized,
-                            name=profile.get("companyName", ""),
-                            exchange=profile.get("exchangeShortName", ""),
-                        ))
-                except Exception as e:
-                    logger.debug("Direct ticker lookup failed for query: %s", e)
+        tickers = _get_ticker_list()
+        seen = {r.symbol for r in results}
+        # For numeric input like "0700", also try zero-padded HK format "00700.HK"
+        _q_variants = [q_upper]
+        if re.match(r'^\d{1,5}$', q_stripped):
+            _q_variants.append(q_stripped.zfill(5) + ".HK")  # 0700 → 00700.HK
+        # Tier 1: exact symbol match
+        for t in tickers:
+            if any(t["s"] == qv for qv in _q_variants) and t["s"] not in seen:
+                results.append(SearchResult(symbol=t["s"], name=t["n"], exchange=t.get("x", "")))
+                seen.add(t["s"])
+                break
+        # Tier 2: symbol prefix match
+        if len(results) < limit:
+            for t in tickers:
+                if any(t["s"].startswith(qv) for qv in _q_variants) and t["s"] not in seen:
+                    results.append(SearchResult(symbol=t["s"], name=t["n"], exchange=t.get("x", "")))
+                    seen.add(t["s"])
+                    if len(results) >= limit:
+                        break
+        # Tier 3: name contains (case-insensitive)
+        if len(results) < limit:
+            q_lower = q_stripped.lower()
+            for t in tickers:
+                if q_lower in t["n"].lower() and t["s"] not in seen:
+                    results.append(SearchResult(symbol=t["s"], name=t["n"], exchange=t.get("x", "")))
+                    seen.add(t["s"])
+                    if len(results) >= limit:
+                        break
 
-    # FMP search for broader results (US stocks, requires API key)
+    # FMP search for supplementary results (requires API key)
     if apikey and len(results) < limit:
         try:
             url = f"https://financialmodelingprep.com/api/v3/search?query={q}&limit={limit}&apikey={apikey}"

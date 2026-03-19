@@ -13,6 +13,7 @@ Covers: A-shares, HK stocks, US ADRs (all via akshare / 东方财富).
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime
 
 import pandas as pd
@@ -22,6 +23,11 @@ from .data import is_a_share, is_hk_stock
 logger = logging.getLogger("valuescope.freshness")
 
 _FMP_BASE = "https://financialmodelingprep.com"
+
+# In-memory cache for freshness results (avoid repeated akshare calls within short window)
+# {ticker: (timestamp, (financial_data, freshness_info))}
+_freshness_mem_cache: dict[str, tuple[float, tuple]] = {}
+_FRESHNESS_CACHE_TTL = 300  # 5 minutes
 
 
 # ── Public entry point ─────────────────────────────────────
@@ -43,6 +49,28 @@ def check_data_freshness(ticker: str, financial_data: dict, apikey: str) -> tupl
         "expected_period": None,
         "data_source": "api",
     }
+
+    # Fast path: return cached freshness result if recent (avoids repeated akshare calls)
+    _cached = _freshness_mem_cache.get(ticker)
+    if _cached and (time.monotonic() - _cached[0]) < _FRESHNESS_CACHE_TTL:
+        cached_data, cached_info = _cached[1]
+        # Re-merge cached akshare data into the fresh financial_data
+        if cached_info.get("data_source", "api") != "api":
+            from .freshness_cache import get_cached
+            period_key = cached_info.get("_period_key", "")
+            cached_entry = get_cached(ticker, period_key) if period_key else None
+            if cached_entry:
+                financial_data = _merge_into_summary(financial_data, cached_entry["data"], period_key)
+                # Clear TTM metadata if needed
+                if financial_data.get("ttm_latest_quarter"):
+                    summary_df = financial_data.get("summary")
+                    if summary_df is not None and "Period" in summary_df.index:
+                        has_ttm = any("TTM" in str(summary_df.loc["Period"].iloc[i]) for i in range(len(summary_df.columns)))
+                        if not has_ttm:
+                            financial_data["ttm_latest_quarter"] = ""
+                            financial_data["ttm_end_date"] = ""
+                            financial_data["ttm_note"] = ""
+        return financial_data, cached_info
 
     try:
         market = _detect_market(ticker)
@@ -93,6 +121,8 @@ def check_data_freshness(ticker: str, financial_data: dict, apikey: str) -> tupl
             # Use cached akshare data
             financial_data = _merge_into_summary(financial_data, cached["data"], period_key)
             freshness_info["data_source"] = "akshare_cached"
+            freshness_info["_period_key"] = period_key
+            _freshness_mem_cache[ticker] = (time.monotonic(), (None, freshness_info))
             return financial_data, freshness_info
 
         # No cache → try akshare
@@ -101,11 +131,16 @@ def check_data_freshness(ticker: str, financial_data: dict, apikey: str) -> tupl
             put_cached(ticker, period_key, market, ak_data, "akshare (东方财富)")
             financial_data = _merge_into_summary(financial_data, ak_data, period_key)
             freshness_info["data_source"] = "akshare"
+            freshness_info["_period_key"] = period_key
+            _freshness_mem_cache[ticker] = (time.monotonic(), (None, freshness_info))
             return financial_data, freshness_info
 
         # akshare doesn't have it yet → just show stale warning
     except Exception as e:
         logger.debug("Freshness check failed for %s: %s", ticker, e)
+
+    # Cache result in memory (5 min TTL) to avoid repeated akshare calls
+    _freshness_mem_cache[ticker] = (time.monotonic(), (None, freshness_info))
 
     return financial_data, freshness_info
 

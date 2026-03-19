@@ -39,9 +39,10 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 from backend.routers import stock, valuation, relative, portfolio, history
 
-# Pre-load A-share list in background so first search is instant
+# Pre-load stock lists in background so first search is instant
 import threading
 threading.Thread(target=stock._get_a_share_list, daemon=True).start()
+threading.Thread(target=stock._get_ticker_list, daemon=True).start()
 
 app = FastAPI(
     title="ValueScope API",
