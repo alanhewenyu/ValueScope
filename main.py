@@ -425,17 +425,23 @@ def main(args):
 
         summary_df = financial_data['summary']
         company_profile = _fill_profile_from_financial_data(company_profile, financial_data)
-        # Beta: calculate AFTER parallel fetch to avoid concurrent connection contention
-        if is_a_share(args.t):
-            company_profile['beta'] = _calculate_beta_akshare(args.t)
-        company_info = get_company_share_float(args.t, args.apikey, company_profile=company_profile)
-        company_name = company_profile.get('companyName', 'N/A')
 
+        # ── Phase 2: Parallel — freshness, share_float, beta, AI detect (while user reads data) ──
+        from concurrent.futures import ThreadPoolExecutor as _TP2
+        _phase2_pool = _TP2(max_workers=4)
+        _f_share_float = _phase2_pool.submit(get_company_share_float, args.t, args.apikey, None, company_profile)
+        _f_beta = _phase2_pool.submit(_calculate_beta_akshare, args.t) if is_a_share(args.t) else None
+        if use_ai:
+            _ai_detect_future = _phase2_pool.submit(_ensure_ai_engine)
+        else:
+            _ai_detect_future = None
+
+        company_name = company_profile.get('companyName', 'N/A')
         base_year_col = summary_df.columns[0]
         base_year_data = summary_df.iloc[:, 0].copy()
         base_year_data.name = base_year_col
 
-        # ── Display annual historical summary ──
+        # ── Display annual historical summary (user reads while Phase 2 runs) ──
         print(f"\n{S.header(f'{company_name} Historical Financial Data (Summary, in millions)')}")
         formatted_summary_df = format_summary_df(summary_df)
         print(formatted_summary_df.to_string())
@@ -453,36 +459,18 @@ def main(args):
         _relval_data = _f_relval.result()  # already fetched in parallel
         print_relative_valuation(ticker, apikey=args.apikey, prefetched=_relval_data)
 
-        # ── Kick off AI engine detection in background while user reviews data ──
-        if use_ai:
-            from concurrent.futures import ThreadPoolExecutor as _TP
-            _ai_detect_future = _TP(max_workers=1).submit(_ensure_ai_engine)
-        else:
-            _ai_detect_future = None
+        # ── Collect Phase 2 results (should be done by now) ──
+        if _f_beta:
+            company_profile['beta'] = _f_beta.result()
+        company_info = _f_share_float.result()
 
-        # ── Optional: view quarterly data as reference ──
-        if not auto_mode:
-            _show_quarterly_reference(ticker, args.apikey, company_name)
-
-        if not auto_mode:
-            cont = input(f'\n{S.prompt("Proceed with valuation? (Y/n, Enter to proceed): ")}').strip().lower()
-            if cont in ('n', 'no'):
-                exit_program = input(f'{S.prompt("Exit program? (y/N): ")}').strip().lower()
-                if exit_program in ('y', 'yes'):
-                    print("Exiting...")
-                    break
-                else:
-                    continue
-
-        # ── Detect TTM & base year ──
+        # ── Detect TTM & base year (fast, no I/O) ──
         _ttm_quarter = financial_data.get('ttm_latest_quarter', '')
         _ttm_end_date = financial_data.get('ttm_end_date', '')
         _is_ttm = bool(_ttm_quarter and _ttm_end_date)
         _fy_end_month = financial_data.get('fy_end_month', 12)
         base_year = int(str(base_year_col).replace('FY', ''))
         _ttm_label = ''
-        # forecast_year_1: approximate calendar year for Year 1
-        # Rule: ending month ≤ 6 → same year; > 6 → next year
         if _is_ttm:
             _ttm_end_month = int(_ttm_end_date[5:7])
             _ttm_end_year = int(_ttm_end_date[:4])
@@ -500,6 +488,17 @@ def main(args):
         base_year_data['Revenue Growth (%)'] = summary_df.iloc[summary_df.index.get_loc('Revenue Growth (%)'), 0]
         base_year_data['Total Reinvestment'] = summary_df.iloc[summary_df.index.get_loc('Total Reinvestment'), 0]
 
+        # ── Start forex + WACC in background (runs while user reads data) ──
+        def _compute_wacc_bg():
+            fx = _compute_forex_rate(
+                {'reported_currency': base_year_data.get('Reported Currency', '')},
+                company_profile, args.apikey)
+            _rfr = get_risk_free_rate(company_profile.get('country', 'United States'))
+            _w, _erp, _wd = calculate_wacc(
+                base_year_data, company_profile, args.apikey, verbose=False, forex_rate=fx)
+            return fx, _rfr, _w, _erp, _wd
+        _f_wacc = _phase2_pool.submit(_compute_wacc_bg)
+
         if _is_ttm:
             _ttm_label = f'{base_year_col}{_ttm_quarter} TTM'
             _ttm_date_str = f' (data through {_ttm_end_date})' if _ttm_end_date else ''
@@ -507,16 +506,23 @@ def main(args):
         else:
             print(f"\n{S.info(f'The base year used for cashflow forecast is {base_year}.')}")
 
-        # ── Forex rate (fetch once, reuse for WACC + display + sensitivity + gap) ──
-        forex_rate = _compute_forex_rate(
-            {'reported_currency': base_year_data.get('Reported Currency', '')},
-            company_profile, args.apikey)
+        # ── Optional: view quarterly data as reference (WACC computes in background) ──
+        if not auto_mode:
+            _show_quarterly_reference(ticker, args.apikey, company_name)
 
-        # ── WACC ──
+        if not auto_mode:
+            cont = input(f'\n{S.prompt("Proceed with valuation? (Y/n, Enter to proceed): ")}').strip().lower()
+            if cont in ('n', 'no'):
+                exit_program = input(f'{S.prompt("Exit program? (y/N): ")}').strip().lower()
+                if exit_program in ('y', 'yes'):
+                    print("Exiting...")
+                    break
+                else:
+                    continue
+
+        # ── Collect WACC result (should be done by now — user was reading data) ──
+        forex_rate, risk_free_rate, wacc, total_equity_risk_premium, wacc_details = _f_wacc.result()
         average_tax_rate = base_year_data['Average Tax Rate']
-        risk_free_rate = get_risk_free_rate(company_profile.get('country', 'United States'))
-        wacc, total_equity_risk_premium, wacc_details = calculate_wacc(
-            base_year_data, company_profile, args.apikey, verbose=False, forex_rate=forex_rate)
 
         # ── Collect valuation parameters (AI or manual) ──
         use_ai = not args.manual
