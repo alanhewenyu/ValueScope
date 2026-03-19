@@ -208,6 +208,7 @@ def _quick_cli_check(engine):
             cmd[0] = resolved
     try:
         result = subprocess.run(cmd, capture_output=True, text=True,
+                                stdin=subprocess.DEVNULL,
                                 timeout=30, env=clean_env,
                                 shell=_is_windows, encoding='utf-8',
                                 errors='replace')
@@ -393,6 +394,7 @@ def _run_engine(engine, prompt):
             cmd[0] = resolved
     try:
         result = subprocess.run(cmd, capture_output=True, text=True,
+                                stdin=subprocess.DEVNULL,
                                 timeout=_timeout, env=clean_env,
                                 shell=_is_windows, encoding='utf-8',
                                 errors='replace')
