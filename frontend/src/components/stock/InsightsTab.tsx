@@ -135,6 +135,39 @@ function AnalystEstimatesSection({ estimates }: { estimates: EstimatesData }) {
                     </tr>
                   </thead>
                   <tbody>
+                    {/* Actual base years */}
+                    {((estimates as any).actual_years || []).map((q: any, i: number) => (
+                      <tr key={`act-${i}`} className="border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
+                        <td className="py-2 pr-4 font-medium text-gray-900 dark:text-white">
+                          {q.period} <span className="text-xs font-normal text-gray-400">(Actual)</span>
+                        </td>
+                        <td className="py-2 px-3 text-right text-gray-700 dark:text-gray-300">
+                          {q.estimated_eps?.toFixed(2) ?? "—"}
+                        </td>
+                        <td className="py-2 px-3 text-right text-gray-700 dark:text-gray-300">
+                          {q.estimated_revenue ? formatNumber(q.estimated_revenue / 1e6, 0) + "M" : "—"}
+                        </td>
+                        <td className={`py-2 px-3 text-right font-medium ${
+                          q.revenue_growth == null ? "text-gray-400"
+                            : q.revenue_growth > 0 ? "text-green-600 dark:text-green-400"
+                            : "text-red-600 dark:text-red-400"
+                        }`}>
+                          {q.revenue_growth != null ? (q.revenue_growth > 0 ? "+" : "") + q.revenue_growth + "%" : ""}
+                        </td>
+                        <td className="py-2 px-3 text-right text-gray-700 dark:text-gray-300">
+                          {q.estimated_net_income ? formatNumber(q.estimated_net_income / 1e6, 0) + "M" : "—"}
+                        </td>
+                        <td className="py-2 px-3 text-right text-gray-700 dark:text-gray-300">
+                          {q.net_income_margin != null ? q.net_income_margin + "%" : "—"}
+                        </td>
+                        <td className="py-2 pl-3 text-right text-gray-400"></td>
+                      </tr>
+                    ))}
+                    {/* Divider */}
+                    {((estimates as any).actual_years || []).length > 0 && (
+                      <tr><td colSpan={7} className="py-0.5 bg-blue-100 dark:bg-blue-900/30" /></tr>
+                    )}
+                    {/* Forward estimates */}
                     {forwardQuarters.map((q: any, i: number) => (
                       <tr key={i} className="border-b border-gray-100 dark:border-gray-800 last:border-0">
                         <td className="py-2 pr-4 font-medium text-gray-900 dark:text-white">{q.period}</td>

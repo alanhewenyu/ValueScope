@@ -401,17 +401,20 @@ def get_estimates(
     url_estimates = f"{base}/analyst-estimates/{normalized}?apikey={apikey}&period=quarter"
     url_annual = f"{base}/analyst-estimates/{normalized}?apikey={apikey}&period=annual&limit=5"
     url_profile = f"{base}/profile/{normalized}?apikey={apikey}"
+    url_income = f"{base}/income-statement/{normalized}?apikey={apikey}&period=annual&limit=2"
 
     try:
-        with ThreadPoolExecutor(max_workers=4) as executor:
+        with ThreadPoolExecutor(max_workers=5) as executor:
             fut_surprises = executor.submit(get_jsonparsed_data, url_surprises)
             fut_estimates = executor.submit(get_jsonparsed_data, url_estimates)
             fut_annual = executor.submit(get_jsonparsed_data, url_annual)
             fut_profile = executor.submit(get_jsonparsed_data, url_profile)
+            fut_income = executor.submit(get_jsonparsed_data, url_income)
             surprises = fut_surprises.result() or []
             estimates = fut_estimates.result() or []
             annual_estimates = fut_annual.result() or []
             profile_data = fut_profile.result() or []
+            income_data = fut_income.result() or []
     except Exception as e:
         logger.debug("Estimates fetch failed for %s: %s", ticker, e)
         return {"available": False, "reason": "Failed to fetch estimates data"}
@@ -597,11 +600,52 @@ def get_estimates(
         if fx_rate == 1.0:
             financials_currency = trading_cur
 
+    # Build actual base years from income statement for comparison
+    if not isinstance(income_data, list):
+        income_data = []
+    actual_years = []
+    for inc in income_data:
+        inc_date = inc.get("date", "")
+        rev = inc.get("revenue", 0) or 0
+        ni = inc.get("netIncome", 0) or 0
+        eps_val = inc.get("eps", 0) or 0
+        eps_adj = eps_val / fx_rate if fx_rate != 1.0 else eps_val
+        ni_margin = round((ni / rev) * 100, 1) if rev else None
+        try:
+            dt = datetime.strptime(inc_date, "%Y-%m-%d")
+            period_label = f"FY{dt.year}"
+        except ValueError:
+            period_label = inc_date
+        actual_years.append({
+            "period": period_label,
+            "estimated_eps": round(eps_adj, 4),
+            "estimated_revenue": rev,
+            "revenue_growth": None,
+            "estimated_net_income": ni,
+            "net_income_margin": ni_margin,
+            "number_of_analysts": None,
+            "is_actual": True,
+        })
+    actual_years.sort(key=lambda x: x["period"])
+
+    # Calc revenue growth for actual years & between actual→forecast
+    if len(actual_years) == 2:
+        prev_rev = actual_years[0]["estimated_revenue"]
+        cur_rev = actual_years[1]["estimated_revenue"]
+        if prev_rev and prev_rev > 0:
+            actual_years[1]["revenue_growth"] = round((cur_rev / prev_rev - 1) * 100, 1)
+    if actual_years and forward_annual:
+        last_actual_rev = actual_years[-1]["estimated_revenue"]
+        if last_actual_rev and last_actual_rev > 0 and forward_annual[0].get("revenue_growth") is None:
+            first_fwd_rev = forward_annual[0]["estimated_revenue"]
+            forward_annual[0]["revenue_growth"] = round((first_fwd_rev / last_actual_rev - 1) * 100, 1)
+
     result = {
         "available": True,
         "ticker": normalized,
         "estimates": past_quarters,
         "forward_estimates": forward_annual,
+        "actual_years": actual_years,
         "beat_count": beat_count,
         "total_count": len(past_quarters),
         "eps_currency": eps_currency,
