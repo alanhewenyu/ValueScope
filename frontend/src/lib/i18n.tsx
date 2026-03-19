@@ -279,7 +279,7 @@ const en = {
   beat: "Beat",
   miss: "Miss",
   noEstimatesAvailable: "Analyst estimates not available for this stock",
-  fmpApiRequired: "FMP API key required for analyst estimates",
+  fmpApiRequired: "Analyst estimates require FMP API key. Set it in ⚙ Settings (top right). Best coverage for US stocks.",
   // Earnings Call Insights
   earningsCallInsights: "Earnings Call Insights",
   runTranscriptAnalysis: "Analyze Earnings Calls",
@@ -622,7 +622,7 @@ const zh: Translations = {
   beat: "超预期",
   miss: "不及预期",
   noEstimatesAvailable: "该股票暂无分析师预期数据",
-  fmpApiRequired: "分析师预期需要 FMP API Key",
+  fmpApiRequired: "分析师预期需要 FMP API Key，请在右上角 ⚙ 设置中配置。该功能主要适用于美股。",
   // Earnings Call Insights
   earningsCallInsights: "财报电话会议分析",
   runTranscriptAnalysis: "分析财报电话会议",
