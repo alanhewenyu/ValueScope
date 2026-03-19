@@ -31,24 +31,7 @@ function ensureTickerCache() {
   _tickerLoading = true;
   fetch("/tickers.json")
     .then((r) => r.json())
-    .then((data: TickerEntry[]) => {
-      // Deduplicate: e.g. 600519.SS + 600519.SZ → keep .SS only
-      const seen = new Set<string>();
-      _tickerCache = data.filter((t) => {
-        // For A-shares: code prefix determines correct exchange
-        const code = t.s.split(".")[0];
-        if (/^\d{6}$/.test(code)) {
-          const prefix = code.slice(0, 3);
-          const isSSE = ["600", "601", "603", "605", "688"].includes(prefix);
-          const isSZSE = ["000", "001", "002", "003", "300", "301"].includes(prefix);
-          if (isSSE && t.s.endsWith(".SZ")) return false;  // wrong exchange
-          if (isSZSE && t.s.endsWith(".SS")) return false;  // wrong exchange
-        }
-        if (seen.has(t.s)) return false;
-        seen.add(t.s);
-        return true;
-      });
-    })
+    .then((data: TickerEntry[]) => { _tickerCache = data; })
     .catch(() => { _tickerCache = []; })
     .finally(() => { _tickerLoading = false; });
 }
