@@ -220,7 +220,7 @@ const en = {
 
   // AI Valuation
   aiValuation: "AI Valuation",
-  aiAnalyze: "AI One-Click Valuation",
+  aiAnalyze: "AI Valuation",
   aiFreeQuota: (remaining: number, limit: number) => `Free: ${remaining}/${limit} remaining today`,
   aiUnlimited: "Unlimited (own keys)",
   aiAnalyzing: "AI analyzing... this may take 30-60s",

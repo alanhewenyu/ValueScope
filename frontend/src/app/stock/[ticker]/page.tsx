@@ -510,7 +510,7 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
     if (autoRunTimer.current) clearTimeout(autoRunTimer.current);
     autoRunTimer.current = setTimeout(() => {
       executeDCF(false);
-    }, 600);
+    }, 400);
     return () => { if (autoRunTimer.current) clearTimeout(autoRunTimer.current); };
   }, [executeDCF, defaultsApplied]);
 
@@ -1820,6 +1820,11 @@ function DCFInputField({
           if (e.target.value === "" || e.target.value === "-") return;
           const num = parseFloat(e.target.value);
           if (!isNaN(num)) onChange(num);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            (e.target as HTMLInputElement).blur();
+          }
         }}
         onFocus={() => { setFocused(true); setLocalValue(String(value)); }}
         onBlur={() => {
