@@ -45,12 +45,10 @@ function localSearch(q: string, limit = 8): SearchResult[] {
     if (sl === ql) {
       exact.push(entry);
     } else if (t.s.startsWith(qu)) {
-      starts.push(entry);
+      if (starts.length < limit) starts.push(entry);
     } else if (sl.includes(ql) || nl.includes(ql)) {
-      contains.push(entry);
+      if (contains.length < limit) contains.push(entry);
     }
-
-    if (exact.length + starts.length + contains.length >= limit * 3) break;
   }
 
   return [...exact, ...starts, ...contains].slice(0, limit);
