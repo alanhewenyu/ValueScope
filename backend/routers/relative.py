@@ -12,12 +12,24 @@ logger = logging.getLogger("valuescope.analysis")
 from modeling.data import (
     validate_ticker,
     _normalize_ticker,
-    get_historical_financials,
+    get_historical_financials as _get_historical_financials_raw,
     fetch_company_profile,
     _fill_profile_from_financial_data,
     _calculate_beta_akshare,
     is_a_share,
 )
+
+
+def get_historical_financials(ticker, period, apikey, historical_periods):
+    """Wrapper: fetch financials + apply freshness check."""
+    data = _get_historical_financials_raw(ticker, period, apikey, historical_periods)
+    if data is not None and period == "annual":
+        try:
+            from modeling.freshness import check_data_freshness
+            data, _ = check_data_freshness(ticker, data, apikey)
+        except Exception:
+            pass
+    return data
 from modeling.relative_valuation import (
     get_current_valuation,
     get_historical_valuations,
