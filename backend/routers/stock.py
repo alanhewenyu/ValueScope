@@ -319,16 +319,14 @@ def get_financials(
             return financial_data, {"is_stale": False, "data_source": "api"}
     fut_fresh = executor.submit(_freshness)
 
-    # Wait for profile, then start share_float in parallel with freshness
+    # Wait for profile + beta
     profile = fut_prof.result()
     profile = _fill_profile_from_financial_data(profile, financial_data)
     if fut_beta is not None:
         profile["beta"] = fut_beta.result()
-    fut_share = executor.submit(get_company_share_float, normalized, apikey, company_profile=profile)
 
-    # Collect parallel results
+    # Collect freshness result (share_float moved to DCF endpoint — not needed for overview)
     financial_data, freshness_info = fut_fresh.result()
-    share_info = fut_share.result()
     executor.shutdown(wait=False)
 
     # Convert summary DataFrame to JSON-serializable format
@@ -350,7 +348,6 @@ def get_financials(
         "ticker": normalized,
         "company_name": profile.get("companyName", ""),
         "profile": profile,
-        "share_info": share_info,
         "summary": {
             "columns": list(summary_df.columns),
             "index": list(summary_df.index),
