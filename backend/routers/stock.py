@@ -574,6 +574,9 @@ def get_estimates(
     for i, entry in enumerate(all_annual):
         if entry["date"] <= today_str:
             continue
+        # Skip entries with zero/missing EPS (bad data from FMP)
+        if not entry["estimated_eps"] or entry["estimated_eps"] == 0:
+            continue
         rev_growth = None
         if i > 0 and all_annual[i - 1]["rev_raw"] and all_annual[i - 1]["rev_raw"] > 0:
             rev_growth = round((entry["rev_raw"] / all_annual[i - 1]["rev_raw"] - 1) * 100, 1)
