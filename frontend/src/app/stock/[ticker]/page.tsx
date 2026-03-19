@@ -71,18 +71,17 @@ export default function StockPage() {
     setLoading(true);
     setError("");
 
-    // Phase 1: Critical data (profile, financials, WACC) + lightweight index membership
+    // Phase 1: Critical data (profile, financials) + lightweight index membership
     const corePromise = Promise.all([
       getProfile(decodedTicker, apikey).catch(() => null),
       getFinancials(decodedTicker, apikey).catch(() => null),
-      getWACC(decodedTicker, apikey).catch(() => null),
     ]);
     getIndexMembership(decodedTicker, apikey)
       .then((res) => { if (!cancelled) setIndexes(res.indexes || []); })
       .catch(() => { if (!cancelled) setIndexes([]); });
 
     corePromise
-      .then(([p, f, w]) => {
+      .then(([p, f]) => {
         if (cancelled) return;
         if (!p && !f) {
           setError(decodedTicker);
@@ -92,9 +91,10 @@ export default function StockPage() {
           document.title = `${p.company_name} (${decodedTicker}) | ValueScope`;
         }
         setFinancials(f);
-        setWacc(w);
-        // Phase 2: Secondary data — after core completes, freeing backend threads
-        // for search/autocomplete requests
+        // Phase 2: Secondary data — loaded after page renders
+        getWACC(decodedTicker, apikey)
+          .then((d) => { if (!cancelled) setWacc(d); })
+          .catch(() => {});
         getScores(decodedTicker, apikey)
           .then((d) => { if (!cancelled) setScores(d); })
           .catch(() => {});
