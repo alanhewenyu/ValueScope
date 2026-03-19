@@ -627,15 +627,6 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
     }
   };
 
-  if (defaultsLoading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
-        <span className="ml-2 text-gray-500">{t.loadingDefaults}</span>
-      </div>
-    );
-  }
-
   const hist = defaults?.history;
   const periodLabel = defaults?.ttm_label || "";
 
