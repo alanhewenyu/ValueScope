@@ -432,20 +432,14 @@ def get_estimates(
         trading_currency = prof.get("currency", "")
         # Chinese ADRs: estimates in CNY, actuals in USD
         if country == "CN" and trading_currency == "USD":
-            # Detect ratio from first matched pair
-            _detected = False
-            for s in surprises[:8]:
-                actual = s.get("actualEarningResult")
-                estimated = s.get("estimatedEarning")
-                if actual and estimated and actual > 0 and estimated > 0:
-                    ratio = estimated / actual
-                    if 4 < ratio < 12:  # Likely CNY/USD range
-                        fx_rate = ratio
-                        _detected = True
-                        break
-            if not _detected:
-                fx_rate = 7.2  # Fallback CNY/USD
-            currency_note = f"Estimates converted from CNY (÷{fx_rate:.1f})"
+            try:
+                import yfinance as yf
+                # CNYUSD=X: 1 CNY = ~0.145 USD; invert to get USD/CNY ≈ 6.9
+                cny_usd = float(yf.Ticker("CNYUSD=X").fast_info.last_price)
+                fx_rate = (1.0 / cny_usd) if cny_usd and cny_usd > 0 else 7.0
+            except Exception:
+                fx_rate = 7.0
+            currency_note = f"Estimates converted from CNY (÷{fx_rate:.2f})"
             logger.debug("Currency mismatch detected for %s, fx_rate=%.2f", ticker, fx_rate)
 
     # Build lookup of surprises by date
