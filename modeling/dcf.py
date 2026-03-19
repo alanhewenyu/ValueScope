@@ -249,12 +249,13 @@ def calculate_dcf(base_year_data, valuation_params, financial_data, company_info
     return results
 
 def reverse_dcf(base_year_data, valuation_params, financial_data, company_info, company_profile, market_price, forex_rate=None):
-    """Given a market price, solve for the implied steady-state revenue growth rate.
+    """Given a market price, solve for implied revenue growth AND implied EBIT margin.
 
-    Keeps all other parameters fixed (WACC, EBIT margin, reinvestment ratios, etc.)
-    and finds the revenue_growth_2 that makes DCF price == market_price.
+    Solves two independent problems:
+    1. Fix EBIT margin at user's assumption → solve for implied revenue growth
+    2. Fix revenue growth at user's assumption → solve for implied EBIT margin
 
-    Returns dict with implied_growth_rate (%), converged (bool), and context.
+    Returns dict with both implied values and convergence status.
     """
     from scipy.optimize import brentq
 
@@ -263,35 +264,41 @@ def reverse_dcf(base_year_data, valuation_params, financial_data, company_info, 
     if forex_rate and forex_rate != 1:
         target_price = market_price / forex_rate
 
-    def _dcf_price_diff(growth_pct):
-        """Returns DCF price - target price for a given growth rate (in %)."""
-        params = valuation_params.copy()
-        params['revenue_growth_2'] = growth_pct
-        # Scale Year 1 growth proportionally (bounded)
-        params['revenue_growth_1'] = min(growth_pct * 1.5, growth_pct + 10)
-        try:
-            result = calculate_dcf(base_year_data, params, financial_data, company_info, company_profile)
-            return result['price_per_share'] - target_price
-        except Exception:
-            return float('inf')
+    def _solve(variable, lo, hi):
+        """Solve for one variable. Returns (value, converged)."""
+        def _diff(val):
+            params = valuation_params.copy()
+            if variable == 'growth':
+                params['revenue_growth_2'] = val
+                params['revenue_growth_1'] = min(val * 1.5, val + 10)
+            elif variable == 'margin':
+                params['ebit_margin'] = val
+            try:
+                result = calculate_dcf(base_year_data, params, financial_data, company_info, company_profile)
+                return result['price_per_share'] - target_price
+            except Exception:
+                return float('inf')
 
-    # Search for zero crossing in [-30%, +60%] range
-    try:
-        implied_growth = brentq(_dcf_price_diff, -30, 60, xtol=0.01, maxiter=100)
-        return {
-            "implied_growth_rate": round(implied_growth, 2),
-            "converged": True,
-            "your_growth": valuation_params['revenue_growth_2'],
-        }
-    except ValueError:
-        # No zero crossing found — price outside any reasonable growth range
-        # Check which end we're at
-        low_price_diff = _dcf_price_diff(-30)
-        return {
-            "implied_growth_rate": -30 if low_price_diff > 0 else 60,
-            "converged": False,
-            "your_growth": valuation_params['revenue_growth_2'],
-        }
+        try:
+            implied = brentq(_diff, lo, hi, xtol=0.01, maxiter=100)
+            return round(implied, 2), True
+        except ValueError:
+            return None, False
+
+    # Solve for implied revenue growth (holding margin fixed)
+    implied_growth, growth_converged = _solve('growth', -30, 60)
+
+    # Solve for implied EBIT margin (holding growth fixed)
+    implied_margin, margin_converged = _solve('margin', -20, 70)
+
+    return {
+        "implied_growth_rate": implied_growth,
+        "growth_converged": growth_converged,
+        "your_growth": valuation_params['revenue_growth_2'],
+        "implied_ebit_margin": implied_margin,
+        "margin_converged": margin_converged,
+        "your_margin": valuation_params['ebit_margin'],
+    }
 
 
 def sensitivity_analysis(base_year_data, valuation_params, financial_data, company_info, company_profile):

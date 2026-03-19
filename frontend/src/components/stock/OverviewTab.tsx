@@ -779,27 +779,6 @@ export default function OverviewTab({
         </div>
       )}
 
-      {/* ── Analyst Estimates ── */}
-      {estimates && estimates.available && estimates.estimates && estimates.estimates.length > 0 && (
-        <AnalystEstimatesSection estimates={estimates} />
-      )}
-      {estimates && !estimates.available && estimates.reason && (
-        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-          <p className="text-sm text-gray-400 dark:text-gray-500">
-            {estimates.reason === "FMP API key required" ? t.fmpApiRequired : t.noEstimatesAvailable}
-          </p>
-        </div>
-      )}
-
-      {/* ── Earnings Call Insights ── */}
-      {apikey && (
-        <EarningsCallInsightsSection
-          ticker={ticker}
-          apikey={apikey}
-          deepseekKey={deepseekKey || ""}
-        />
-      )}
-
       {financials && (
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
           {/* Freshness indicator */}

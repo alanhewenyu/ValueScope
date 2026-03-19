@@ -119,9 +119,12 @@ export interface DCFResult {
   };
   forecast_table: ForecastRow[] | null;
   reverse_dcf?: {
-    implied_growth_rate: number;
-    converged: boolean;
+    implied_growth_rate: number | null;
+    growth_converged: boolean;
     your_growth: number;
+    implied_ebit_margin: number | null;
+    margin_converged: boolean;
+    your_margin: number;
   } | null;
 }
 

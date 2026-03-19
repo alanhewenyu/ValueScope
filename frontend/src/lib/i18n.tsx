@@ -46,6 +46,7 @@ const en = {
   tabOverview: "Overview",
   tabRelative: "Relative Valuation",
   tabScoring: "Scoring",
+  tabInsights: "Insights",
   tabDCF: "DCF Valuation",
 
   // Overview
@@ -401,6 +402,7 @@ const zh: Translations = {
   tabOverview: "概览",
   tabRelative: "相对估值",
   tabScoring: "评分",
+  tabInsights: "市场洞察",
   tabDCF: "DCF 估值",
 
   pePercentile5Y: "P/E 分位数 (5Y)",

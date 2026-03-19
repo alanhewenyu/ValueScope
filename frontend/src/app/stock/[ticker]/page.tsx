@@ -8,6 +8,7 @@ import CompanyHeader from "@/components/CompanyHeader";
 import OverviewTab from "@/components/stock/OverviewTab";
 import RelativeValuationTab from "@/components/stock/RelativeValuationTab";
 import ScoringTab from "@/components/stock/ScoringTab";
+import InsightsTab from "@/components/stock/InsightsTab";
 import {
   getProfile,
   getFinancials,
@@ -39,7 +40,7 @@ import { formatCurrency, formatLargeNumber, formatNumber } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 import { useSettings } from "@/lib/settings";
 
-type TabId = "overview" | "dcf" | "relative" | "scoring";
+type TabId = "overview" | "dcf" | "relative" | "scoring" | "insights";
 
 export default function StockPage() {
   const params = useParams();
@@ -170,6 +171,7 @@ export default function StockPage() {
     { id: "dcf", label: t.tabDCF },
     { id: "relative", label: t.tabRelative },
     { id: "scoring", label: t.tabScoring },
+    { id: "insights", label: t.tabInsights },
   ];
 
   return (
@@ -246,6 +248,14 @@ export default function StockPage() {
           <RelativeValuationTab ticker={decodedTicker} initialData={relVal} />
         )}
         {activeTab === "scoring" && <ScoringTab ticker={decodedTicker} initialScores={scores} />}
+        {activeTab === "insights" && (
+          <InsightsTab
+            ticker={decodedTicker}
+            estimates={estimates}
+            apikey={fmpApiKey}
+            deepseekKey={deepseekApiKey}
+          />
+        )}
       </div>
     </>
   );
@@ -1179,42 +1189,53 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
                     {hasFx && <MetricItem label={t.pricePerShare + ` (${result.currency})`} value={result.dcf_price_converted.toFixed(2)} />}
                   </div>
 
-                  {/* Reverse DCF: Market Implied Growth */}
-                  {result.reverse_dcf && result.reverse_dcf.converged && (
+                  {/* Reverse DCF: What's Priced In */}
+                  {result.reverse_dcf && (result.reverse_dcf.growth_converged || result.reverse_dcf.margin_converged) && (
                     <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20 p-4">
-                      <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-2 flex items-center gap-2">
+                      <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-3 flex items-center gap-2">
                         <span>📊</span> {t.impliedGrowth}
                       </h4>
-                      <div className="flex items-center gap-6 text-sm">
-                        <div>
-                          <span className="text-gray-500 dark:text-gray-400">{t.marketImplies}: </span>
-                          <span className="font-bold text-lg text-blue-700 dark:text-blue-300">
-                            {result.reverse_dcf.implied_growth_rate.toFixed(1)}%
-                          </span>
-                          <span className="text-gray-400 dark:text-gray-500 ml-1">{t.revenueGrowthPA}</span>
-                        </div>
-                        <div className="text-gray-400 dark:text-gray-500">vs</div>
-                        <div>
-                          <span className="text-gray-500 dark:text-gray-400">{t.yourAssumption}: </span>
-                          <span className="font-bold text-lg text-gray-700 dark:text-gray-300">
-                            {result.reverse_dcf.your_growth.toFixed(1)}%
-                          </span>
-                        </div>
-                        <div className={`text-sm font-medium px-2 py-0.5 rounded ${
-                          result.reverse_dcf.implied_growth_rate > result.reverse_dcf.your_growth + 1
-                            ? "bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-300"
-                            : result.reverse_dcf.implied_growth_rate < result.reverse_dcf.your_growth - 1
-                              ? "bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-300"
-                              : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
-                        }`}>
-                          {result.reverse_dcf.implied_growth_rate > result.reverse_dcf.your_growth + 1
-                            ? t.marketMoreOptimistic
-                            : result.reverse_dcf.implied_growth_rate < result.reverse_dcf.your_growth - 1
-                              ? t.marketMorePessimistic
-                              : t.marketAligned}
-                        </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Implied Revenue Growth */}
+                        {result.reverse_dcf.growth_converged && result.reverse_dcf.implied_growth_rate != null && (
+                          <div className="flex items-center gap-3">
+                            <div className="flex-1">
+                              <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">{t.revenueGrowthPA}</div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-lg text-blue-700 dark:text-blue-300">
+                                  {result.reverse_dcf.implied_growth_rate.toFixed(1)}%
+                                </span>
+                                <span className="text-gray-400 text-xs">{t.marketImplies}</span>
+                                <span className="text-gray-400">vs</span>
+                                <span className="font-medium text-gray-600 dark:text-gray-400">
+                                  {result.reverse_dcf.your_growth.toFixed(1)}%
+                                </span>
+                                <span className="text-gray-400 text-xs">{t.yourAssumption}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        {/* Implied EBIT Margin */}
+                        {result.reverse_dcf.margin_converged && result.reverse_dcf.implied_ebit_margin != null && (
+                          <div className="flex items-center gap-3">
+                            <div className="flex-1">
+                              <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">{t.ebitMargin}</div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-lg text-blue-700 dark:text-blue-300">
+                                  {result.reverse_dcf.implied_ebit_margin.toFixed(1)}%
+                                </span>
+                                <span className="text-gray-400 text-xs">{t.marketImplies}</span>
+                                <span className="text-gray-400">vs</span>
+                                <span className="font-medium text-gray-600 dark:text-gray-400">
+                                  {result.reverse_dcf.your_margin.toFixed(1)}%
+                                </span>
+                                <span className="text-gray-400 text-xs">{t.yourAssumption}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">
                         {t.impliedGrowthExplain}
                       </p>
                     </div>
