@@ -665,15 +665,24 @@ def _merge_into_summary(financial_data: dict, ak_data: dict, period_key: str) ->
     da_m = abs(da) / M
     wc_m = wc / M if wc else 0
 
+    # Find the first FY column index (skip TTM if present)
+    _fy_col = 0
+    if "Period" in summary_df.index:
+        for i in range(len(summary_df.columns)):
+            p = str(summary_df.loc["Period"].iloc[i])
+            if "TTM" not in p:
+                _fy_col = i
+                break
+
     # WC change is not directly available from akshare single-period pull.
-    # Always use prior year's ΔWC as fallback (same as TTM logic).
-    wc_m = _get_float(summary_df, "(+) ΔWorking Capital", 0)
+    # Always use prior FY's value as fallback (same as TTM logic).
+    wc_m = _get_float(summary_df, "(+) ΔWorking Capital", _fy_col)
 
     _fallback_rows = ["(+) ΔWorking Capital"]  # WC always uses fallback
     if capex == 0 and da == 0:
-        # No cash flow detail — use prior year for capex, D&A too
-        capex_m = _get_float(summary_df, "(+) Capital Expenditure", 0)
-        da_m = _get_float(summary_df, "(-) D&A", 0)
+        # No cash flow detail — use prior FY data
+        capex_m = _get_float(summary_df, "(+) Capital Expenditure", _fy_col)
+        da_m = _get_float(summary_df, "(-) D&A", _fy_col)
         _fallback_rows.extend(["(+) Capital Expenditure", "(-) D&A"])
         _fallback_items.append("Capex/D&A/WC")
     else:
@@ -695,20 +704,14 @@ def _merge_into_summary(financial_data: dict, ak_data: dict, period_key: str) ->
     debt_to_assets = (debt / total_assets * 100) if total_assets > 0 else 0
     cost_of_debt = (finance_cost / debt * 100) if debt > 0 else 0
     # ROE = Net Income / Shareholder Equity (use current period; ideally avg with prior)
-    prev_sh_equity = _get_float(summary_df, "(+) Total Equity", 0) * M - _get_float(summary_df, "Minority Interest", 0) * M
+    prev_sh_equity = _get_float(summary_df, "(+) Total Equity", _fy_col) * M - _get_float(summary_df, "Minority Interest", _fy_col) * M
     avg_sh_equity = (shareholder_equity + prev_sh_equity) / 2 if prev_sh_equity > 0 else shareholder_equity
     roe = (net_income / avg_sh_equity * 100) if avg_sh_equity > 0 else 0
     roic = (ebit * (1 - tax / ebit if ebit else 0) / (ic_m * M) * 100) if ic_m > 0 else 0
 
-    # Growth vs prior FY column (skip any TTM column)
-    _prev_col_idx = 0
-    if "Period" in summary_df.index:
-        for i in range(len(summary_df.columns)):
-            if "TTM" not in str(summary_df.loc["Period"].iloc[i]):
-                _prev_col_idx = i
-                break
-    prev_rev = _get_float(summary_df, "Revenue", _prev_col_idx)
-    prev_ebit = _get_float(summary_df, "EBIT", _prev_col_idx)
+    # Growth vs prior FY column (reuse _fy_col computed above)
+    prev_rev = _get_float(summary_df, "Revenue", _fy_col)
+    prev_ebit = _get_float(summary_df, "EBIT", _fy_col)
     rev_growth = ((revenue_m / prev_rev - 1) * 100) if prev_rev else 0
     ebit_growth = ((ebit_m / prev_ebit - 1) * 100) if prev_ebit else 0
 
@@ -813,6 +816,25 @@ def _get_float(df: pd.DataFrame, row_name: str, col_idx: int) -> float:
         return float(df.loc[row_name].iloc[col_idx])
     except (KeyError, IndexError, ValueError, TypeError):
         return 0.0
+
+
+def _get_float_nonzero(df: pd.DataFrame, row_name: str) -> float:
+    """Get the nearest non-zero value from prior year columns.
+
+    Scans columns left-to-right (most recent first) and returns the first
+    non-zero value. Falls back to 0.0 if all columns are zero.
+    """
+    if row_name not in df.index:
+        return 0.0
+    row = df.loc[row_name]
+    for i in range(len(row)):
+        try:
+            v = float(row.iloc[i])
+            if v != 0 and not pd.isna(v):
+                return v
+        except (ValueError, TypeError):
+            continue
+    return 0.0
 
 
 # ── API catch-up check ─────────────────────────────────────
