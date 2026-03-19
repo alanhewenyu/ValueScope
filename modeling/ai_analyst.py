@@ -177,6 +177,22 @@ def _ensure_gemini_preview():
         json.dump(settings, f, indent=2)
 
 
+def _build_clean_env():
+    """Build a clean environment for AI CLI subprocesses.
+
+    Removes CLAUDE* vars that trigger "nested session" detection (CLAUDECODE,
+    CLAUDE_CODE_ENTRYPOINT, CLAUDE_AGENT_SDK_VERSION), but preserves auth
+    tokens (CLAUDE_CODE_OAUTH_TOKEN) so Claude CLI can authenticate.
+    """
+    # Vars that cause nested-session errors — must be removed
+    _NESTED_MARKERS = {'CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_AGENT_SDK_VERSION',
+                       'CLAUDE_CODE_ENABLE_ASK_USER_QUESTION_TOOL',
+                       'CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES',
+                       'CLAUDE_CODE_DISABLE_CRON'}
+    env = {k: v for k, v in os.environ.items() if k not in _NESTED_MARKERS}
+    return env
+
+
 def _quick_cli_check(engine):
     """Quick health check: verify CLI is installed AND authenticated.
 
@@ -193,13 +209,7 @@ def _quick_cli_check(engine):
     else:
         return False
 
-    clean_env = {k: v for k, v in os.environ.items()
-                 if not k.startswith('CLAUDE')}
-    for _ek in ('PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'TERM',
-                'SYSTEMROOT', 'COMSPEC', 'PATHEXT', 'TEMP', 'TMP',
-                'APPDATA', 'LOCALAPPDATA', 'USERPROFILE'):
-        if _ek in os.environ:
-            clean_env[_ek] = os.environ[_ek]
+    clean_env = _build_clean_env()
 
     _is_windows = sys.platform == 'win32'
     if _is_windows:
@@ -371,19 +381,7 @@ def _run_engine(engine, prompt):
         return None
 
     _timeout = 600  # 10 minutes for search + analysis
-    # Build a clean env without CLAUDE* markers to avoid
-    # "nested session" error when launched from Claude Code.
-    clean_env = {k: v for k, v in os.environ.items()
-                 if not k.startswith('CLAUDE')}
-    for _ek in ('PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'TERM',
-                'FMP_API_KEY', 'GEMINI_API_KEY', 'OPENAI_API_KEY',
-                'DASHSCOPE_API_KEY',
-                # Windows-required env vars
-                'SYSTEMROOT', 'COMSPEC', 'PATHEXT', 'TEMP', 'TMP',
-                'APPDATA', 'LOCALAPPDATA', 'USERPROFILE', 'HOMEDRIVE',
-                'HOMEPATH', 'SYSTEMDRIVE', 'WINDIR'):
-        if _ek in os.environ:
-            clean_env[_ek] = os.environ[_ek]
+    clean_env = _build_clean_env()
     # On Windows, npm global installs create .cmd wrappers (e.g. qwen.cmd).
     # subprocess.run() won't find .cmd files without shell=True,
     # so resolve the full path via shutil.which() first.
