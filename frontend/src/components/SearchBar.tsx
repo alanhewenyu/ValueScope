@@ -18,14 +18,6 @@ interface TickerEntry { s: string; n: string; x?: string }
 let _tickerCache: TickerEntry[] | null = null;
 let _tickerLoading = false;
 
-/** Normalize symbol for dedup: strip leading zeros from HK codes, unify suffix */
-function normalizeSymbol(s: string): string {
-  // 00700.HK → 0700.HK (strip one leading zero for 5-digit HK codes)
-  const m = s.match(/^0(\d{4})\.HK$/);
-  if (m) return m[1] + ".HK";
-  return s;
-}
-
 function ensureTickerCache() {
   if (_tickerCache || _tickerLoading) return;
   _tickerLoading = true;
@@ -40,8 +32,6 @@ function localSearch(q: string, limit = 8): SearchResult[] {
   if (!_tickerCache || !q) return [];
   const ql = q.toLowerCase();
   const qu = q.toUpperCase();
-  // For numeric input, also try zero-padded HK format
-  const qPadded = /^\d{1,5}$/.test(q) ? q.padStart(5, "0") + ".HK" : "";
 
   const exact: SearchResult[] = [];
   const starts: SearchResult[] = [];
@@ -52,9 +42,9 @@ function localSearch(q: string, limit = 8): SearchResult[] {
     const nl = t.n.toLowerCase();
     const entry: SearchResult = { symbol: t.s, name: t.n, exchange: t.x || "" };
 
-    if (sl === ql || t.s === qPadded) {
+    if (sl === ql) {
       exact.push(entry);
-    } else if (t.s.startsWith(qu) || (qPadded && t.s.startsWith(qPadded.replace(".HK", "")))) {
+    } else if (t.s.startsWith(qu)) {
       starts.push(entry);
     } else if (sl.includes(ql) || nl.includes(ql)) {
       contains.push(entry);
@@ -109,14 +99,13 @@ export default function SearchBar({ size = "md", className = "" }: SearchBarProp
     try {
       const apiData = await searchStocks(q, fmpApiKey);
       if (thisSearchId !== searchIdRef.current) return;
-      // Merge: deduplicate using normalized symbols (handles 00700.HK vs 0700.HK)
-      const seen = new Set(local.map((r) => normalizeSymbol(r.symbol)));
+      // Merge: deduplicate local + API results
+      const seen = new Set(local.map((r) => r.symbol));
       const merged = [...local];
       for (const item of apiData) {
-        const norm = normalizeSymbol(item.symbol);
-        if (!seen.has(norm)) {
+        if (!seen.has(item.symbol)) {
           merged.push(item);
-          seen.add(norm);
+          seen.add(item.symbol);
         }
       }
       setResults(merged.slice(0, 8));
