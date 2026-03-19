@@ -336,9 +336,9 @@ def get_financials(
         "fy_end_month": financial_data.get("fy_end_month", 12),
         "freshness": freshness_info,
     }
-    # Skip 1-hour cache when AI data is in use (need to check for API catch-up each time)
-    if freshness_info.get("data_source", "api") == "api":
-        cache_put(ck, result, ttl=3600)  # 1 hour
+    # Shorter cache when using akshare supplement (check for API catch-up more often)
+    ttl = 3600 if freshness_info.get("data_source", "api") == "api" else 600
+    cache_put(ck, result, ttl=ttl)
     return result
 
 

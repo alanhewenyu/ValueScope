@@ -22,23 +22,11 @@ from modeling.data import (
     fetch_company_profile,
     fetch_forex_data,
     get_company_share_float,
-    get_historical_financials as _get_historical_financials_raw,
     is_a_share,
     _fill_profile_from_financial_data,
     _calculate_beta_akshare,
 )
-
-
-def get_historical_financials(ticker, period, apikey, historical_periods):
-    """Wrapper: fetch financials + apply freshness check."""
-    data = _get_historical_financials_raw(ticker, period, apikey, historical_periods)
-    if data is not None and period == "annual":
-        try:
-            from modeling.freshness import check_data_freshness
-            data, _ = check_data_freshness(ticker, data, apikey)
-        except Exception:
-            pass
-    return data
+from backend.data_cache import get_historical_financials
 from modeling.dcf import (
     calculate_dcf,
     calculate_wacc,
