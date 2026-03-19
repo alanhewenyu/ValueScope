@@ -689,7 +689,7 @@ def get_estimates(
         "estimates": past_quarters,
         "forward_estimates": forward_annual,
         "actual_years": actual_years,
-        "rating_changes": rating_changes[:10],
+        "rating_changes": rating_changes,
         "rating_summary": {"upgrades": upgrades, "downgrades": downgrades, "maintains": maintains},
         "beat_count": beat_count,
         "total_count": len(past_quarters),
