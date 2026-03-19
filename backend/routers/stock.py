@@ -275,10 +275,19 @@ def get_financials(
     if cached is not None:
         return cached
 
-    # Fetch financial data + profile
-    financial_data = get_historical_financials(
-        normalized, "annual", apikey, HISTORICAL_DATA_PERIODS_ANNUAL
-    )
+    # Fetch financial data + profile + beta in parallel
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        fut_fin = executor.submit(
+            get_historical_financials, normalized, "annual", apikey, HISTORICAL_DATA_PERIODS_ANNUAL
+        )
+        fut_prof = executor.submit(fetch_company_profile, normalized, apikey)
+        if is_a_share(normalized):
+            fut_beta = executor.submit(_calculate_beta_akshare, normalized)
+        else:
+            fut_beta = None
+
+    financial_data = fut_fin.result()
     if financial_data is None:
         raise HTTPException(status_code=404, detail=f"Financial data not found: {ticker}")
 
@@ -290,12 +299,11 @@ def get_financials(
     except Exception as e:
         logger.debug("Freshness check skipped: %s", e)
 
-    profile = fetch_company_profile(normalized, apikey)
+    profile = fut_prof.result()
     profile = _fill_profile_from_financial_data(profile, financial_data)
 
-    # Calculate beta for A-shares
-    if is_a_share(normalized):
-        profile["beta"] = _calculate_beta_akshare(normalized)
+    if fut_beta is not None:
+        profile["beta"] = fut_beta.result()
 
     share_info = get_company_share_float(normalized, apikey, company_profile=profile)
 
