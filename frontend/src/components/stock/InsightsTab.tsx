@@ -47,6 +47,13 @@ function AnalystEstimatesSection({ estimates }: { estimates: EstimatesData }) {
             {t.beatEstimates(estimates.beat_count || 0, estimates.total_count)}
           </p>
         )}
+        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+        {(estimates as any).currency_note && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            ⚠ {String((estimates as any).currency_note)}
+          </p>
+        )}
 
         {chartData.length > 0 && (
           <div className="h-56">
@@ -71,16 +78,22 @@ function AnalystEstimatesSection({ estimates }: { estimates: EstimatesData }) {
                   }}
                 />
                 <Legend
-                  wrapperStyle={{ fontSize: 11, color: "#9ca3af" }}
-                  formatter={(value: string) => (value === "estimated" ? t.estimated : t.actual)}
+                  wrapperStyle={{ fontSize: 11 }}
+                  content={() => (
+                    <div className="flex justify-center gap-4 text-xs mt-1">
+                      <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-gray-400 opacity-60" />{t.estimated}</span>
+                      <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-green-500" />{t.actual} (Beat)</span>
+                      <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-red-500" />{t.actual} (Miss)</span>
+                    </div>
+                  )}
                 />
                 <Bar dataKey="estimated" fill="#9ca3af" opacity={0.6} radius={[2, 2, 0, 0]} />
                 <Bar dataKey="actual" radius={[2, 2, 0, 0]}>
                   {chartData.map((entry, i) => (
                     <Cell
                       key={i}
-                      fill={entry.actual == null ? "#9ca3af" : entry.isBeat ? "#22c55e" : "#ef4444"}
-                      opacity={0.8}
+                      fill={entry.actual == null ? "transparent" : entry.isBeat ? "#22c55e" : "#ef4444"}
+                      opacity={entry.actual == null ? 0 : 0.8}
                     />
                   ))}
                 </Bar>

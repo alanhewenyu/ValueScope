@@ -399,13 +399,16 @@ def get_estimates(
     base = "https://financialmodelingprep.com/api/v3"
     url_surprises = f"{base}/earnings-surprises/{normalized}?apikey={apikey}"
     url_estimates = f"{base}/analyst-estimates/{normalized}?apikey={apikey}&period=quarter"
+    url_profile = f"{base}/profile/{normalized}?apikey={apikey}"
 
     try:
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        with ThreadPoolExecutor(max_workers=3) as executor:
             fut_surprises = executor.submit(get_jsonparsed_data, url_surprises)
             fut_estimates = executor.submit(get_jsonparsed_data, url_estimates)
+            fut_profile = executor.submit(get_jsonparsed_data, url_profile)
             surprises = fut_surprises.result() or []
             estimates = fut_estimates.result() or []
+            profile_data = fut_profile.result() or []
     except Exception as e:
         logger.debug("Estimates fetch failed for %s: %s", ticker, e)
         return {"available": False, "reason": "Failed to fetch estimates data"}
@@ -417,6 +420,33 @@ def get_estimates(
 
     if not surprises and not estimates:
         return {"available": False, "reason": "No estimates data available"}
+
+    # Detect currency mismatch for Chinese ADRs
+    # FMP analyst-estimates uses reporting currency (CNY) but
+    # earnings-surprises uses trading currency (USD) for ADRs
+    fx_rate = 1.0
+    currency_note = None
+    if isinstance(profile_data, list) and profile_data:
+        prof = profile_data[0]
+        country = prof.get("country", "")
+        trading_currency = prof.get("currency", "")
+        # Chinese ADRs: estimates in CNY, actuals in USD
+        if country == "CN" and trading_currency == "USD":
+            # Detect ratio from first matched pair
+            _detected = False
+            for s in surprises[:8]:
+                actual = s.get("actualEarningResult")
+                estimated = s.get("estimatedEarning")
+                if actual and estimated and actual > 0 and estimated > 0:
+                    ratio = estimated / actual
+                    if 4 < ratio < 12:  # Likely CNY/USD range
+                        fx_rate = ratio
+                        _detected = True
+                        break
+            if not _detected:
+                fx_rate = 7.2  # Fallback CNY/USD
+            currency_note = f"Estimates converted from CNY (÷{fx_rate:.1f})"
+            logger.debug("Currency mismatch detected for %s, fx_rate=%.2f", ticker, fx_rate)
 
     # Build lookup of surprises by date
     from datetime import datetime, timedelta
@@ -455,6 +485,11 @@ def get_estimates(
         estimated_eps = est.get("estimatedEpsAvg", 0) or 0
         estimated_revenue = est.get("estimatedRevenueAvg", 0) or 0
         num_analysts = est.get("numberAnalystsEstimatedEps", 0) or 0
+
+        # Apply currency conversion (convert estimates from CNY to USD)
+        if fx_rate != 1.0:
+            estimated_eps = estimated_eps / fx_rate
+            estimated_revenue = estimated_revenue / fx_rate
 
         # Derive period label from date
         try:
@@ -514,6 +549,8 @@ def get_estimates(
         "beat_count": beat_count,
         "total_count": len(past_quarters),
     }
+    if currency_note:
+        result["currency_note"] = currency_note
     cache_put(ck, result, ttl=3600)
     return result
 
