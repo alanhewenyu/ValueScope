@@ -792,11 +792,11 @@ export default function OverviewTab({
       )}
 
       {/* ── Earnings Call Insights ── */}
-      {apikey && deepseekKey && (
+      {apikey && (
         <EarningsCallInsightsSection
           ticker={ticker}
           apikey={apikey}
-          deepseekKey={deepseekKey}
+          deepseekKey={deepseekKey || ""}
         />
       )}
 
