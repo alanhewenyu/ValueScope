@@ -535,32 +535,45 @@ def get_estimates(
     if not isinstance(annual_estimates, list):
         annual_estimates = []
     today_str = datetime.now().strftime("%Y-%m-%d")
-    forward_annual = []
-    for est in annual_estimates:
+    # Collect all annual estimates (past + future) sorted by date for YoY calc
+    all_annual = []
+    for est in sorted(annual_estimates, key=lambda x: x.get("date", "")):
         est_date = est.get("date", "")
-        if not est_date or est_date <= today_str:
+        if not est_date:
             continue
-        eps = est.get("estimatedEpsAvg", 0) or 0
         rev = est.get("estimatedRevenueAvg", 0) or 0
-        ebit = est.get("estimatedEbitAvg", 0) or 0
+        eps = est.get("estimatedEpsAvg", 0) or 0
         n_analysts = est.get("numberAnalystsEstimatedEps", 0) or 0
-        # Only convert EPS
         eps_converted = eps / fx_rate if fx_rate != 1.0 else eps
-        margin = round((ebit / rev) * 100, 1) if rev else None
         try:
             dt = datetime.strptime(est_date, "%Y-%m-%d")
             period_label = f"FY{dt.year}"
         except ValueError:
             period_label = est_date
-        forward_annual.append({
+        all_annual.append({
+            "date": est_date,
             "period": period_label,
             "estimated_eps": round(eps_converted, 4),
             "estimated_revenue": rev,
-            "estimated_ebit": ebit,
-            "ebit_margin": margin,
             "number_of_analysts": n_analysts,
+            "rev_raw": rev,  # for YoY calc
         })
-    forward_annual.sort(key=lambda x: x["period"])
+
+    # Calculate YoY revenue growth and filter to future only
+    forward_annual = []
+    for i, entry in enumerate(all_annual):
+        if entry["date"] <= today_str:
+            continue
+        rev_growth = None
+        if i > 0 and all_annual[i - 1]["rev_raw"] and all_annual[i - 1]["rev_raw"] > 0:
+            rev_growth = round((entry["rev_raw"] / all_annual[i - 1]["rev_raw"] - 1) * 100, 1)
+        forward_annual.append({
+            "period": entry["period"],
+            "estimated_eps": entry["estimated_eps"],
+            "estimated_revenue": entry["estimated_revenue"],
+            "revenue_growth": rev_growth,
+            "number_of_analysts": entry["number_of_analysts"],
+        })
 
     # Count beats
     beat_count = sum(

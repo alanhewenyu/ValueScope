@@ -128,8 +128,7 @@ function AnalystEstimatesSection({ estimates }: { estimates: EstimatesData }) {
                       <th className="text-left py-2 pr-4 font-medium">Period</th>
                       <th className="text-right py-2 px-3 font-medium">EPS ({epsCur})</th>
                       <th className="text-right py-2 px-3 font-medium">Revenue ({finCur})</th>
-                      <th className="text-right py-2 px-3 font-medium">EBIT ({finCur})</th>
-                      <th className="text-right py-2 px-3 font-medium">EBIT%</th>
+                      <th className="text-right py-2 px-3 font-medium">Rev Growth</th>
                       <th className="text-right py-2 pl-3 font-medium">Analysts</th>
                     </tr>
                   </thead>
@@ -143,11 +142,13 @@ function AnalystEstimatesSection({ estimates }: { estimates: EstimatesData }) {
                         <td className="py-2 px-3 text-right text-gray-700 dark:text-gray-300">
                           {q.estimated_revenue ? formatNumber(q.estimated_revenue / 1e6, 0) + "M" : "—"}
                         </td>
-                        <td className="py-2 px-3 text-right text-gray-700 dark:text-gray-300">
-                          {q.estimated_ebit ? formatNumber(q.estimated_ebit / 1e6, 0) + "M" : "—"}
-                        </td>
-                        <td className="py-2 px-3 text-right text-gray-700 dark:text-gray-300">
-                          {q.ebit_margin != null ? q.ebit_margin + "%" : "—"}
+                        <td className={`py-2 px-3 text-right font-medium ${
+                          q.revenue_growth == null ? "text-gray-400"
+                            : q.revenue_growth > 0 ? "text-green-600 dark:text-green-400"
+                            : q.revenue_growth < 0 ? "text-red-600 dark:text-red-400"
+                            : "text-gray-500"
+                        }`}>
+                          {q.revenue_growth != null ? (q.revenue_growth > 0 ? "+" : "") + q.revenue_growth + "%" : "—"}
                         </td>
                         <td className="py-2 pl-3 text-right text-gray-400">
                           {q.number_of_analysts || "—"}
