@@ -71,14 +71,23 @@ export default function StockPage() {
     setLoading(true);
     setError("");
 
-    // Phase 1: Critical data (profile, financials) + lightweight index membership
+    // Phase 1: Critical data (profile, financials) — blocks page render
     const corePromise = Promise.all([
       getProfile(decodedTicker, apikey).catch(() => null),
       getFinancials(decodedTicker, apikey).catch(() => null),
     ]);
+
+    // Fire all secondary requests in parallel with Phase 1 (no dependency)
     getIndexMembership(decodedTicker, apikey)
       .then((res) => { if (!cancelled) setIndexes(res.indexes || []); })
       .catch(() => { if (!cancelled) setIndexes([]); });
+    // Phase 2a: visible on overview tab — start immediately, don't wait for Phase 1
+    getScores(decodedTicker, apikey)
+      .then((d) => { if (!cancelled) setScores(d); })
+      .catch(() => {});
+    getRelativeValuation(decodedTicker, apikey, 5)
+      .then((d) => { if (!cancelled) setRelVal(d); })
+      .catch(() => {});
 
     corePromise
       .then(([p, f]) => {
@@ -91,15 +100,7 @@ export default function StockPage() {
           document.title = `${p.company_name} (${decodedTicker}) | ValueScope`;
         }
         setFinancials(f);
-        // Phase 2: Secondary data — loaded after page renders
-        // Phase 2a: visible on overview tab
-        getScores(decodedTicker, apikey)
-          .then((d) => { if (!cancelled) setScores(d); })
-          .catch(() => {});
-        getRelativeValuation(decodedTicker, apikey, 5)
-          .then((d) => { if (!cancelled) setRelVal(d); })
-          .catch(() => {});
-        // Phase 2b: only needed for DCF tab
+        // Phase 2b: DCF tab data — start after financials (backend needs cached data)
         getDCFDefaults(decodedTicker, apikey)
           .then((d) => { if (!cancelled) setPrefetchedDefaults(d); })
           .catch(() => {});
