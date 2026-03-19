@@ -1,7 +1,7 @@
 # Copyright (c) 2025-2026 Alan He. Licensed under AGPL-3.0. See LICENSE.
 """Stock search & profile API endpoints."""
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 from typing import Optional
 import json
@@ -75,16 +75,21 @@ class SearchResult(BaseModel):
 
 
 @router.get("/server-config")
-def get_server_config():
-    """Return server-side API keys for auto-fill (localhost use only).
+def get_server_config(request: Request):
+    """Return server-side API keys for auto-fill (localhost only).
 
-    The frontend Settings component uses this to pre-fill API keys
-    so local users don't have to manually enter them.
+    Only returns keys when the request comes from localhost.
+    Production (Railway/cloud) never exposes keys.
     """
     import os
-    fmp_key = os.environ.get("FMP_API_KEY", "")
+
+    # Only serve keys on localhost
+    host = request.headers.get("host", "")
+    if not any(h in host for h in ("localhost", "127.0.0.1")):
+        return {"fmpApiKey": ""}
+
     return {
-        "fmpApiKey": fmp_key,
+        "fmpApiKey": os.environ.get("FMP_API_KEY", ""),
     }
 
 
