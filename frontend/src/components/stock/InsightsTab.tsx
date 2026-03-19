@@ -345,7 +345,7 @@ export default function InsightsTab({
 
       {/* Data source note */}
       <p className="text-[10px] text-gray-400 dark:text-gray-500 text-right">
-        Data source: Financial Modeling Prep (FMP) · Analyst consensus estimates & ratings
+        Data source: Financial Modeling Prep (FMP) · Best coverage for US stocks; limited for HK/A-shares/JP
       </p>
     </div>
   );
