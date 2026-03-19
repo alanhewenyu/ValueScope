@@ -295,36 +295,41 @@ def get_financials(
         return cached
 
     # Fetch financial data + profile + beta in parallel
-    from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        fut_fin = executor.submit(
-            get_historical_financials, normalized, "annual", apikey, HISTORICAL_DATA_PERIODS_ANNUAL
-        )
-        fut_prof = executor.submit(fetch_company_profile, normalized, apikey)
-        if is_a_share(normalized):
-            fut_beta = executor.submit(_calculate_beta_akshare, normalized)
-        else:
-            fut_beta = None
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    executor = ThreadPoolExecutor(max_workers=5)
+    fut_fin = executor.submit(
+        get_historical_financials, normalized, "annual", apikey, HISTORICAL_DATA_PERIODS_ANNUAL
+    )
+    fut_prof = executor.submit(fetch_company_profile, normalized, apikey)
+    fut_beta = executor.submit(_calculate_beta_akshare, normalized) if is_a_share(normalized) else None
 
+    # Wait for financials first (critical path)
     financial_data = fut_fin.result()
     if financial_data is None:
+        executor.shutdown(wait=False)
         raise HTTPException(status_code=404, detail=f"Financial data not found: {ticker}")
 
-    # Freshness check — detects when FMP data lags behind actual earnings releases
-    freshness_info = {"is_stale": False, "data_source": "api"}
-    try:
-        from modeling.freshness import check_data_freshness
-        financial_data, freshness_info = check_data_freshness(normalized, financial_data, apikey)
-    except Exception as e:
-        logger.debug("Freshness check skipped: %s", e)
+    # Start freshness check immediately (depends only on financial_data)
+    def _freshness():
+        try:
+            from modeling.freshness import check_data_freshness
+            return check_data_freshness(normalized, financial_data, apikey)
+        except Exception as e:
+            logger.debug("Freshness check skipped: %s", e)
+            return financial_data, {"is_stale": False, "data_source": "api"}
+    fut_fresh = executor.submit(_freshness)
 
+    # Wait for profile, then start share_float in parallel with freshness
     profile = fut_prof.result()
     profile = _fill_profile_from_financial_data(profile, financial_data)
-
     if fut_beta is not None:
         profile["beta"] = fut_beta.result()
+    fut_share = executor.submit(get_company_share_float, normalized, apikey, company_profile=profile)
 
-    share_info = get_company_share_float(normalized, apikey, company_profile=profile)
+    # Collect parallel results
+    financial_data, freshness_info = fut_fresh.result()
+    share_info = fut_share.result()
+    executor.shutdown(wait=False)
 
     # Convert summary DataFrame to JSON-serializable format
     summary_df = financial_data["summary"]
