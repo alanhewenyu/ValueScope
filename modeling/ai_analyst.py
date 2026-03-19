@@ -350,9 +350,11 @@ def _auth_error_hint(engine, raw_err):
             return "💡 修复: npm install -g @qwen-code/qwen-code@latest"
     elif engine == 'claude':
         if 'not logged in' in err_lower or 'login' in err_lower:
-            return "💡 修复: 终端运行 claude 并完成登录"
+            return "💡 修复: 终端运行 claude login 完成登录"
+        if 'expired' in err_lower or 'token' in err_lower:
+            return "💡 修复: OAuth token 已过期, 请终端运行 claude login 重新登录"
         if 'api error' in err_lower or 'rate limit' in err_lower:
-            return "💡 提示: Claude API 限流或 token 过期, 稍后重试"
+            return "💡 提示: Claude API 限流, 稍后重试"
     elif engine == 'gemini':
         if 'ineligibletier' in err_lower:
             return "💡 已知问题: Google 账号资格验证 bug, 等待 Google 修复中"
