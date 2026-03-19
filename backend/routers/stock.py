@@ -88,7 +88,9 @@ def search_stocks(
     q_stripped = q.strip()
 
     # A-share prefix search: digits (partial or full) → instant local match
-    if re.match(r'^\d{1,6}$', q_stripped):
+    # Skip for 4-5 digit codes starting with 0 (likely HK stocks, not A-shares)
+    _is_likely_hk = re.match(r'^0\d{3,4}$', q_stripped)
+    if re.match(r'^\d{1,6}$', q_stripped) and not _is_likely_hk:
         a_shares = _get_a_share_list()
         for code, name in a_shares:
             if code.startswith(q_stripped):
@@ -115,25 +117,7 @@ def search_stocks(
                 if len(results) >= limit:
                     break
 
-    # Try direct ticker validation (exact match with suffix)
-    if len(results) < limit:
-        is_valid, _ = validate_ticker(q)
-        if is_valid:
-            normalized = _normalize_ticker(q)
-            seen = {r.symbol for r in results}
-            if normalized not in seen:
-                try:
-                    profile = fetch_company_profile(normalized, apikey)
-                    if profile and profile.get("companyName"):
-                        results.append(SearchResult(
-                            symbol=normalized,
-                            name=profile.get("companyName", ""),
-                            exchange=profile.get("exchangeShortName", ""),
-                        ))
-                except Exception as e:
-                    logger.debug("Direct ticker lookup failed for query: %s", e)
-
-    # FMP search for broader results (US stocks)
+    # FMP search for broader results (US stocks) — fast API, do this first
     if apikey and len(results) < limit:
         try:
             url = f"https://financialmodelingprep.com/api/v3/search?query={q}&limit={limit}&apikey={apikey}"
@@ -152,6 +136,23 @@ def search_stocks(
                         seen.add(sym)
         except Exception as e:
             logger.debug("FMP search failed: %s", e)
+
+    # Last resort: direct ticker lookup (slow — profile fetch).
+    # Only when no results found yet, to avoid blocking autocomplete.
+    if not results:
+        is_valid, _ = validate_ticker(q)
+        if is_valid:
+            normalized = _normalize_ticker(q)
+            try:
+                profile = fetch_company_profile(normalized, apikey)
+                if profile and profile.get("companyName"):
+                    results.append(SearchResult(
+                        symbol=normalized,
+                        name=profile.get("companyName", ""),
+                        exchange=profile.get("exchangeShortName", ""),
+                    ))
+            except Exception:
+                pass
 
     return results[:limit]
 

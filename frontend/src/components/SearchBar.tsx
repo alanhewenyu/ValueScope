@@ -53,7 +53,7 @@ export default function SearchBar({ size = "md", className = "" }: SearchBarProp
     const val = e.target.value;
     setQuery(val);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => doSearch(val), 150);
+    debounceRef.current = setTimeout(() => doSearch(val), 300);
   };
 
   const navigate = (symbol: string) => {
