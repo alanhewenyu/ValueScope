@@ -31,6 +31,7 @@ from modeling.dcf import (
     calculate_dcf,
     calculate_wacc,
     get_risk_free_rate,
+    reverse_dcf,
     sensitivity_analysis,
     wacc_sensitivity_analysis,
 )
@@ -261,14 +262,24 @@ def run_dcf(params: DCFParams):
         base_year_data, valuation_params, financial_data, share_info, profile
     )
 
+    # Reverse DCF: solve for market-implied growth rate
+    market_price = profile.get("price", 0)
+    reverse_dcf_result = None
+    if market_price and market_price > 0:
+        try:
+            reverse_dcf_result = reverse_dcf(
+                base_year_data, valuation_params, financial_data, share_info, profile,
+                market_price, forex_rate
+            )
+        except Exception as e:
+            logger.debug("Reverse DCF failed: %s", e)
+
     # Build price per share (with forex if needed)
     dcf_price = results.get("price_per_share", 0)
     if forex_rate and dcf_price:
         dcf_price_converted = dcf_price * forex_rate
     else:
         dcf_price_converted = dcf_price
-
-    market_price = profile.get("price", 0)
 
     # Verdict
     if market_price and dcf_price_converted:
@@ -323,6 +334,7 @@ def run_dcf(params: DCFParams):
             "quarter": ttm_quarter,
         },
         "forecast_table": _dcf_table_to_json(results.get("dcf_table")),
+        "reverse_dcf": reverse_dcf_result,
     })
 
 

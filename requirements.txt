@@ -2,6 +2,7 @@ pandas
 openpyxl
 requests
 numpy
+scipy
 urllib3
 akshare
 yfinance

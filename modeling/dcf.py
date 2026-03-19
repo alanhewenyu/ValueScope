@@ -248,6 +248,52 @@ def calculate_dcf(base_year_data, valuation_params, financial_data, company_info
 
     return results
 
+def reverse_dcf(base_year_data, valuation_params, financial_data, company_info, company_profile, market_price, forex_rate=None):
+    """Given a market price, solve for the implied steady-state revenue growth rate.
+
+    Keeps all other parameters fixed (WACC, EBIT margin, reinvestment ratios, etc.)
+    and finds the revenue_growth_2 that makes DCF price == market_price.
+
+    Returns dict with implied_growth_rate (%), converged (bool), and context.
+    """
+    from scipy.optimize import brentq
+
+    # Convert market price to reporting currency if needed
+    target_price = market_price
+    if forex_rate and forex_rate != 1:
+        target_price = market_price / forex_rate
+
+    def _dcf_price_diff(growth_pct):
+        """Returns DCF price - target price for a given growth rate (in %)."""
+        params = valuation_params.copy()
+        params['revenue_growth_2'] = growth_pct
+        # Scale Year 1 growth proportionally (bounded)
+        params['revenue_growth_1'] = min(growth_pct * 1.5, growth_pct + 10)
+        try:
+            result = calculate_dcf(base_year_data, params, financial_data, company_info, company_profile)
+            return result['price_per_share'] - target_price
+        except Exception:
+            return float('inf')
+
+    # Search for zero crossing in [-30%, +60%] range
+    try:
+        implied_growth = brentq(_dcf_price_diff, -30, 60, xtol=0.01, maxiter=100)
+        return {
+            "implied_growth_rate": round(implied_growth, 2),
+            "converged": True,
+            "your_growth": valuation_params['revenue_growth_2'],
+        }
+    except ValueError:
+        # No zero crossing found — price outside any reasonable growth range
+        # Check which end we're at
+        low_price_diff = _dcf_price_diff(-30)
+        return {
+            "implied_growth_rate": -30 if low_price_diff > 0 else 60,
+            "converged": False,
+            "your_growth": valuation_params['revenue_growth_2'],
+        }
+
+
 def sensitivity_analysis(base_year_data, valuation_params, financial_data, company_info, company_profile):
     revenue_growth_2_range = [valuation_params['revenue_growth_2'] + i for i in range(-5, 6)]
     ebit_margin_range = [valuation_params['ebit_margin'] + i for i in range(-5, 6)]

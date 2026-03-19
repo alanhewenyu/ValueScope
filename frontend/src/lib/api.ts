@@ -118,6 +118,11 @@ export interface DCFResult {
     quarter: string;
   };
   forecast_table: ForecastRow[] | null;
+  reverse_dcf?: {
+    implied_growth_rate: number;
+    converged: boolean;
+    your_growth: number;
+  } | null;
 }
 
 export interface AIAnalysisResult {
@@ -253,6 +258,52 @@ export interface ScoresData {
   has_benchmarks?: boolean;
 }
 
+// ── Transcript Analysis Types ──
+
+export interface TranscriptQuarterResult {
+  year: number;
+  quarter: number;
+  date: string;
+  sentiment_score: number;
+  tone: "bullish" | "neutral" | "cautious" | "bearish";
+  key_themes: string[];
+  guidance_direction: string;
+  management_confidence: number;
+  summary: string;
+}
+
+export interface TranscriptAnalysisResult {
+  ticker: string;
+  quarters_analyzed: number;
+  results: TranscriptQuarterResult[];
+  trend: {
+    sentiment_direction: string;
+    recurring_themes: string[];
+    avg_confidence: number;
+  };
+  engine: string;
+}
+
+export interface EstimateQuarter {
+  date: string;
+  period: string;
+  estimated_eps: number;
+  actual_eps: number | null;
+  eps_surprise_pct: number | null;
+  estimated_revenue: number;
+  number_of_analysts: number;
+}
+
+export interface EstimatesData {
+  available: boolean;
+  reason?: string;
+  ticker?: string;
+  estimates?: EstimateQuarter[];
+  forward_estimates?: EstimateQuarter[];
+  beat_count?: number;
+  total_count?: number;
+}
+
 // ── API functions ──
 
 export async function searchStocks(
@@ -335,6 +386,76 @@ export async function getScores(
 ): Promise<ScoresData> {
   const params = apikey ? `?apikey=${apikey}` : "";
   return fetchAPI<ScoresData>(`/api/analysis/scores/${ticker}${params}`);
+}
+
+export async function getEstimates(
+  ticker: string,
+  apikey = ""
+): Promise<EstimatesData> {
+  const params = apikey ? `?apikey=${apikey}` : "";
+  return fetchAPI<EstimatesData>(`/api/stock/estimates/${ticker}${params}`);
+}
+
+export async function runTranscriptAnalysis(
+  ticker: string,
+  apikey: string,
+  deepseekKey: string,
+  quarters: number = 4,
+  onProgress?: (msg: string) => void,
+): Promise<TranscriptAnalysisResult> {
+  const res = await fetch(`${API_BASE}/api/stock/transcript-analysis`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ticker, apikey, quarters, deepseek_key: deepseekKey }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    let detail = text;
+    try { detail = JSON.parse(text).detail || text; } catch { /* ignore */ }
+    throw new Error(detail);
+  }
+
+  // Check if response is JSON (cached result) or SSE stream
+  const contentType = res.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return res.json();
+  }
+
+  // SSE streaming
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("No response body");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: TranscriptAnalysisResult | null = null;
+  let errorMsg = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    let eventType = "";
+    for (const line of lines) {
+      if (line.startsWith("event: ")) {
+        eventType = line.slice(7).trim();
+      } else if (line.startsWith("data: ")) {
+        try {
+          const data = JSON.parse(line.slice(6));
+          if (eventType === "progress" && onProgress) onProgress(data.message || "");
+          else if (eventType === "result") result = data as TranscriptAnalysisResult;
+          else if (eventType === "error") errorMsg = data.message || "Transcript analysis failed";
+        } catch { /* ignore */ }
+        eventType = "";
+      }
+    }
+  }
+
+  if (errorMsg) throw new Error(errorMsg);
+  if (!result) throw new Error("Transcript analysis returned no result");
+  return result;
 }
 
 export async function getIndexMembership(

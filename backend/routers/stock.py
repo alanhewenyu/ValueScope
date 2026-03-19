@@ -2,8 +2,9 @@
 """Stock search & profile API endpoints."""
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 import json
 import logging
 import re
@@ -371,6 +372,152 @@ def get_financials(
     return result
 
 
+@router.get("/estimates/{ticker}")
+def get_estimates(
+    ticker: str,
+    apikey: str = Query("", description="FMP API key"),
+):
+    """Get analyst earnings estimates and surprises for a given ticker."""
+    if not apikey:
+        return {"available": False, "reason": "FMP API key required"}
+
+    is_valid, err = validate_ticker(ticker)
+    if not is_valid:
+        return {"available": False, "reason": err}
+
+    normalized = _normalize_ticker(ticker)
+
+    # Check cache (TTL 1 hour)
+    ck = make_key("estimates", normalized)
+    cached = cache_get(ck)
+    if cached is not None:
+        return cached
+
+    from modeling.data import get_jsonparsed_data
+    from concurrent.futures import ThreadPoolExecutor
+
+    base = "https://financialmodelingprep.com/api/v3"
+    url_surprises = f"{base}/earnings-surprises/{normalized}?apikey={apikey}"
+    url_estimates = f"{base}/analyst-estimates/{normalized}?apikey={apikey}&period=quarter"
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            fut_surprises = executor.submit(get_jsonparsed_data, url_surprises)
+            fut_estimates = executor.submit(get_jsonparsed_data, url_estimates)
+            surprises = fut_surprises.result() or []
+            estimates = fut_estimates.result() or []
+    except Exception as e:
+        logger.debug("Estimates fetch failed for %s: %s", ticker, e)
+        return {"available": False, "reason": "Failed to fetch estimates data"}
+
+    if not isinstance(surprises, list):
+        surprises = []
+    if not isinstance(estimates, list):
+        estimates = []
+
+    if not surprises and not estimates:
+        return {"available": False, "reason": "No estimates data available"}
+
+    # Build lookup of surprises by date
+    from datetime import datetime, timedelta
+
+    surprise_by_date = {}
+    for s in surprises:
+        d = s.get("date", "")
+        if d:
+            surprise_by_date[d] = s
+
+    # Classify estimates as past or future
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    past_quarters = []
+    forward_quarters = []
+
+    for est in estimates:
+        est_date = est.get("date", "")
+        if not est_date:
+            continue
+
+        # Try to find matching surprise (actual earnings) within 45 days
+        matched_surprise = None
+        try:
+            est_dt = datetime.strptime(est_date, "%Y-%m-%d")
+            for s_date, s_data in surprise_by_date.items():
+                try:
+                    s_dt = datetime.strptime(s_date, "%Y-%m-%d")
+                    if abs((est_dt - s_dt).days) <= 45:
+                        matched_surprise = s_data
+                        break
+                except ValueError:
+                    continue
+        except ValueError:
+            pass
+
+        estimated_eps = est.get("estimatedEpsAvg", 0) or 0
+        estimated_revenue = est.get("estimatedRevenueAvg", 0) or 0
+        num_analysts = est.get("numberAnalystsEstimatedEps", 0) or 0
+
+        # Derive period label from date
+        try:
+            dt = datetime.strptime(est_date, "%Y-%m-%d")
+            quarter_num = (dt.month - 1) // 3 + 1
+            period_label = f"Q{quarter_num} FY{dt.year}"
+        except ValueError:
+            period_label = est_date
+
+        if matched_surprise and est_date <= today_str:
+            actual_eps = matched_surprise.get("actualEarningResult")
+            if actual_eps is not None and estimated_eps:
+                surprise_pct = round(((actual_eps - estimated_eps) / abs(estimated_eps)) * 100, 2) if estimated_eps != 0 else 0
+            else:
+                surprise_pct = None
+
+            past_quarters.append({
+                "date": matched_surprise.get("date", est_date),
+                "period": period_label,
+                "estimated_eps": round(estimated_eps, 4) if estimated_eps else 0,
+                "actual_eps": round(actual_eps, 4) if actual_eps is not None else None,
+                "eps_surprise_pct": surprise_pct,
+                "estimated_revenue": estimated_revenue,
+                "number_of_analysts": num_analysts,
+            })
+        elif est_date > today_str:
+            forward_quarters.append({
+                "date": est_date,
+                "period": period_label,
+                "estimated_eps": round(estimated_eps, 4) if estimated_eps else 0,
+                "actual_eps": None,
+                "eps_surprise_pct": None,
+                "estimated_revenue": estimated_revenue,
+                "number_of_analysts": num_analysts,
+            })
+
+    # Sort: past newest first, future oldest first
+    past_quarters.sort(key=lambda x: x["date"], reverse=True)
+    forward_quarters.sort(key=lambda x: x["date"])
+
+    # Limit results
+    past_quarters = past_quarters[:8]
+    forward_quarters = forward_quarters[:4]
+
+    # Count beats
+    beat_count = sum(
+        1 for q in past_quarters
+        if q.get("actual_eps") is not None and q.get("estimated_eps")
+        and q["actual_eps"] > q["estimated_eps"]
+    )
+
+    result = {
+        "available": True,
+        "ticker": normalized,
+        "estimates": past_quarters,
+        "forward_estimates": forward_quarters,
+        "beat_count": beat_count,
+        "total_count": len(past_quarters),
+    }
+    cache_put(ck, result, ttl=3600)
+    return result
+
+
 @router.get("/indexes/{ticker}")
 def get_indexes(
     ticker: str,
@@ -389,3 +536,267 @@ def get_indexes(
         indexes = []
 
     return {"ticker": normalized, "indexes": indexes}
+
+
+# ── Earnings Call Transcript Endpoints ──
+
+
+@router.get("/transcript-dates/{ticker}")
+def get_transcript_dates(
+    ticker: str,
+    apikey: str = Query("", description="FMP API key"),
+):
+    """Get available earnings call transcript dates for a ticker."""
+    if not apikey:
+        return {"available": False, "reason": "FMP API key required", "dates": []}
+
+    is_valid, err = validate_ticker(ticker)
+    if not is_valid:
+        return {"available": False, "reason": err, "dates": []}
+
+    normalized = _normalize_ticker(ticker)
+
+    # Check cache (TTL 24 hours)
+    ck = make_key("transcript_dates", normalized)
+    cached = cache_get(ck)
+    if cached is not None:
+        return cached
+
+    try:
+        url = f"https://financialmodelingprep.com/api/v4/earning_call_transcript?symbol={normalized}&apikey={apikey}"
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+    except Exception as e:
+        logger.debug("Transcript dates fetch failed for %s: %s", ticker, e)
+        return {"available": False, "reason": "Failed to fetch transcript dates", "dates": []}
+
+    if not isinstance(data, list) or len(data) == 0:
+        return {"available": False, "reason": "No transcripts available", "dates": []}
+
+    dates = []
+    for item in data:
+        if isinstance(item, (list, tuple)) and len(item) >= 3:
+            dates.append({"quarter": item[0], "year": item[1], "date": item[2]})
+        elif isinstance(item, dict):
+            dates.append({
+                "quarter": item.get("quarter", 0),
+                "year": item.get("year", 0),
+                "date": item.get("date", ""),
+            })
+
+    result = {"available": True, "dates": dates}
+    cache_put(ck, result, ttl=86400)  # 24 hours
+    return result
+
+
+class TranscriptAnalysisParams(BaseModel):
+    ticker: str
+    apikey: str = ""
+    quarters: int = 4
+    deepseek_key: str = ""
+
+
+@router.post("/transcript-analysis")
+def transcript_analysis(params: TranscriptAnalysisParams, request: Request):
+    """Streaming SSE analysis of earnings call transcripts using AI."""
+    import requests as http_requests
+    from collections import Counter
+
+    is_valid, err = validate_ticker(params.ticker)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=err)
+
+    normalized = _normalize_ticker(params.ticker)
+
+    # Check cache first — if cached, return JSON directly (not SSE)
+    ck = make_key("transcript_analysis", normalized)
+    cached = cache_get(ck)
+    if cached is not None:
+        return cached
+
+    if not params.apikey:
+        raise HTTPException(status_code=400, detail="FMP API key required")
+
+    import os
+    deepseek_key = params.deepseek_key or os.environ.get("DEEPSEEK_API_KEY", "")
+    if not deepseek_key:
+        raise HTTPException(status_code=400, detail="DeepSeek API key required for transcript analysis")
+
+    def _sse(event: str, data: dict) -> str:
+        return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+    def generate():
+        yield _sse("progress", {"message": "Fetching transcript dates..."})
+
+        # Fetch transcript dates
+        try:
+            url = f"https://financialmodelingprep.com/api/v4/earning_call_transcript?symbol={normalized}&apikey={params.apikey}"
+            with urllib.request.urlopen(url, timeout=10) as resp:
+                dates_data = json.loads(resp.read().decode())
+        except Exception as e:
+            yield _sse("error", {"message": f"Failed to fetch transcript dates: {e}"})
+            return
+
+        if not isinstance(dates_data, list) or len(dates_data) == 0:
+            yield _sse("error", {"message": "No earnings call transcripts available for this stock"})
+            return
+
+        # Parse dates - could be list of tuples [quarter, year, date] or list of dicts
+        transcript_dates = []
+        for item in dates_data:
+            if isinstance(item, (list, tuple)) and len(item) >= 3:
+                transcript_dates.append({"quarter": item[0], "year": item[1], "date": item[2]})
+            elif isinstance(item, dict):
+                transcript_dates.append({
+                    "quarter": item.get("quarter", 0),
+                    "year": item.get("year", 0),
+                    "date": item.get("date", ""),
+                })
+
+        # Take only the last N quarters
+        transcript_dates = transcript_dates[:params.quarters]
+
+        if not transcript_dates:
+            yield _sse("error", {"message": "No transcript dates found"})
+            return
+
+        yield _sse("progress", {"message": f"Found {len(transcript_dates)} transcripts. Fetching content..."})
+
+        # Fetch each transcript and analyze
+        results = []
+        for i, td in enumerate(transcript_dates):
+            q = td["quarter"]
+            y = td["year"]
+            yield _sse("progress", {"message": f"Analyzing Q{q} {y} transcript ({i+1}/{len(transcript_dates)})..."})
+
+            # Fetch transcript content
+            try:
+                t_url = f"https://financialmodelingprep.com/api/v3/earning_call_transcript/{normalized}?year={y}&quarter={q}&apikey={params.apikey}"
+                with urllib.request.urlopen(t_url, timeout=15) as resp:
+                    t_data = json.loads(resp.read().decode())
+            except Exception as e:
+                logger.debug("Transcript fetch failed for %s Q%s %s: %s", normalized, q, y, e)
+                continue
+
+            if not isinstance(t_data, list) or len(t_data) == 0:
+                continue
+
+            transcript = t_data[0]
+            content = transcript.get("content", "")
+            if not content:
+                continue
+
+            # Truncate very long transcripts to ~12000 chars to fit API limits
+            if len(content) > 12000:
+                content = content[:12000] + "\n\n[...transcript truncated...]"
+
+            # Call DeepSeek to analyze
+            prompt = f"""Analyze this earnings call transcript for {normalized} (Q{q} {y}) and return ONLY a JSON object with no other text:
+{{
+    "sentiment_score": <float from -1.0 to 1.0, where -1=very bearish, 0=neutral, 1=very bullish>,
+    "tone": "bullish" | "neutral" | "cautious" | "bearish",
+    "key_themes": ["theme1", "theme2", "theme3"],
+    "guidance_direction": "raised" | "maintained" | "lowered" | "not_given",
+    "management_confidence": <int 1-5, where 1=very low, 5=very high>,
+    "summary": "<2-3 sentence summary of the key takeaways>"
+}}
+
+Transcript:
+{content}"""
+
+            try:
+                ai_resp = http_requests.post(
+                    "https://api.deepseek.com/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {deepseek_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": "deepseek-chat",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0.3,
+                    },
+                    timeout=60,
+                )
+                ai_resp.raise_for_status()
+                ai_data = ai_resp.json()
+                ai_text = ai_data["choices"][0]["message"]["content"].strip()
+
+                # Parse JSON from response (handle markdown code blocks)
+                if ai_text.startswith("```"):
+                    ai_text = re.sub(r'^```(?:json)?\s*', '', ai_text)
+                    ai_text = re.sub(r'\s*```$', '', ai_text)
+
+                analysis = json.loads(ai_text)
+
+                results.append({
+                    "year": y,
+                    "quarter": q,
+                    "date": td.get("date", ""),
+                    "sentiment_score": float(analysis.get("sentiment_score", 0)),
+                    "tone": analysis.get("tone", "neutral"),
+                    "key_themes": analysis.get("key_themes", [])[:5],
+                    "guidance_direction": analysis.get("guidance_direction", "not_given"),
+                    "management_confidence": int(analysis.get("management_confidence", 3)),
+                    "summary": analysis.get("summary", ""),
+                })
+            except Exception as e:
+                logger.warning("AI analysis failed for %s Q%s %s: %s", normalized, q, y, e)
+                continue
+
+        if not results:
+            yield _sse("error", {"message": "Failed to analyze any transcripts"})
+            return
+
+        yield _sse("progress", {"message": "Computing trends..."})
+
+        # Compute trend
+        # Sort results by date (oldest first) for trend calculation
+        results_sorted = sorted(results, key=lambda r: (r["year"], r["quarter"]))
+
+        # Sentiment direction
+        if len(results_sorted) >= 2:
+            oldest_score = results_sorted[0]["sentiment_score"]
+            newest_score = results_sorted[-1]["sentiment_score"]
+            diff = newest_score - oldest_score
+            if diff > 0.15:
+                sentiment_direction = "improving"
+            elif diff < -0.15:
+                sentiment_direction = "declining"
+            else:
+                sentiment_direction = "stable"
+        else:
+            sentiment_direction = "stable"
+
+        # Recurring themes (appear in 2+ quarters)
+        theme_counter: Counter = Counter()
+        for r in results:
+            for theme in r["key_themes"]:
+                theme_counter[theme] += 1
+        recurring_themes = [t for t, c in theme_counter.most_common() if c >= 2][:5]
+
+        # Average confidence
+        confidences = [r["management_confidence"] for r in results]
+        avg_confidence = round(sum(confidences) / len(confidences), 1) if confidences else 3.0
+
+        # Results in reverse chronological order for display
+        results_display = sorted(results, key=lambda r: (r["year"], r["quarter"]), reverse=True)
+
+        final_result = {
+            "ticker": normalized,
+            "quarters_analyzed": len(results),
+            "results": results_display,
+            "trend": {
+                "sentiment_direction": sentiment_direction,
+                "recurring_themes": recurring_themes,
+                "avg_confidence": avg_confidence,
+            },
+            "engine": "deepseek",
+        }
+
+        # Cache the result
+        cache_put(ck, final_result, ttl=86400)
+
+        yield _sse("result", final_result)
+
+    return StreamingResponse(generate(), media_type="text/event-stream")

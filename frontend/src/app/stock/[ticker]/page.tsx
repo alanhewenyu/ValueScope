@@ -20,8 +20,10 @@ import {
   runAIAnalysis,
   runGapAnalysis,
   saveValuationToServer,
+  getEstimates,
   getAIQuota,
   type AIQuota,
+  type EstimatesData,
   type CompanyProfile,
   type FinancialData,
   type RelativeValuationData,
@@ -59,6 +61,7 @@ export default function StockPage() {
   // Shared data — fetched once, used by Overview + Scoring + Relative tabs
   const [scores, setScores] = useState<ScoresData | null>(null);
   const [relVal, setRelVal] = useState<RelativeValuationData | null>(null);
+  const [estimates, setEstimates] = useState<EstimatesData | null>(null);
   // Pre-fetched DCF defaults (loaded early so DCF tab opens instantly)
   const [prefetchedDefaults, setPrefetchedDefaults] = useState<DCFDefaults | null>(null);
 
@@ -87,6 +90,9 @@ export default function StockPage() {
       .catch(() => {});
     getRelativeValuation(decodedTicker, apikey, 5)
       .then((d) => { if (!cancelled) setRelVal(d); })
+      .catch(() => {});
+    getEstimates(decodedTicker, apikey)
+      .then((d) => { if (!cancelled) setEstimates(d); })
       .catch(() => {});
 
     corePromise
@@ -230,6 +236,9 @@ export default function StockPage() {
             scores={scores}
             relVal={relVal}
             freshness={financials?.freshness}
+            estimates={estimates}
+            apikey={fmpApiKey}
+            deepseekKey={deepseekApiKey}
           />
         )}
         {activeTab === "dcf" && <DCFTab ticker={decodedTicker} waccData={wacc} financials={financials} profile={profile} prefetchedDefaults={prefetchedDefaults} />}
@@ -1169,6 +1178,47 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
                     <MetricItem label={t.pricePerShare + ` (${result.reported_currency})`} value={result.results.price_per_share.toFixed(2)} />
                     {hasFx && <MetricItem label={t.pricePerShare + ` (${result.currency})`} value={result.dcf_price_converted.toFixed(2)} />}
                   </div>
+
+                  {/* Reverse DCF: Market Implied Growth */}
+                  {result.reverse_dcf && result.reverse_dcf.converged && (
+                    <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20 p-4">
+                      <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-2 flex items-center gap-2">
+                        <span>📊</span> {t.impliedGrowth}
+                      </h4>
+                      <div className="flex items-center gap-6 text-sm">
+                        <div>
+                          <span className="text-gray-500 dark:text-gray-400">{t.marketImplies}: </span>
+                          <span className="font-bold text-lg text-blue-700 dark:text-blue-300">
+                            {result.reverse_dcf.implied_growth_rate.toFixed(1)}%
+                          </span>
+                          <span className="text-gray-400 dark:text-gray-500 ml-1">{t.revenueGrowthPA}</span>
+                        </div>
+                        <div className="text-gray-400 dark:text-gray-500">vs</div>
+                        <div>
+                          <span className="text-gray-500 dark:text-gray-400">{t.yourAssumption}: </span>
+                          <span className="font-bold text-lg text-gray-700 dark:text-gray-300">
+                            {result.reverse_dcf.your_growth.toFixed(1)}%
+                          </span>
+                        </div>
+                        <div className={`text-sm font-medium px-2 py-0.5 rounded ${
+                          result.reverse_dcf.implied_growth_rate > result.reverse_dcf.your_growth + 1
+                            ? "bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-300"
+                            : result.reverse_dcf.implied_growth_rate < result.reverse_dcf.your_growth - 1
+                              ? "bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-300"
+                              : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
+                        }`}>
+                          {result.reverse_dcf.implied_growth_rate > result.reverse_dcf.your_growth + 1
+                            ? t.marketMoreOptimistic
+                            : result.reverse_dcf.implied_growth_rate < result.reverse_dcf.your_growth - 1
+                              ? t.marketMorePessimistic
+                              : t.marketAligned}
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                        {t.impliedGrowthExplain}
+                      </p>
+                    </div>
+                  )}
 
                   {/* Bridge to Value per Share */}
                   {result.bridge && (
