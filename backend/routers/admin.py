@@ -150,17 +150,17 @@ def admin_users(_: str = Depends(require_admin)):
 
     users = []
     port_db = _get_portfolio_db_path()
-    # Portfolio is single-user (no user_id column), count total positions
-    total_positions = 0
-    if os.path.exists(port_db):
-        total_positions = _safe_count(port_db, "SELECT COUNT(*) FROM positions")
     for r in rows:
+        portfolio_count = 0
+        if os.path.exists(port_db):
+            portfolio_count = _safe_count(port_db,
+                "SELECT COUNT(*) FROM positions WHERE user_id=?", (r["id"],))
         users.append({
             "id": r["id"],
             "email": r["email"],
             "created_at": r["created_at"],
             "valuation_count": r["valuation_count"],
-            "portfolio_count": total_positions,
+            "portfolio_count": portfolio_count,
         })
 
     return {"users": users}
@@ -186,7 +186,15 @@ def admin_delete_user(user_id: str, admin_id: str = Depends(require_admin)):
             if cursor.rowcount > 0:
                 deleted = True
 
-    # Portfolio tables are single-user (no user_id column), skip per-user cleanup
+    if os.path.exists(port_db):
+        with sqlite3.connect(port_db) as conn:
+            for table in ("positions", "cash_balances", "closed_trades",
+                          "margin_balances", "account_settings", "deposit_history"):
+                try:
+                    conn.execute(f"DELETE FROM {table} WHERE user_id=?", (user_id,))
+                except Exception:
+                    pass  # table may not have user_id yet
+            conn.commit()
 
     if not deleted:
         raise HTTPException(status_code=404, detail="User not found")

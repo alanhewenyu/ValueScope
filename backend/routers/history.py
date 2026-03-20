@@ -73,7 +73,12 @@ def history_status(user_id: str = Depends(get_current_user)):
     if exists:
         try:
             with sqlite3.connect(path) as conn:
-                count = conn.execute("SELECT COUNT(*) FROM valuations WHERE user_id=?", (user_id,)).fetchone()[0]
+                # Check if valuations table exists first
+                has_table = conn.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='valuations'"
+                ).fetchone()[0]
+                if has_table:
+                    count = conn.execute("SELECT COUNT(*) FROM valuations WHERE user_id=?", (user_id,)).fetchone()[0]
         except Exception:
             pass
     return {"available": exists, "count": count}
@@ -84,6 +89,12 @@ def get_filter_options(user_id: str = Depends(get_current_user)):
     """Get available filter options (modes, AI engines) for the search UI."""
     path = _require_db()
     with sqlite3.connect(path) as conn:
+        # Return empty filters if valuations table doesn't exist yet
+        has_table = conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='valuations'"
+        ).fetchone()[0]
+        if not has_table:
+            return {"modes": [], "engines": []}
         modes = [r[0] for r in conn.execute("SELECT DISTINCT mode FROM valuations WHERE user_id=?", (user_id,)).fetchall()]
         engines = [r[0] for r in conn.execute(
             "SELECT DISTINCT ai_engine FROM valuations WHERE ai_engine IS NOT NULL AND user_id=?", (user_id,)
@@ -104,6 +115,13 @@ def search_valuations(
 ):
     """Search valuation records with optional filters."""
     path = _require_db()
+
+    with sqlite3.connect(path) as conn:
+        has_table = conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='valuations'"
+        ).fetchone()[0]
+        if not has_table:
+            return {"records": [], "total": 0}
 
     sql = """SELECT id, ticker, company_name, valuation_date, mode, ai_engine, source,
                currency, reported_currency,
