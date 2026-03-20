@@ -280,13 +280,13 @@ function SummaryPanel({ records }: { records: ValuationRecord[] }) {
 
 const SECTION_HEADERS = new Set(["Profitability", "Capital Structure", "Returns", "Dividends"]);
 const AMOUNT_ROWS = new Set([
-  "Revenue", "EBIT", "(+) Capital Expenditure", "(-) D&A",
+  "Revenue", "EBIT", "Net Income", "(+) Capital Expenditure", "(-) D&A",
   "(+) \u0394Working Capital", "Total Reinvestment",
   "(+) Total Debt", "(+) Total Equity", "Minority Interest",
   "(-) Cash & Equivalents", "(-) Total Investments", "Invested Capital",
 ]);
 const RATIO_ROWS = new Set([
-  "Revenue Growth (%)", "EBIT Growth (%)", "EBIT Margin (%)", "Tax Rate (%)",
+  "Revenue Growth (%)", "EBIT Growth (%)", "EBIT Margin (%)", "Incremental Margin (%)", "Tax Rate (%)",
   "Revenue / IC", "Debt to Assets (%)", "Cost of Debt (%)",
   "ROIC (%)", "ROE (%)", "Dividend Yield (%)", "Payout Ratio (%)",
 ]);
@@ -305,7 +305,17 @@ function HistoricalTab({ detail }: { detail: ValuationDetail }) {
   // summary_json is a pandas DataFrame JSON: { "col1": { "row1": val, ... }, ... }
   // or it could be orient="columns" — keys are column names, values are {index: value}
   const data = sj as Record<string, Record<string, unknown>>;
-  const columns = Object.keys(data);
+  // Sort columns so newest year is first (consistent with web overview)
+  const columns = Object.keys(data).sort((a, b) => {
+    // Extract year number, TTM columns should come first
+    const aYear = parseInt(a.replace(/\D/g, '').slice(0, 4)) || 0;
+    const bYear = parseInt(b.replace(/\D/g, '').slice(0, 4)) || 0;
+    if (aYear !== bYear) return bYear - aYear;
+    // TTM columns sort before FY for same year
+    const aTTM = a.includes('TTM') ? 1 : 0;
+    const bTTM = b.includes('TTM') ? 1 : 0;
+    return bTTM - aTTM;
+  });
   // Gather all row indices from the first column
   const firstColData = data[columns[0]] || {};
   const allRows = Object.keys(firstColData);
@@ -487,18 +497,18 @@ function DCFBreakdownTab({ detail }: { detail: ValuationDetail }) {
 
   // ── Parameters ──
   const paramRows: [string, string][] = [
-    ["Rev Growth Y1", fmtPct(detail.revenue_growth_1)],
-    ["Rev Growth Y2-5", fmtPct(detail.revenue_growth_2)],
-    ["Target EBIT Margin", fmtPct(detail.ebit_margin)],
+    ["Rev Growth Y1", fmtPctRaw(detail.revenue_growth_1)],
+    ["Rev Growth Y2-5", fmtPctRaw(detail.revenue_growth_2)],
+    ["Target EBIT Margin", fmtPctRaw(detail.ebit_margin)],
     ["Convergence", _v(detail.convergence) ? `${detail.convergence!.toFixed(0)} yrs` : "\u2014"],
     ["Rev/IC Y1-2", fmtRatio(detail.rev_ic_ratio_1)],
     ["Rev/IC Y3-5", fmtRatio(detail.rev_ic_ratio_2)],
     ["Rev/IC Y5-10", fmtRatio(detail.rev_ic_ratio_3)],
-    ["Tax Rate", fmtPct(detail.tax_rate)],
-    ["WACC", fmtPct(detail.wacc)],
-    ["Terminal WACC", fmtRatio(detail.terminal_wacc)],
-    ["RONIC", fmtRatio(detail.ronic)],
-    ["Risk-free Rate", fmtRatio(detail.risk_free_rate)],
+    ["Tax Rate", fmtPctRaw(detail.tax_rate)],
+    ["WACC", fmtPctRaw(detail.wacc)],
+    ["Terminal WACC", fmtPct(detail.terminal_wacc)],
+    ["RONIC", fmtPct(detail.ronic)],
+    ["Risk-free Rate", fmtPct(detail.risk_free_rate)],
     ["Beta", fmtRatio(detail.beta)],
   ];
 
@@ -681,9 +691,9 @@ function SensitivityTab({ detail }: { detail: ValuationDetail }) {
   const { locale } = useI18n();
   const sensData = detail.sensitivity_json as Record<string, Record<string, number>> | null;
   const waccData = detail.wacc_sensitivity_json as Record<string, number> | null;
-  const baseGrowth = (detail.revenue_growth_2 ?? 0) * 100; // stored as decimal
-  const baseMargin = (detail.ebit_margin ?? 0) * 100;
-  const waccBase = detail.wacc != null ? detail.wacc * 100 : null;
+  const baseGrowth = detail.revenue_growth_2 ?? 0;  // already percentage (e.g. 12.9)
+  const baseMargin = detail.ebit_margin ?? 0;
+  const waccBase = detail.wacc ?? null;
 
   const hasSens = sensData && Object.keys(sensData).length > 0;
   const hasWacc = waccData && Object.keys(waccData).length > 0;
