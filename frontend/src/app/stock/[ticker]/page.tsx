@@ -297,7 +297,7 @@ function MetricItem({ label, value }: { label: string; value: string }) {
   );
 }
 
-function HistoryHint({ metric, t, periodLabel }: { metric: HistoryMetric | null; t: ReturnType<typeof useI18n>["t"]; periodLabel?: string }) {
+function HistoryHint({ metric, t, periodLabel, label }: { metric: HistoryMetric | null; t: ReturnType<typeof useI18n>["t"]; periodLabel?: string; label?: string }) {
   if (!metric) return null;
   const years = Object.keys(metric.values).sort();
   const yearRange = years.length >= 2 ? `(${years[0]}–${years[years.length - 1]})` : "";
@@ -305,6 +305,7 @@ function HistoryHint({ metric, t, periodLabel }: { metric: HistoryMetric | null;
   const period = periodLabel || (years.length > 0 ? years[years.length - 1] : "");
   return (
     <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-1 leading-relaxed">
+      {label && <span className="font-medium">{label}: </span>}
       {t.latestValue(period)}: <span className="font-medium text-gray-500 dark:text-gray-400">{metric.latest.toFixed(1)}</span>
       &nbsp;|&nbsp; {t.histAvg} {yearRange}: {metric.avg.toFixed(1)}
       &nbsp;|&nbsp; {t.histRange}: {metric.min.toFixed(1)} – {metric.max.toFixed(1)}
@@ -856,23 +857,7 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
                 historyHint={
                   <>
                     <HistoryHint metric={hist?.ebit_margin ?? null} t={t} periodLabel={periodLabel} />
-                    {hist?.incremental_margin && (() => {
-                      const im = hist.incremental_margin;
-                      const years = Object.keys(im.values).sort().reverse();
-                      const recent3 = years.slice(0, 3).map(y => im.values[y]);
-                      if (recent3.length === 0) return null;
-                      const avg3 = recent3.reduce((a, b) => a + b, 0) / recent3.length;
-                      const curMargin = hist.ebit_margin?.latest;
-                      const trend = curMargin != null
-                        ? (avg3 > curMargin ? "↑" : Math.abs(avg3 - curMargin) < 3 ? "→" : "↓")
-                        : "";
-                      return (
-                        <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">
-                          Incremental Margin: {im.latest.toFixed(1)}%
-                          &nbsp;|&nbsp; avg: {avg3.toFixed(1)}% {trend}
-                        </div>
-                      );
-                    })()}
+                    <HistoryHint metric={hist?.incremental_margin ?? null} t={t} periodLabel={periodLabel} label="Incremental Margin" />
                   </>
                 }
               />
