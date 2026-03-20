@@ -13,10 +13,17 @@ import uuid
 import logging
 from datetime import datetime, timedelta, timezone
 
-import bcrypt
-import jwt
+try:
+    import bcrypt
+    import jwt as pyjwt
+    _AUTH_AVAILABLE = True
+except ImportError:
+    _AUTH_AVAILABLE = False
+    bcrypt = None  # type: ignore
+    pyjwt = None   # type: ignore
+
 from fastapi import APIRouter, HTTPException, Depends, Request
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
 logger = logging.getLogger("valuescope.auth")
 
@@ -74,8 +81,18 @@ def _init_users_table():
     conn.close()
 
 
-# Initialize on import
-_init_users_table()
+# Initialize on import (only if auth deps available)
+if _AUTH_AVAILABLE:
+    try:
+        _init_users_table()
+    except Exception as e:
+        logger.warning(f"Failed to init users table: {e}")
+
+
+def _check_auth_deps():
+    """Raise 503 if auth dependencies are not installed."""
+    if not _AUTH_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Auth not available (install bcrypt and PyJWT)")
 
 
 # ── JWT helpers ──
@@ -88,16 +105,18 @@ def create_token(user_id: str, email: str) -> str:
         "exp": datetime.now(timezone.utc) + timedelta(days=JWT_EXPIRY_DAYS),
         "iat": datetime.now(timezone.utc),
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return pyjwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
 def verify_token(token: str) -> dict | None:
     """Verify and decode a JWT token. Returns payload or None."""
-    try:
-        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-    except jwt.ExpiredSignatureError:
+    if not _AUTH_AVAILABLE:
         return None
-    except jwt.InvalidTokenError:
+    try:
+        return pyjwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except pyjwt.ExpiredSignatureError:
+        return None
+    except pyjwt.InvalidTokenError:
         return None
 
 
@@ -111,6 +130,8 @@ def get_current_user(request: Request) -> str:
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         return "local"
+    if not _AUTH_AVAILABLE:
+        return "local"
     payload = verify_token(auth[7:])
     if not payload:
         return "local"
@@ -122,6 +143,7 @@ def require_auth(request: Request) -> str:
 
     Use this for endpoints that require login (portfolio CRUD).
     """
+    _check_auth_deps()
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -163,6 +185,7 @@ class AuthResponse(BaseModel):
 @router.post("/register", response_model=AuthResponse)
 def register(req: RegisterRequest):
     """Register a new account with email and password."""
+    _check_auth_deps()
     email = req.email.strip().lower()
     password = req.password
 
@@ -197,6 +220,7 @@ def register(req: RegisterRequest):
 @router.post("/login", response_model=AuthResponse)
 def login(req: LoginRequest):
     """Login with email and password."""
+    _check_auth_deps()
     email = req.email.strip().lower()
 
     conn = _get_db()
@@ -229,6 +253,7 @@ def get_me(user_id: str = Depends(require_auth)):
 @router.post("/forgot-password")
 def forgot_password(req: ForgotPasswordRequest):
     """Send password reset email (requires RESEND_API_KEY)."""
+    _check_auth_deps()
     email = req.email.strip().lower()
 
     conn = _get_db()
@@ -284,6 +309,7 @@ def forgot_password(req: ForgotPasswordRequest):
 @router.post("/reset-password")
 def reset_password(req: ResetPasswordRequest):
     """Reset password using token from email."""
+    _check_auth_deps()
     if len(req.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 
