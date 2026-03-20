@@ -5,20 +5,23 @@ import Link from "next/link";
 import SearchBar from "@/components/SearchBar";
 import LanguageToggle from "@/components/LanguageToggle";
 import { useI18n } from "@/lib/i18n";
+import { useAuth } from "@/lib/auth-context";
 
 export default function Home() {
   const { t, locale } = useI18n();
+  const { user, loading: authLoading } = useAuth();
   const [isLocal, setIsLocal] = useState(false);
   useEffect(() => {
     const h = window.location.hostname;
     setIsLocal(h === "localhost" || h === "127.0.0.1");
   }, []);
+  const showPrivate = isLocal || !!user;
 
   return (
     <div className="min-h-screen flex flex-col">
       {/* Floating top-right nav */}
       <div className="absolute top-4 right-4 z-40 flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-        {isLocal && (
+        {showPrivate && (
           <>
             <Link href="/history" className="hover:text-gray-900 dark:hover:text-white transition-colors">
               {locale === "zh" ? "估值记录" : "History"}
@@ -29,6 +32,14 @@ export default function Home() {
           </>
         )}
         <LanguageToggle />
+        {!authLoading && !user && (
+          <Link
+            href="/auth"
+            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors"
+          >
+            {t.authLogin}
+          </Link>
+        )}
       </div>
       {/* Hero section */}
       <main className="flex-1 flex flex-col items-center justify-center px-4">
