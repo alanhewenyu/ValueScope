@@ -612,13 +612,32 @@ def main(args):
                                forex_rate=forex_rate, stock_currency=stock_currency,
                                reported_currency=reported_currency)
 
-        # ── Gap analysis (first run) ──
-        gap_analysis_result = _run_gap_analysis(
-            auto_mode, ticker, company_profile, results, valuation_params,
-            summary_df, base_year, forecast_year_1, forex_rate)
+        gap_analysis_result = None
 
         # ── Exit or continue ──
         if auto_mode:
+            # Auto mode: run gap + export, then exit
+            gap_analysis_result = _run_gap_analysis(
+                True, ticker, company_profile, results, valuation_params,
+                summary_df, base_year, forecast_year_1, forex_rate)
+            _db_path = os.environ.get('VS_DB_PATH')
+            if _db_path:
+                from modeling.db_export import maybe_save_to_db
+                maybe_save_to_db(
+                    ticker=ticker, company_name=company_name,
+                    mode='auto' if use_ai else 'manual',
+                    ai_engine=_ai_engine_display_name() if use_ai else None,
+                    valuation_params=valuation_params, results=results,
+                    company_profile=company_profile,
+                    gap_analysis_result=gap_analysis_result, ai_result=ai_result,
+                    sensitivity_table=sensitivity_table,
+                    wacc_sensitivity=(wacc_results, wacc_base),
+                    financial_data=financial_data, forex_rate=forex_rate,
+                )
+            else:
+                _export_excel(True, use_ai, company_name, base_year_data, financial_data,
+                              valuation_params, company_profile, total_equity_risk_premium,
+                              gap_analysis_result, ai_result, wacc_results, wacc_base)
             print(f"\n{S.success('Auto 模式完成。')}")
             break
 
@@ -648,7 +667,7 @@ def main(args):
             print(f"    [g] Gap Analysis (AI)")
             print(f"    [q] Exit")
 
-            choice = input(f"\n{S.prompt('Enter number to modify, or [e]xport/[g]ap/[q]uit: ')}").strip().lower()
+            choice = input(f"\n{S.prompt('Enter number(s) to modify (e.g. 1,3,5), or [e]xport/[g]ap/[q]uit: ')}").strip().lower()
 
             if choice == 'q':
                 print("Exiting...")
@@ -659,7 +678,7 @@ def main(args):
                     from modeling.db_export import maybe_save_to_db
                     maybe_save_to_db(
                         ticker=ticker, company_name=company_name,
-                        mode='auto' if (use_ai and auto_mode) else ('copilot' if use_ai else 'manual'),
+                        mode='copilot' if use_ai else 'manual',
                         ai_engine=_ai_engine_display_name() if use_ai else None,
                         valuation_params=valuation_params, results=results,
                         company_profile=company_profile,
@@ -671,7 +690,7 @@ def main(args):
                     )
                     print(f"\n{S.success('Valuation saved to database.')}")
                 else:
-                    _export_excel(auto_mode, use_ai, company_name, base_year_data, financial_data,
+                    _export_excel(False, use_ai, company_name, base_year_data, financial_data,
                                   valuation_params, company_profile, total_equity_risk_premium,
                                   gap_analysis_result, ai_result, wacc_results, wacc_base)
                 continue
@@ -681,39 +700,42 @@ def main(args):
                     summary_df, base_year, forecast_year_1, forex_rate)
                 continue
 
-            # Find matching param
-            matched = None
-            for key, param, label in _param_keys:
-                if choice == key:
-                    matched = (param, label)
-                    break
+            # Parse selection: support "1", "1,3,5", "1 3 5"
+            _param_map = {k: (p, l) for k, p, l in _param_keys}
+            selections = [s.strip() for s in re.split(r'[,\s]+', choice) if s.strip()]
+            matched_params = []
+            for sel in selections:
+                if sel in _param_map:
+                    matched_params.append(_param_map[sel])
 
-            if not matched:
+            if not matched_params:
                 print(f"  {S.error('Invalid choice.')}")
                 continue
 
-            param_name, param_label = matched
-            current_val = valuation_params.get(param_name, raw_params.get(param_name, 0))
-            new_val = _input_float(
-                f"  {S.prompt(f'{param_label} (current: {current_val:.2f}): ')}",
-                default=current_val)
+            # Collect new values for all selected params
+            changed = False
+            for param_name, param_label in matched_params:
+                current_val = valuation_params.get(param_name, raw_params.get(param_name, 0))
+                new_val = _input_float(
+                    f"  {S.prompt(f'{param_label} (current: {current_val:.2f}): ')}",
+                    default=current_val)
+                if new_val != current_val:
+                    raw_params[param_name] = new_val
+                    changed = True
 
-            if new_val == current_val:
+            if not changed:
                 continue
 
-            # Update raw_params and rebuild
-            raw_params[param_name] = new_val
+            # Rebuild and recalculate
             valuation_params = _build_valuation_params(
                 raw_params, base_year, risk_free_rate, _is_ttm, _ttm_quarter, _ttm_label,
                 forecast_year_1=forecast_year_1, fy_end_month=_fy_end_month)
 
-            # Recalculate DCF
             print(f"\n{S.info('Recalculating...')}")
             results = calculate_dcf(base_year_data, valuation_params, financial_data, company_info, company_profile)
             print_dcf_results(results, company_name, ttm_label=valuation_params.get('ttm_label', ''),
                               forex_rate=forex_rate, stock_currency=stock_currency)
 
-            # Recalculate sensitivity
             sensitivity_table = sensitivity_analysis(base_year_data, valuation_params, financial_data, company_info, company_profile)
             print(f"\n{S.subheader(f'Sensitivity Analysis - Revenue Growth vs EBIT Margin ({sensitivity_currency})')}")
             print_sensitivity_table(sensitivity_table, valuation_params,
