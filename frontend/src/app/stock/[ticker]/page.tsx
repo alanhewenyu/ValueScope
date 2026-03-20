@@ -34,6 +34,8 @@ import {
   type HistoryMetric,
   type AIAnalysisResult,
   type GapAnalysisResult,
+  type BuffettResult,
+  getBuffettValuation,
 } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
 import { formatCurrency, formatLargeNumber, formatNumber } from "@/lib/format";
@@ -372,10 +374,19 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
   const [defaultsApplied, setDefaultsApplied] = useState(false);
   const [paramsCollapsed, setParamsCollapsed] = useState(false);
 
+  // Buffett quick estimate
+  const [buffett, setBuffett] = useState<BuffettResult | null>(null);
+
   // Refs for auto-scroll and auto-run
   const resultRef = useRef<HTMLDivElement>(null);
   const autoRunTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasRunOnce = useRef(false);
+
+  // Fetch Buffett valuation on mount
+  useEffect(() => {
+    if (!ticker) return;
+    getBuffettValuation(ticker, fmpApiKey).then(setBuffett).catch(() => {});
+  }, [ticker, fmpApiKey]);
 
   // Fetch AI quota on mount (only when using server keys)
   useEffect(() => {
@@ -663,9 +674,9 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
   const periodLabel = defaults?.ttm_label || "";
 
   return (
-    <div ref={resultRef} className={`scroll-mt-20 ${result && !paramsCollapsed ? "xl:flex xl:gap-6 xl:items-start" : "space-y-6"}`}>
+    <div ref={resultRef} className={`scroll-mt-20 ${(result || buffett?.available) && !paramsCollapsed ? "xl:flex xl:gap-6 xl:items-start" : "space-y-6"}`}>
       {/* Parameter Form */}
-      <div className={`relative bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 ${result && !paramsCollapsed ? "mb-6 xl:mb-0 xl:w-[420px] xl:flex-shrink-0 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto xl:flex xl:flex-col" : "p-6"}`}>
+      <div className={`relative bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 ${(result || buffett?.available) && !paramsCollapsed ? "mb-6 xl:mb-0 xl:w-[420px] xl:flex-shrink-0 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto xl:flex xl:flex-col" : "p-6"}`}>
         {defaultsLoading && (
           <div className="absolute inset-0 z-20 bg-white/70 dark:bg-gray-900/70 rounded-xl flex items-center justify-center backdrop-blur-[1px]">
             <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
@@ -1000,7 +1011,67 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
       </div>
 
       {/* ══════ Results (right side on xl when params expanded) ══════ */}
-      <div className={`${result && !paramsCollapsed ? "xl:flex-1 xl:min-w-0" : ""} space-y-4`}>
+      <div className={`${(result || buffett?.available) && !paramsCollapsed ? "xl:flex-1 xl:min-w-0" : ""} space-y-4`}>
+
+      {/* Buffett Quick Estimate */}
+      {buffett?.available && (() => {
+        const b = buffett;
+        const hasFx = b.forex_rate != null && b.stock_currency && b.reported_currency && b.stock_currency !== b.reported_currency;
+        const rawIntrinsic = b.intrinsic_per_share ?? 0;
+        const rawMos = b.margin_of_safety_price ?? 0;
+        const bIntrinsic = hasFx ? rawIntrinsic * (b.forex_rate ?? 1) : rawIntrinsic;
+        const bMos = hasFx ? rawMos * (b.forex_rate ?? 1) : rawMos;
+        const displayCurrency = hasFx ? b.stock_currency! : (b.reported_currency ?? "USD");
+        const marketPrice = b.market_price ?? 0;
+        const diffPct = marketPrice ? ((bIntrinsic - marketPrice) / marketPrice * 100) : 0;
+        const diffColor = diffPct > 10 ? "text-green-600 dark:text-green-400" : diffPct < -10 ? "text-red-600 dark:text-red-400" : "text-gray-700 dark:text-gray-300";
+
+        return (
+          <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 p-4">
+            <h4 className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-3">
+              Buffett Owner Earnings — {t.buffettIntrinsic}
+            </h4>
+            <div className="flex items-center gap-5 mb-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-0.5">{t.buffettIntrinsic}</div>
+                <div className="text-xl font-bold text-gray-900 dark:text-white">{formatCurrency(bIntrinsic, displayCurrency)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-0.5">{t.buffettMos}</div>
+                <div className="text-base font-bold text-gray-900 dark:text-white">{formatCurrency(bMos, displayCurrency)}</div>
+              </div>
+              {marketPrice > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-0.5">{t.upsideDownside}</div>
+                  <div className={`text-base font-bold ${diffColor}`}>{diffPct > 0 ? "+" : ""}{diffPct.toFixed(1)}%</div>
+                </div>
+              )}
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] pt-2 border-t border-amber-200/50 dark:border-amber-800/50">
+              <div>
+                <span className="text-gray-400">{b.ni_label ? `NI(${b.ni_label})` : "NI"}: </span>
+                <span className="font-mono">{(b.net_income ?? 0).toLocaleString(undefined, {maximumFractionDigits: 0})}M</span>
+              </div>
+              <div>
+                <span className="text-gray-400">OE: </span>
+                <span className="font-mono">{(b.owner_earnings ?? 0).toLocaleString(undefined, {maximumFractionDigits: 0})}M</span>
+              </div>
+              <div>
+                <span className="text-gray-400">Growth: </span>
+                <span className="font-mono">{((b.growth_phase1 ?? 0) * 100).toFixed(1)}%</span>
+              </div>
+              <div>
+                <span className="text-gray-400">ROE/Payout: </span>
+                <span className="font-mono">{(b.avg_roe ?? 0).toFixed(0)}%/{(b.payout ?? 0).toFixed(0)}%</span>
+              </div>
+            </div>
+            <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-2 leading-relaxed">
+              {t.buffettNote}
+            </p>
+          </div>
+        );
+      })()}
+
       {/* Error display */}
       {error && (
         <div className="bg-red-50 dark:bg-red-950/30 rounded-xl border border-red-200 dark:border-red-800 p-6 text-red-600 dark:text-red-400">
@@ -1382,58 +1453,6 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
                     </div>
                   )}
 
-                  {/* Buffett Owner Earnings Valuation */}
-                  {result.buffett?.available && (() => {
-                    const b = result.buffett!;
-                    const bRaw = b.intrinsic_per_share ?? 0;
-                    const bMosRaw = b.margin_of_safety_price ?? 0;
-                    const bIntrinsic = hasFx ? bRaw * (result.forex_rate ?? 1) : bRaw;
-                    const bMos = hasFx ? bMosRaw * (result.forex_rate ?? 1) : bMosRaw;
-                    const bDiffPct = result.market_price ? ((bIntrinsic - result.market_price) / result.market_price * 100) : 0;
-                    const bColor = bDiffPct > 10 ? "text-green-600 dark:text-green-400" : bDiffPct < -10 ? "text-red-600 dark:text-red-400" : "text-gray-700 dark:text-gray-300";
-                    return (
-                      <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 p-4">
-                        <h4 className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-3">
-                          Buffett Owner Earnings Valuation
-                        </h4>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs mb-3">
-                          <div>
-                            <div className="text-gray-500 dark:text-gray-400 mb-0.5">{b.ni_label ? `NI (${b.ni_label})` : t.fin_netIncome}</div>
-                            <div className="font-mono font-medium">{b.net_income?.toLocaleString(undefined, {maximumFractionDigits: 0})}M</div>
-                          </div>
-                          <div>
-                            <div className="text-gray-500 dark:text-gray-400 mb-0.5">Owner Earnings</div>
-                            <div className="font-mono font-medium">{b.owner_earnings?.toLocaleString(undefined, {maximumFractionDigits: 0})}M</div>
-                          </div>
-                          <div>
-                            <div className="text-gray-500 dark:text-gray-400 mb-0.5">{t.discountRate}</div>
-                            <div className="font-mono font-medium">{((b.discount_rate ?? 0) * 100).toFixed(1)}%</div>
-                          </div>
-                          <div>
-                            <div className="text-gray-500 dark:text-gray-400 mb-0.5">{t.growthRate}</div>
-                            <div className="font-mono font-medium">{((b.growth_phase1 ?? 0) * 100).toFixed(1)}%</div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-6 pt-2 border-t border-amber-200 dark:border-amber-800">
-                          <div>
-                            <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-0.5">{t.buffettIntrinsic}</div>
-                            <div className="text-lg font-bold text-gray-900 dark:text-white">{formatCurrency(bIntrinsic, result.currency)}</div>
-                          </div>
-                          <div>
-                            <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-0.5">{t.buffettMos}</div>
-                            <div className="text-lg font-bold text-gray-900 dark:text-white">{formatCurrency(bMos, result.currency)}</div>
-                          </div>
-                          <div>
-                            <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-0.5">{t.upsideDownside}</div>
-                            <div className={`text-lg font-bold ${bColor}`}>{bDiffPct > 0 ? "+" : ""}{bDiffPct.toFixed(1)}%</div>
-                          </div>
-                        </div>
-                        <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-2">
-                          {t.buffettNote}
-                        </p>
-                      </div>
-                    );
-                  })()}
 
                   <p className="text-[10px] text-gray-400 dark:text-gray-500 leading-relaxed">
                     {t.sensitivityLegend}
