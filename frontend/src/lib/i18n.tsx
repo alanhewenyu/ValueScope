@@ -391,6 +391,30 @@ const en = {
   contactWeChat: "WeChat",
   contactEmail: "alanhe@icloud.com",
   wechatScanToFollow: "Scan to follow WeChat Official Account",
+
+  // Auth
+  authLogin: "Log In",
+  authRegister: "Sign Up",
+  authLogout: "Log Out",
+  authEmail: "Email",
+  authPassword: "Password",
+  authConfirmPassword: "Confirm Password",
+  authPasswordPlaceholder: "At least 6 characters",
+  authLoginSubtitle: "Log in to sync your portfolio across devices",
+  authRegisterSubtitle: "Create an account to save your portfolio",
+  authForgotSubtitle: "We'll send you a password reset link",
+  authResetSubtitle: "Enter your new password",
+  authForgotPassword: "Forgot password?",
+  authNoAccount: "Don't have an account?",
+  authHasAccount: "Already have an account?",
+  authBackToLogin: "Back to login",
+  authSendReset: "Send Reset Link",
+  authResetPassword: "Reset Password",
+  authResetSent: "If the email exists, a reset link has been sent.",
+  authResetSuccess: "Password reset successfully. Redirecting to login...",
+  authPasswordMismatch: "Passwords do not match",
+  authLoginRequired: "Log in to access your portfolio",
+  authLoginRequiredDesc: "Your portfolio data is synced to your account. Please log in or sign up to continue.",
 };
 
 // ── Chinese translations ───────────────────────────────────────────
@@ -750,6 +774,30 @@ const zh: Translations = {
   contactWeChat: "公众号",
   contactEmail: "alanhe@icloud.com",
   wechatScanToFollow: "微信扫码关注公众号",
+
+  // Auth
+  authLogin: "登录",
+  authRegister: "注册",
+  authLogout: "退出登录",
+  authEmail: "邮箱",
+  authPassword: "密码",
+  authConfirmPassword: "确认密码",
+  authPasswordPlaceholder: "至少 6 个字符",
+  authLoginSubtitle: "登录以同步你的投资组合",
+  authRegisterSubtitle: "注册账户以保存投资组合",
+  authForgotSubtitle: "我们将发送密码重置链接",
+  authResetSubtitle: "输入你的新密码",
+  authForgotPassword: "忘记密码？",
+  authNoAccount: "还没有账户？",
+  authHasAccount: "已有账户？",
+  authBackToLogin: "返回登录",
+  authSendReset: "发送重置链接",
+  authResetPassword: "重置密码",
+  authResetSent: "如果邮箱存在，重置链接已发送。",
+  authResetSuccess: "密码重置成功，正在跳转登录...",
+  authPasswordMismatch: "两次输入的密码不一致",
+  authLoginRequired: "登录以访问投资组合",
+  authLoginRequiredDesc: "投资组合数据已同步至你的账户，请先登录或注册。",
 };
 
 // ── Translation registry ───────────────────────────────────────────

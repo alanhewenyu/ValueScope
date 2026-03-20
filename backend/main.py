@@ -37,7 +37,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
-from backend.routers import stock, valuation, relative, portfolio, history
+from backend.routers import stock, valuation, relative, portfolio, history, auth
 
 # Pre-load data in background so first requests are faster
 import threading, os
@@ -79,6 +79,7 @@ app.include_router(valuation.router, prefix="/api/valuation", tags=["Valuation"]
 app.include_router(relative.router, prefix="/api/analysis", tags=["Analysis"])
 app.include_router(portfolio.router, prefix="/api/portfolio", tags=["Portfolio"])
 app.include_router(history.router, prefix="/api/history", tags=["History"])
+app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 
 
 @app.get("/api/health")

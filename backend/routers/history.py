@@ -13,8 +13,10 @@ import os
 import sqlite3
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
+
+from backend.routers.auth import get_current_user
 
 logger = logging.getLogger("valuescope.history")
 

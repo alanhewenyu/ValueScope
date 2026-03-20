@@ -471,6 +471,7 @@ def init_db(db_path: str | None = None) -> None:
         _migrate_stock_pnl_add_market_pk(conn)
         _migrate_backfill_stock_pnl_ytd_base(conn)
         _migrate_seed_account_settings(conn)
+        _migrate_add_user_id(conn)
 
 
 def _migrate_seed_account_settings(conn):
@@ -508,68 +509,170 @@ def _migrate_seed_account_settings(conn):
     conn.commit()
 
 
+def _migrate_add_user_id(conn):
+    """Add user_id column to user-level tables for multi-user support.
+
+    Default 'local' preserves backward compatibility — existing data belongs
+    to the implicit local user. Multi-user mode (PostgreSQL) will use real IDs.
+    SQLite unique constraints can't be altered, so we recreate tables that need
+    compound unique keys including user_id.
+    """
+    # Tables that just need the column (no unique constraint change)
+    for table in ['closed_trades', 'deposit_history', 'daily_snapshots',
+                  'nav_history', 'snapshot_market_detail', 'snapshot_stock_pnl',
+                  'ytd_baseline_prices']:
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN user_id TEXT NOT NULL DEFAULT 'local'")
+        except sqlite3.OperationalError:
+            pass  # already exists
+
+    # positions: UNIQUE(ticker, broker) → UNIQUE(ticker, broker, user_id)
+    _recreate_with_user_id(conn, 'positions', """
+        CREATE TABLE positions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL, name TEXT NOT NULL, market TEXT NOT NULL,
+            broker TEXT NOT NULL, currency TEXT NOT NULL,
+            quantity REAL NOT NULL DEFAULT 0, cost_price REAL NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'open',
+            updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            created_at TEXT,
+            user_id TEXT NOT NULL DEFAULT 'local',
+            UNIQUE(ticker, broker, user_id))""",
+        'ticker, broker, user_id')
+
+    # cash_balances: UNIQUE(account, currency) → UNIQUE(account, currency, user_id)
+    _recreate_with_user_id(conn, 'cash_balances', """
+        CREATE TABLE cash_balances (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account TEXT NOT NULL, currency TEXT NOT NULL,
+            balance REAL NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            user_id TEXT NOT NULL DEFAULT 'local',
+            UNIQUE(account, currency, user_id))""",
+        'account, currency, user_id')
+
+    # margin_balances: UNIQUE(broker, category, currency) → UNIQUE(broker, category, currency, user_id)
+    _recreate_with_user_id(conn, 'margin_balances', """
+        CREATE TABLE margin_balances (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            broker TEXT NOT NULL, category TEXT NOT NULL,
+            currency TEXT NOT NULL DEFAULT 'CNY',
+            amount REAL NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            user_id TEXT NOT NULL DEFAULT 'local',
+            UNIQUE(broker, category, currency, user_id))""",
+        'broker, category, currency, user_id')
+
+    # account_settings: PRIMARY KEY(broker) → UNIQUE(broker, user_id)
+    _recreate_with_user_id(conn, 'account_settings', """
+        CREATE TABLE account_settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            broker TEXT NOT NULL, capital_mode TEXT NOT NULL DEFAULT 'cost',
+            deposit_cny REAL NOT NULL DEFAULT 0, deposit_fx REAL NOT NULL DEFAULT 1.0,
+            notes TEXT,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            user_id TEXT NOT NULL DEFAULT 'local',
+            UNIQUE(broker, user_id))""",
+        'broker, user_id')
+
+    # Rebuild indexes
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_positions_user ON positions(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_cash_user ON cash_balances(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_closed_user ON closed_trades(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_margin_user ON margin_balances(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_settings_user ON account_settings(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_deposit_user ON deposit_history(user_id)")
+    conn.commit()
+
+
+def _recreate_with_user_id(conn, table_name: str, new_ddl: str, unique_cols: str):
+    """Recreate a table with user_id if it doesn't have one yet."""
+    # Check if user_id already exists
+    cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table_name})").fetchall()]
+    if 'user_id' in cols:
+        return
+    # Get existing column names (excluding id)
+    existing_cols = [c for c in cols if c != 'id']
+    col_list = ', '.join(existing_cols)
+    conn.execute(f"ALTER TABLE {table_name} RENAME TO {table_name}_old")
+    conn.execute(new_ddl)
+    conn.execute(f"""
+        INSERT INTO {table_name} ({col_list}, user_id)
+        SELECT {col_list}, 'local' FROM {table_name}_old
+    """)
+    conn.execute(f"DROP TABLE {table_name}_old")
+    conn.commit()
+
+
 # ── Account settings helpers ──
 
-def get_account_settings(conn: sqlite3.Connection) -> list[dict]:
+def get_account_settings(conn: sqlite3.Connection, user_id: str = 'local') -> list[dict]:
     """Return all account settings as list of dicts."""
     conn.row_factory = sqlite3.Row
-    rows = conn.execute("SELECT * FROM account_settings ORDER BY broker").fetchall()
+    rows = conn.execute(
+        "SELECT * FROM account_settings WHERE user_id=? ORDER BY broker",
+        (user_id,)
+    ).fetchall()
     return [dict(r) for r in rows]
 
 
 def upsert_account_setting(conn: sqlite3.Connection, broker: str,
                            capital_mode: str, deposit_cny: float = 0,
-                           deposit_fx: float = 1.0, notes: str = '') -> None:
+                           deposit_fx: float = 1.0, notes: str = '',
+                           user_id: str = 'local') -> None:
     """Insert or update account capital settings.
     Also ensures a CNY cash row exists for this account (balance 0 if new).
     """
     conn.execute("""
-        INSERT INTO account_settings (broker, capital_mode, deposit_cny, deposit_fx, notes, updated_at)
-        VALUES (?, ?, ?, ?, ?, datetime('now', 'localtime'))
-        ON CONFLICT(broker) DO UPDATE SET
+        INSERT INTO account_settings (broker, capital_mode, deposit_cny, deposit_fx, notes, updated_at, user_id)
+        VALUES (?, ?, ?, ?, ?, datetime('now', 'localtime'), ?)
+        ON CONFLICT(broker, user_id) DO UPDATE SET
             capital_mode = excluded.capital_mode,
             deposit_cny = excluded.deposit_cny,
             deposit_fx = excluded.deposit_fx,
             notes = excluded.notes,
             updated_at = excluded.updated_at
-    """, (broker, capital_mode, deposit_cny, deposit_fx, notes))
+    """, (broker, capital_mode, deposit_cny, deposit_fx, notes, user_id))
     # Auto-create cash row if none exists for this account
-    # Use the most common currency among this broker's positions, default CNY
     existing = conn.execute(
-        "SELECT 1 FROM cash_balances WHERE account=? LIMIT 1", (broker,)
+        "SELECT 1 FROM cash_balances WHERE account=? AND user_id=? LIMIT 1", (broker, user_id)
     ).fetchone()
     if not existing:
         row = conn.execute(
             "SELECT currency, COUNT(*) AS cnt FROM positions "
-            "WHERE broker=? AND status='open' GROUP BY currency ORDER BY cnt DESC LIMIT 1",
-            (broker,)
+            "WHERE broker=? AND user_id=? AND status='open' GROUP BY currency ORDER BY cnt DESC LIMIT 1",
+            (broker, user_id)
         ).fetchone()
         currency = row[0] if row else 'CNY'
         conn.execute("""
-            INSERT INTO cash_balances (account, currency, balance, updated_at)
-            VALUES (?, ?, 0, datetime('now','localtime'))
-        """, (broker, currency))
+            INSERT INTO cash_balances (account, currency, balance, updated_at, user_id)
+            VALUES (?, ?, 0, datetime('now','localtime'), ?)
+        """, (broker, currency, user_id))
 
 
-def delete_account_setting(conn: sqlite3.Connection, broker: str) -> int:
+def delete_account_setting(conn: sqlite3.Connection, broker: str,
+                           user_id: str = 'local') -> int:
     """Delete account setting. Returns rows affected."""
-    cur = conn.execute("DELETE FROM account_settings WHERE broker=?", (broker,))
+    cur = conn.execute("DELETE FROM account_settings WHERE broker=? AND user_id=?",
+                       (broker, user_id))
     return cur.rowcount
 
 
 # ── Deposit history ──
 
-def get_deposit_history(conn: sqlite3.Connection, broker: str) -> list[dict]:
+def get_deposit_history(conn: sqlite3.Connection, broker: str,
+                        user_id: str = 'local') -> list[dict]:
     """Return deposit history records for a broker, newest first."""
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
-        "SELECT * FROM deposit_history WHERE broker=? ORDER BY created_at DESC",
-        (broker,)
+        "SELECT * FROM deposit_history WHERE broker=? AND user_id=? ORDER BY created_at DESC",
+        (broker, user_id)
     ).fetchall()
     return [dict(r) for r in rows]
 
 
-def _recalc_deposit_totals(conn: sqlite3.Connection, broker: str) -> None:
+def _recalc_deposit_totals(conn: sqlite3.Connection, broker: str,
+                           user_id: str = 'local') -> None:
     """Recalculate deposit_cny and weighted avg FX from deposit_history,
     then upsert into account_settings."""
     row = conn.execute("""
@@ -577,45 +680,49 @@ def _recalc_deposit_totals(conn: sqlite3.Connection, broker: str) -> None:
                CASE WHEN SUM(amount_cny) > 0
                     THEN SUM(amount_cny * fx_rate) / SUM(amount_cny)
                     ELSE 1.0 END AS avg_fx
-        FROM deposit_history WHERE broker=?
-    """, (broker,)).fetchone()
+        FROM deposit_history WHERE broker=? AND user_id=?
+    """, (broker, user_id)).fetchone()
     total_cny = row["total"] if row else 0
     avg_fx = row["avg_fx"] if row else 1.0
     conn.execute("""
-        INSERT INTO account_settings (broker, capital_mode, deposit_cny, deposit_fx, updated_at)
-        VALUES (?, 'deposit', ?, ?, datetime('now','localtime'))
-        ON CONFLICT(broker) DO UPDATE SET
+        INSERT INTO account_settings (broker, capital_mode, deposit_cny, deposit_fx, updated_at, user_id)
+        VALUES (?, 'deposit', ?, ?, datetime('now','localtime'), ?)
+        ON CONFLICT(broker, user_id) DO UPDATE SET
             deposit_cny = excluded.deposit_cny,
             deposit_fx = excluded.deposit_fx,
             updated_at = excluded.updated_at
-    """, (broker, total_cny, avg_fx))
+    """, (broker, total_cny, avg_fx, user_id))
 
 
 def add_deposit_record(conn: sqlite3.Connection, broker: str,
                        amount_cny: float, fx_rate: float = 1.0,
-                       deposit_date: str = '', notes: str = '') -> None:
+                       deposit_date: str = '', notes: str = '',
+                       user_id: str = 'local') -> None:
     """Add a deposit record and recalculate account_settings totals."""
     conn.execute("""
-        INSERT INTO deposit_history (broker, amount_cny, fx_rate, deposit_date, notes)
-        VALUES (?, ?, ?, ?, ?)
-    """, (broker, amount_cny, fx_rate, deposit_date or None, notes or None))
-    _recalc_deposit_totals(conn, broker)
+        INSERT INTO deposit_history (broker, amount_cny, fx_rate, deposit_date, notes, user_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (broker, amount_cny, fx_rate, deposit_date or None, notes or None, user_id))
+    _recalc_deposit_totals(conn, broker, user_id)
 
 
-def delete_deposit_record(conn: sqlite3.Connection, record_id: int) -> str:
+def delete_deposit_record(conn: sqlite3.Connection, record_id: int,
+                          user_id: str = 'local') -> str:
     """Delete a deposit record by ID, recalculate totals. Returns broker name."""
-    row = conn.execute("SELECT broker FROM deposit_history WHERE id=?", (record_id,)).fetchone()
+    row = conn.execute("SELECT broker FROM deposit_history WHERE id=? AND user_id=?",
+                       (record_id, user_id)).fetchone()
     if not row:
         return ""
     broker = row["broker"]
-    conn.execute("DELETE FROM deposit_history WHERE id=?", (record_id,))
-    _recalc_deposit_totals(conn, broker)
+    conn.execute("DELETE FROM deposit_history WHERE id=? AND user_id=?", (record_id, user_id))
+    _recalc_deposit_totals(conn, broker, user_id)
     return broker
 
 
 # ── Capital computation ──
 
-def compute_capital(conn: sqlite3.Connection, fx: dict[str, float]) -> float:
+def compute_capital(conn: sqlite3.Connection, fx: dict[str, float],
+                    user_id: str = 'local') -> float:
     """Compute total invested capital (CNY).
 
     Every account must be registered in account_settings with a capital_mode:
@@ -632,7 +739,8 @@ def compute_capital(conn: sqlite3.Connection, fx: dict[str, float]) -> float:
     """
     conn.row_factory = sqlite3.Row
     settings = conn.execute(
-        "SELECT broker, capital_mode, deposit_cny FROM account_settings"
+        "SELECT broker, capital_mode, deposit_cny FROM account_settings WHERE user_id=?",
+        (user_id,)
     ).fetchall()
 
     deposit_brokers: dict[str, float] = {}   # broker -> deposit_cny
@@ -650,26 +758,29 @@ def compute_capital(conn: sqlite3.Connection, fx: dict[str, float]) -> float:
     position_cost = 0.0
     for row in conn.execute(
             "SELECT broker, currency, quantity, cost_price "
-            "FROM positions WHERE status='open'"):
+            "FROM positions WHERE status='open' AND user_id=?", (user_id,)):
         if row['broker'] in cost_brokers:
             position_cost += row['quantity'] * row['cost_price'] * fx.get(row['currency'], 1.0)
 
     # Cash (cost-mode accounts only; also include accounts not in any setting like banks)
     cash_cny = 0.0
-    for row in conn.execute("SELECT account, currency, balance FROM cash_balances"):
+    for row in conn.execute(
+            "SELECT account, currency, balance FROM cash_balances WHERE user_id=?", (user_id,)):
         if row['account'] not in deposit_brokers:
             cash_cny += row['balance'] * fx.get(row['currency'], 1.0)
 
     # Off-exchange leverage
     margin_off = 0.0
     for row in conn.execute(
-            "SELECT currency, amount FROM margin_balances WHERE category='off_exchange'"):
+            "SELECT currency, amount FROM margin_balances "
+            "WHERE category='off_exchange' AND user_id=?", (user_id,)):
         margin_off += row['amount'] * fx.get(row['currency'], 1.0)
 
     # Realized P&L (cost-mode accounts only)
     realised_pl = 0.0
     for row in conn.execute(
-            "SELECT broker, COALESCE(realized_pnl_cny, 0) AS rpl FROM closed_trades"):
+            "SELECT broker, COALESCE(realized_pnl_cny, 0) AS rpl FROM closed_trades "
+            "WHERE user_id=?", (user_id,)):
         if row['broker'] in cost_brokers:
             realised_pl += row['rpl']
 
@@ -715,10 +826,11 @@ def get_dcf_valuations() -> dict[str, dict]:
 
 # ── Query helpers ──
 
-def get_open_tickers(conn: sqlite3.Connection) -> list[dict]:
+def get_open_tickers(conn: sqlite3.Connection, user_id: str = 'local') -> list[dict]:
     """Return list of open positions with ticker, name, market."""
     rows = conn.execute(
-        "SELECT DISTINCT ticker, name, market FROM positions WHERE status='open'"
+        "SELECT DISTINCT ticker, name, market FROM positions WHERE status='open' AND user_id=?",
+        (user_id,)
     ).fetchall()
     return [{"ticker": r[0], "name": r[1], "market": r[2]} for r in rows]
 
@@ -726,12 +838,13 @@ def get_open_tickers(conn: sqlite3.Connection) -> list[dict]:
 # ── CRUD operations ──
 
 def upsert_position(conn: sqlite3.Connection, ticker: str, name: str, market: str,
-                    broker: str, currency: str, quantity: float, cost_price: float) -> None:
+                    broker: str, currency: str, quantity: float, cost_price: float,
+                    user_id: str = 'local') -> None:
     conn.execute("""
         INSERT INTO positions (ticker, name, market, broker, currency, quantity, cost_price,
-                               status, updated_at, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'open', datetime('now','localtime'), datetime('now','localtime'))
-        ON CONFLICT(ticker, broker) DO UPDATE SET
+                               status, updated_at, created_at, user_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'open', datetime('now','localtime'), datetime('now','localtime'), ?)
+        ON CONFLICT(ticker, broker, user_id) DO UPDATE SET
             name = excluded.name, market = excluded.market,
             currency = excluded.currency, quantity = excluded.quantity,
             cost_price = excluded.cost_price,
@@ -739,7 +852,7 @@ def upsert_position(conn: sqlite3.Connection, ticker: str, name: str, market: st
                 WHEN positions.quantity != excluded.quantity
                   OR abs(positions.cost_price - excluded.cost_price) > 0.0001
                 THEN datetime('now','localtime') ELSE positions.updated_at END
-    """, (ticker, name, market, broker, currency, quantity, cost_price))
+    """, (ticker, name, market, broker, currency, quantity, cost_price, user_id))
 
 
 def insert_closed_trade(conn: sqlite3.Connection, ticker: str | None, name: str,
@@ -747,23 +860,26 @@ def insert_closed_trade(conn: sqlite3.Connection, ticker: str | None, name: str,
                         close_date: str | None = None, notes: str | None = None,
                         quantity: float | None = None, cost_price: float | None = None,
                         close_price: float | None = None, cost_total: float | None = None,
-                        realized_pnl_cny: float | None = None) -> None:
+                        realized_pnl_cny: float | None = None,
+                        user_id: str = 'local') -> None:
     conn.execute("""
         INSERT INTO closed_trades (ticker, name, market, broker, currency, realized_pnl,
                                    close_date, notes, quantity, cost_price, close_price,
-                                   cost_total, realized_pnl_cny)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                   cost_total, realized_pnl_cny, user_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (ticker, name, market, broker, currency, realized_pnl,
-          close_date, notes, quantity, cost_price, close_price, cost_total, realized_pnl_cny))
+          close_date, notes, quantity, cost_price, close_price, cost_total,
+          realized_pnl_cny, user_id))
 
 
-def upsert_cash(conn: sqlite3.Connection, account: str, currency: str, balance: float) -> None:
+def upsert_cash(conn: sqlite3.Connection, account: str, currency: str, balance: float,
+                user_id: str = 'local') -> None:
     conn.execute("""
-        INSERT INTO cash_balances (account, currency, balance, updated_at)
-        VALUES (?, ?, ?, datetime('now','localtime'))
-        ON CONFLICT(account, currency) DO UPDATE SET
+        INSERT INTO cash_balances (account, currency, balance, updated_at, user_id)
+        VALUES (?, ?, ?, datetime('now','localtime'), ?)
+        ON CONFLICT(account, currency, user_id) DO UPDATE SET
             balance = excluded.balance, updated_at = excluded.updated_at
-    """, (account, currency, balance))
+    """, (account, currency, balance, user_id))
 
 
 def upsert_nav(conn: sqlite3.Connection, date: str, nav: float, capital: float,
@@ -787,13 +903,13 @@ def upsert_fx(conn: sqlite3.Connection, currency: str, rate: float) -> None:
 
 
 def upsert_margin(conn: sqlite3.Connection, broker: str, category: str,
-                  currency: str, amount: float) -> None:
+                  currency: str, amount: float, user_id: str = 'local') -> None:
     conn.execute("""
-        INSERT INTO margin_balances (broker, category, currency, amount, updated_at)
-        VALUES (?, ?, ?, ?, datetime('now','localtime'))
-        ON CONFLICT(broker, category, currency) DO UPDATE SET
+        INSERT INTO margin_balances (broker, category, currency, amount, updated_at, user_id)
+        VALUES (?, ?, ?, ?, datetime('now','localtime'), ?)
+        ON CONFLICT(broker, category, currency, user_id) DO UPDATE SET
             amount = excluded.amount, updated_at = excluded.updated_at
-    """, (broker, category, currency, amount))
+    """, (broker, category, currency, amount, user_id))
 
 
 def upsert_snapshot(conn: sqlite3.Connection, date: str, total_assets: float,

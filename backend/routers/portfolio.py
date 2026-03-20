@@ -15,9 +15,11 @@ import os
 import sqlite3
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+from backend.routers.auth import get_current_user
 
 logger = logging.getLogger("valuescope.portfolio.api")
 
@@ -135,19 +137,19 @@ def switch_portfolio(name: str = Query(...)):
 
 
 @router.get("/positions")
-def list_positions(status: str = Query("open", pattern="^(open|closed|all)$")):
+def list_positions(status: str = Query("open", pattern="^(open|closed|all)$"), user_id: str = Depends(get_current_user)):
     """List portfolio positions."""
     path = _require_db()
     if status == "all":
-        sql = "SELECT * FROM positions ORDER BY market, broker, name"
+        sql = "SELECT * FROM positions WHERE user_id=? ORDER BY market, broker, name"
+        return _query(path, sql, (user_id,))
     else:
-        sql = "SELECT * FROM positions WHERE status=? ORDER BY market, broker, name"
-        return _query(path, sql, (status,))
-    return _query(path, sql)
+        sql = "SELECT * FROM positions WHERE status=? AND user_id=? ORDER BY market, broker, name"
+        return _query(path, sql, (status, user_id))
 
 
 @router.post("/positions")
-def upsert_position_api(pos: PositionIn):
+def upsert_position_api(pos: PositionIn, user_id: str = Depends(get_current_user)):
     """Create or update a position (upsert by ticker+broker)."""
     _require_db()
     from backend.services.portfolio_db import init_db, upsert_position, get_conn
@@ -156,20 +158,20 @@ def upsert_position_api(pos: PositionIn):
         upsert_position(
             conn, ticker=pos.ticker, name=pos.name, market=pos.market,
             broker=pos.broker, quantity=pos.quantity,
-            cost_price=pos.cost_price, currency=pos.currency,
+            cost_price=pos.cost_price, currency=pos.currency, user_id=user_id,
         )
         conn.commit()
     return {"ok": True}
 
 
 @router.delete("/positions/{ticker}/{broker}")
-def delete_position_api(ticker: str, broker: str):
+def delete_position_api(ticker: str, broker: str, user_id: str = Depends(get_current_user)):
     """Delete a position by ticker+broker."""
     path = _require_db()
     import sqlite3 as _sqlite3
     with _sqlite3.connect(path) as conn:
         cursor = conn.execute(
-            "DELETE FROM positions WHERE ticker=? AND broker=?", (ticker, broker)
+            "DELETE FROM positions WHERE ticker=? AND broker=? AND user_id=?", (ticker, broker, user_id)
         )
         conn.commit()
         if cursor.rowcount == 0:
@@ -178,14 +180,14 @@ def delete_position_api(ticker: str, broker: str):
 
 
 @router.get("/closed-trades")
-def list_closed_trades():
+def list_closed_trades(user_id: str = Depends(get_current_user)):
     """List all closed (realized) trades."""
     path = _require_db()
-    return _query(path, "SELECT * FROM closed_trades ORDER BY market, abs(realized_pnl) DESC")
+    return _query(path, "SELECT * FROM closed_trades WHERE user_id=? ORDER BY market, abs(realized_pnl) DESC", (user_id,))
 
 
 @router.post("/closed-trades")
-def add_closed_trade(trade: ClosedTradeIn):
+def add_closed_trade(trade: ClosedTradeIn, user_id: str = Depends(get_current_user)):
     """Record a closed trade."""
     _require_db()
     from backend.services.portfolio_db import init_db, insert_closed_trade, get_conn
@@ -198,39 +200,40 @@ def add_closed_trade(trade: ClosedTradeIn):
             realized_pnl_cny=trade.realized_pnl_cny,
             quantity=trade.quantity,
             cost_price=trade.buy_price, close_price=trade.sell_price,
+            user_id=user_id,
         )
         conn.commit()
     return {"ok": True}
 
 
 @router.get("/cash")
-def list_cash():
+def list_cash(user_id: str = Depends(get_current_user)):
     """List cash balances across all accounts."""
     path = _require_db()
-    return _query(path, "SELECT * FROM cash_balances ORDER BY account")
+    return _query(path, "SELECT * FROM cash_balances WHERE user_id=? ORDER BY account", (user_id,))
 
 
 @router.post("/cash")
-def update_cash(cash: CashIn):
+def update_cash(cash: CashIn, user_id: str = Depends(get_current_user)):
     """Update cash balance for an account."""
     _require_db()
     from backend.services.portfolio_db import init_db, upsert_cash, get_conn
     init_db()
     with get_conn() as conn:
-        upsert_cash(conn, account=cash.account, currency=cash.currency, balance=cash.balance)
+        upsert_cash(conn, account=cash.account, currency=cash.currency, balance=cash.balance, user_id=user_id)
         conn.commit()
     return {"ok": True}
 
 
 @router.delete("/cash/{account}/{currency}")
-def delete_cash_api(account: str, currency: str):
+def delete_cash_api(account: str, currency: str, user_id: str = Depends(get_current_user)):
     """Delete a cash balance row by account+currency."""
     path = _require_db()
     import sqlite3 as _sqlite3
     with _sqlite3.connect(path) as conn:
         cursor = conn.execute(
-            "DELETE FROM cash_balances WHERE account=? AND currency=?",
-            (account, currency))
+            "DELETE FROM cash_balances WHERE account=? AND currency=? AND user_id=?",
+            (account, currency, user_id))
         conn.commit()
     if cursor.rowcount == 0:
         raise HTTPException(404, "Cash row not found")
@@ -238,17 +241,17 @@ def delete_cash_api(account: str, currency: str):
 
 
 @router.get("/account-settings")
-def list_account_settings():
+def list_account_settings(user_id: str = Depends(get_current_user)):
     """List all account capital settings."""
     _require_db()
     from backend.services.portfolio_db import init_db, get_account_settings, get_conn
     init_db()
     with get_conn() as conn:
-        return get_account_settings(conn)
+        return get_account_settings(conn, user_id=user_id)
 
 
 @router.post("/account-settings")
-def upsert_account_setting_api(setting: AccountSettingIn):
+def upsert_account_setting_api(setting: AccountSettingIn, user_id: str = Depends(get_current_user)):
     """Create or update account capital settings."""
     _require_db()
     from backend.services.portfolio_db import init_db, upsert_account_setting, get_conn
@@ -257,20 +260,20 @@ def upsert_account_setting_api(setting: AccountSettingIn):
         upsert_account_setting(
             conn, broker=setting.broker, capital_mode=setting.capital_mode,
             deposit_cny=setting.deposit_cny, deposit_fx=setting.deposit_fx,
-            notes=setting.notes,
+            notes=setting.notes, user_id=user_id,
         )
         conn.commit()
     return {"ok": True}
 
 
 @router.delete("/account-settings/{broker}")
-def delete_account_setting_api(broker: str):
+def delete_account_setting_api(broker: str, user_id: str = Depends(get_current_user)):
     """Delete account capital settings (reverts to cost mode)."""
     _require_db()
     from backend.services.portfolio_db import init_db, delete_account_setting, get_conn
     init_db()
     with get_conn() as conn:
-        affected = delete_account_setting(conn, broker)
+        affected = delete_account_setting(conn, broker, user_id=user_id)
         conn.commit()
         if affected == 0:
             raise HTTPException(status_code=404, detail="Account setting not found")
@@ -278,36 +281,36 @@ def delete_account_setting_api(broker: str):
 
 
 @router.get("/deposit-history/{broker}")
-def list_deposit_history(broker: str):
+def list_deposit_history(broker: str, user_id: str = Depends(get_current_user)):
     """List deposit history records for a broker."""
     _require_db()
     from backend.services.portfolio_db import init_db, get_deposit_history, get_conn
     init_db()
     with get_conn() as conn:
-        return get_deposit_history(conn, broker)
+        return get_deposit_history(conn, broker, user_id=user_id)
 
 
 @router.post("/deposit-history")
-def add_deposit_record_api(data: DepositRecordIn):
+def add_deposit_record_api(data: DepositRecordIn, user_id: str = Depends(get_current_user)):
     """Add a deposit record and auto-recalculate totals."""
     _require_db()
     from backend.services.portfolio_db import init_db, add_deposit_record, get_conn
     init_db()
     with get_conn() as conn:
         add_deposit_record(conn, data.broker, data.amount_cny,
-                           data.fx_rate, data.deposit_date, data.notes)
+                           data.fx_rate, data.deposit_date, data.notes, user_id=user_id)
         conn.commit()
     return {"ok": True}
 
 
 @router.delete("/deposit-history/{record_id}")
-def delete_deposit_record_api(record_id: int):
+def delete_deposit_record_api(record_id: int, user_id: str = Depends(get_current_user)):
     """Delete a deposit history record and recalculate totals."""
     _require_db()
     from backend.services.portfolio_db import init_db, delete_deposit_record, get_conn
     init_db()
     with get_conn() as conn:
-        broker = delete_deposit_record(conn, record_id)
+        broker = delete_deposit_record(conn, record_id, user_id=user_id)
         conn.commit()
         if not broker:
             raise HTTPException(status_code=404, detail="Record not found")
@@ -315,21 +318,21 @@ def delete_deposit_record_api(record_id: int):
 
 
 @router.get("/margin")
-def list_margin():
+def list_margin(user_id: str = Depends(get_current_user)):
     """List margin/leverage balances."""
     path = _require_db()
-    return _query(path, "SELECT * FROM margin_balances ORDER BY broker")
+    return _query(path, "SELECT * FROM margin_balances WHERE user_id=? ORDER BY broker", (user_id,))
 
 
 @router.post("/margin")
-def update_margin(m: MarginIn):
+def update_margin(m: MarginIn, user_id: str = Depends(get_current_user)):
     """Update a margin/leverage balance."""
     _require_db()
     from backend.services.portfolio_db import init_db, upsert_margin, get_conn
     init_db()
     with get_conn() as conn:
         upsert_margin(conn, broker=m.broker, category=m.category,
-                      currency=m.currency, amount=m.amount)
+                      currency=m.currency, amount=m.amount, user_id=user_id)
         conn.commit()
     return {"ok": True}
 
@@ -354,7 +357,7 @@ def get_price(ticker: str):
 
 
 @router.get("/holdings")
-def get_enriched_holdings():
+def get_enriched_holdings(user_id: str = Depends(get_current_user)):
     """Get positions enriched with live prices, P&L, daily/YTD returns.
 
     This is the main data endpoint for the portfolio dashboard — combines
@@ -371,7 +374,7 @@ def get_enriched_holdings():
     init_db()
 
     # Load positions
-    positions = _query(path, "SELECT * FROM positions WHERE status='open' ORDER BY market, broker, name")
+    positions = _query(path, "SELECT * FROM positions WHERE status='open' AND user_id=? ORDER BY market, broker, name", (user_id,))
     if not positions:
         return {"holdings": [], "fx": {"CNY": 1.0}, "summary": {}}
 
@@ -503,7 +506,7 @@ def get_enriched_holdings():
         h["weight"] = round(h["market_value_cny"] / total_equity_cny * 100, 2) if total_equity_cny > 0 else 0
 
     # Cash summary — auto-create cash rows for each currency a broker holds positions in
-    cash_rows = _query(path, "SELECT * FROM cash_balances ORDER BY account")
+    cash_rows = _query(path, "SELECT * FROM cash_balances WHERE user_id=? ORDER BY account", (user_id,))
     existing_pairs = {(r['account'], r['currency']) for r in cash_rows}
     # Collect all (broker, currency) pairs from positions
     needed_pairs = set()
@@ -514,16 +517,16 @@ def get_enriched_holdings():
         with get_conn() as conn:
             for broker, currency in sorted(missing_pairs):
                 conn.execute("""
-                    INSERT INTO cash_balances (account, currency, balance, updated_at)
-                    VALUES (?, ?, 0, datetime('now','localtime'))
-                """, (broker, currency))
+                    INSERT INTO cash_balances (account, currency, balance, updated_at, user_id)
+                    VALUES (?, ?, 0, datetime('now','localtime'), ?)
+                """, (broker, currency, user_id))
             conn.commit()
         # Re-fetch after insert
-        cash_rows = _query(path, "SELECT * FROM cash_balances ORDER BY account")
+        cash_rows = _query(path, "SELECT * FROM cash_balances WHERE user_id=? ORDER BY account", (user_id,))
     cash_cny = sum(r['balance'] * fx.get(r['currency'], 1.0) for r in cash_rows)
 
     # Margin / leverage
-    margin_rows = _query(path, "SELECT * FROM margin_balances")
+    margin_rows = _query(path, "SELECT * FROM margin_balances WHERE user_id=?", (user_id,))
     leverage_cny = sum(r['amount'] * fx.get(r['currency'], 1.0) for r in margin_rows)
 
     total_assets = total_equity_cny + cash_cny
@@ -531,7 +534,7 @@ def get_enriched_holdings():
 
     # Compute capital using the proper deposit-mode formula
     with get_conn() as conn:
-        capital = compute_capital(conn, fx)
+        capital = compute_capital(conn, fx, user_id=user_id)
     total_pnl_capital = net_assets - capital  # Total P&L = Net Assets - Capital
 
     # YTD realized P&L from closed trades (by market)
@@ -541,7 +544,7 @@ def get_enriched_holdings():
     ytd_realized_total = 0.0
     for row in _query(path,
             "SELECT market, COALESCE(realized_pnl_cny, 0) AS rpl "
-            "FROM closed_trades WHERE close_date >= ?", (ytd_start,)):
+            "FROM closed_trades WHERE close_date >= ? AND user_id=?", (ytd_start, user_id)):
         mkt = row['market'] or 'Other'
         ytd_realized_by_market[mkt] = ytd_realized_by_market.get(mkt, 0) + row['rpl']
         ytd_realized_total += row['rpl']
@@ -570,17 +573,17 @@ def get_enriched_holdings():
 
 
 @router.get("/snapshots")
-def list_snapshots(limit: int = Query(90, ge=1, le=365)):
+def list_snapshots(limit: int = Query(90, ge=1, le=365), user_id: str = Depends(get_current_user)):
     """Get daily snapshots (most recent first)."""
     path = _require_db()
-    return _query(path, "SELECT * FROM daily_snapshots ORDER BY date DESC LIMIT ?", (limit,))
+    return _query(path, "SELECT * FROM daily_snapshots WHERE user_id=? ORDER BY date DESC LIMIT ?", (user_id, limit))
 
 
 @router.get("/nav-history")
-def get_nav_history():
+def get_nav_history(user_id: str = Depends(get_current_user)):
     """Get NAV history for performance charting."""
     path = _require_db()
-    return _query(path, "SELECT * FROM nav_history ORDER BY date")
+    return _query(path, "SELECT * FROM nav_history WHERE user_id=? ORDER BY date", (user_id,))
 
 
 @router.get("/benchmarks")
@@ -671,7 +674,7 @@ def download_import_template(template_type: str):
 
 
 @router.post("/import")
-async def import_csv(file: UploadFile = File(...)):
+async def import_csv(file: UploadFile = File(...), user_id: str = Depends(get_current_user)):
     """Import positions or cash from a CSV file upload."""
     _require_db()
     from backend.services.portfolio_db import (
@@ -713,10 +716,10 @@ async def import_csv(file: UploadFile = File(...)):
         if csv_type == "positions":
             # Collect existing brokers in account_settings
             existing_brokers = {
-                r[0] for r in conn.execute("SELECT broker FROM account_settings").fetchall()
+                r[0] for r in conn.execute("SELECT broker FROM account_settings WHERE user_id=?", (user_id,)).fetchall()
             }
             existing_cash_accounts = {
-                r[0] for r in conn.execute("SELECT DISTINCT account FROM cash_balances").fetchall()
+                r[0] for r in conn.execute("SELECT DISTINCT account FROM cash_balances WHERE user_id=?", (user_id,)).fetchall()
             }
 
             for i, raw_row in enumerate(reader, start=2):
@@ -737,19 +740,19 @@ async def import_csv(file: UploadFile = File(...)):
 
                     # Auto-create account_settings for new brokers
                     if broker not in existing_brokers:
-                        upsert_account_setting(conn, broker=broker, capital_mode="cost")
+                        upsert_account_setting(conn, broker=broker, capital_mode="cost", user_id=user_id)
                         existing_brokers.add(broker)
                         accounts_created.append(broker)
 
                     # Auto-create cash row for new broker
                     if broker not in existing_cash_accounts:
-                        upsert_cash(conn, account=broker, currency="CNY", balance=0)
+                        upsert_cash(conn, account=broker, currency="CNY", balance=0, user_id=user_id)
                         existing_cash_accounts.add(broker)
 
                     upsert_position(
                         conn, ticker=ticker, name=name, market=market,
                         broker=broker, currency=currency,
-                        quantity=quantity, cost_price=cost_price,
+                        quantity=quantity, cost_price=cost_price, user_id=user_id,
                     )
                     imported += 1
                 except (ValueError, KeyError) as exc:
@@ -767,7 +770,7 @@ async def import_csv(file: UploadFile = File(...)):
                         errors.append(f"Row {i}: account is required")
                         continue
 
-                    upsert_cash(conn, account=account, currency=currency, balance=balance)
+                    upsert_cash(conn, account=account, currency=currency, balance=balance, user_id=user_id)
                     imported += 1
                 except (ValueError, KeyError) as exc:
                     errors.append(f"Row {i}: {exc}")
@@ -784,14 +787,14 @@ async def import_csv(file: UploadFile = File(...)):
 
 
 @router.get("/export")
-def export_all():
+def export_all(user_id: str = Depends(get_current_user)):
     """Export all portfolio data as JSON backup."""
     path = _require_db()
     return {
-        "positions": _query(path, "SELECT * FROM positions ORDER BY market, broker, name"),
-        "cash_balances": _query(path, "SELECT * FROM cash_balances ORDER BY account"),
-        "account_settings": _query(path, "SELECT * FROM account_settings ORDER BY broker"),
-        "closed_trades": _query(path, "SELECT * FROM closed_trades ORDER BY market, name"),
+        "positions": _query(path, "SELECT * FROM positions WHERE user_id=? ORDER BY market, broker, name", (user_id,)),
+        "cash_balances": _query(path, "SELECT * FROM cash_balances WHERE user_id=? ORDER BY account", (user_id,)),
+        "account_settings": _query(path, "SELECT * FROM account_settings WHERE user_id=? ORDER BY broker", (user_id,)),
+        "closed_trades": _query(path, "SELECT * FROM closed_trades WHERE user_id=? ORDER BY market, name", (user_id,)),
     }
 
 
@@ -832,11 +835,11 @@ def _fmp_get(path: str, apikey: str, params: str = "") -> list:
         return []
 
 
-def _get_tickers_by_market(db_path: str) -> dict[str, list[dict]]:
+def _get_tickers_by_market(db_path: str, user_id: str = "local") -> dict[str, list[dict]]:
     """Group open tickers by market type."""
     from backend.services.portfolio_db import get_conn, get_open_tickers
     conn = get_conn(db_path)
-    tickers = get_open_tickers(conn)
+    tickers = get_open_tickers(conn, user_id=user_id)
     conn.close()
     groups: dict[str, list[dict]] = {"us": [], "hk": [], "ashare": [], "jp": []}
     for t in tickers:
@@ -854,13 +857,13 @@ def _get_tickers_by_market(db_path: str) -> dict[str, list[dict]]:
 
 
 @router.get("/news")
-def portfolio_news(apikey: str = Query("", description="FMP API key")):
+def portfolio_news(apikey: str = Query("", description="FMP API key"), user_id: str = Depends(get_current_user)):
     """Aggregated news for all portfolio holdings."""
     path = _require_db()
     apikey = apikey or os.environ.get("FMP_API_KEY", "")
 
     def _fetch():
-        groups = _get_tickers_by_market(path)
+        groups = _get_tickers_by_market(path, user_id=user_id)
         all_news = []
 
         # FMP news for US + HK stocks
@@ -902,18 +905,18 @@ def portfolio_news(apikey: str = Query("", description="FMP API key")):
         all_news.sort(key=lambda x: x.get("date", ""), reverse=True)
         return all_news[:50]
 
-    return _cached_or_fetch(f"news:{path}", _EVENT_TTL_NEWS, _fetch)
+    return _cached_or_fetch(f"news:{path}:{user_id}", _EVENT_TTL_NEWS, _fetch)
 
 
 @router.get("/earnings-calendar")
-def portfolio_earnings(apikey: str = Query("", description="FMP API key")):
+def portfolio_earnings(apikey: str = Query("", description="FMP API key"), user_id: str = Depends(get_current_user)):
     """Upcoming and recent earnings for portfolio holdings."""
     path = _require_db()
     apikey = apikey or os.environ.get("FMP_API_KEY", "")
 
     def _fetch():
         from datetime import datetime, timedelta
-        groups = _get_tickers_by_market(path)
+        groups = _get_tickers_by_market(path, user_id=user_id)
         events = []
 
         fmp_tickers = groups["us"] + groups["hk"] + groups["jp"]
@@ -953,17 +956,17 @@ def portfolio_earnings(apikey: str = Query("", description="FMP API key")):
                           key=lambda x: x["date"], reverse=True)
         return upcoming + reported
 
-    return _cached_or_fetch(f"earnings:{path}", _EVENT_TTL_OTHER, _fetch)
+    return _cached_or_fetch(f"earnings:{path}:{user_id}", _EVENT_TTL_OTHER, _fetch)
 
 
 @router.get("/rating-changes")
-def portfolio_ratings(apikey: str = Query("", description="FMP API key")):
+def portfolio_ratings(apikey: str = Query("", description="FMP API key"), user_id: str = Depends(get_current_user)):
     """Recent analyst rating changes for portfolio holdings."""
     path = _require_db()
     apikey = apikey or os.environ.get("FMP_API_KEY", "")
 
     def _fetch():
-        groups = _get_tickers_by_market(path)
+        groups = _get_tickers_by_market(path, user_id=user_id)
         changes = []
 
         fmp_tickers = groups["us"] + groups["hk"]
@@ -1015,4 +1018,4 @@ def portfolio_ratings(apikey: str = Query("", description="FMP API key")):
         changes.sort(key=lambda x: x["date"], reverse=True)
         return changes
 
-    return _cached_or_fetch(f"ratings:{path}", _EVENT_TTL_OTHER, _fetch)
+    return _cached_or_fetch(f"ratings:{path}:{user_id}", _EVENT_TTL_OTHER, _fetch)
