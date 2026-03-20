@@ -853,7 +853,28 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
                 value={ebitMargin}
                 onChange={setEbitMargin}
                 step={0.5}
-                historyHint={<HistoryHint metric={hist?.ebit_margin ?? null} t={t} periodLabel={periodLabel} />}
+                historyHint={
+                  <>
+                    <HistoryHint metric={hist?.ebit_margin ?? null} t={t} periodLabel={periodLabel} />
+                    {hist?.incremental_margin && (() => {
+                      const im = hist.incremental_margin;
+                      const years = Object.keys(im.values).sort().reverse();
+                      const recent3 = years.slice(0, 3).map(y => im.values[y]);
+                      if (recent3.length === 0) return null;
+                      const avg3 = recent3.reduce((a, b) => a + b, 0) / recent3.length;
+                      const curMargin = hist.ebit_margin?.latest;
+                      const trend = curMargin != null
+                        ? (avg3 > curMargin ? "↑" : Math.abs(avg3 - curMargin) < 3 ? "→" : "↓")
+                        : "";
+                      return (
+                        <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">
+                          Incremental Margin: {im.latest.toFixed(1)}%
+                          &nbsp;|&nbsp; avg: {avg3.toFixed(1)}% {trend}
+                        </div>
+                      );
+                    })()}
+                  </>
+                }
               />
               <DCFInputField
                 label={t.convergenceYears}

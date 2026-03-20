@@ -180,6 +180,7 @@ export interface DCFDefaults {
   history: {
     revenue_growth: HistoryMetric | null;
     ebit_margin: HistoryMetric | null;
+    incremental_margin: HistoryMetric | null;
     revenue_ic: HistoryMetric | null;
     tax_rate: HistoryMetric | null;
   };

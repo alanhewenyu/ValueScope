@@ -417,6 +417,7 @@ def get_dcf_defaults(
 
     rev_growth = _extract_row("Revenue Growth (%)")
     ebit_margin = _extract_row("EBIT Margin (%)")
+    incremental_margin = _extract_row("Incremental Margin (%)")
     rev_ic = _extract_row("Revenue / IC")
     tax_rate_row = _extract_row("Tax Rate (%)")
 
@@ -453,6 +454,7 @@ def get_dcf_defaults(
         "history": {
             "revenue_growth": rev_growth,
             "ebit_margin": ebit_margin,
+            "incremental_margin": incremental_margin,
             "revenue_ic": rev_ic,
             "tax_rate": tax_rate_row,
         },
