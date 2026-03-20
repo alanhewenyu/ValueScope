@@ -628,12 +628,18 @@ def main(args):
                                forex_rate=forex_rate, stock_currency=stock_currency,
                                reported_currency=reported_currency)
 
-        # ── Buffett Owner Earnings Valuation ──
+        # ── Buffett Owner Earnings Valuation (collapsed by default) ──
         buffett_result = calculate_buffett(
             summary_df, company_profile, base_year_data['Outstanding Shares'],
             forex_rate=forex_rate)
-        print_buffett_valuation(buffett_result,
-                                forex_rate=forex_rate, stock_currency=stock_currency)
+        if not auto_mode:
+            _show_buffett = input(f'{S.prompt("View Buffett Quick Valuation? (y/N, Enter to skip): ")}').strip().lower()
+            if _show_buffett in ('y', 'yes'):
+                print_buffett_valuation(buffett_result,
+                                        forex_rate=forex_rate, stock_currency=stock_currency)
+        else:
+            print_buffett_valuation(buffett_result,
+                                    forex_rate=forex_rate, stock_currency=stock_currency)
 
         gap_analysis_result = None
 
@@ -775,8 +781,10 @@ def main(args):
             buffett_result = calculate_buffett(
                 summary_df, company_profile, base_year_data['Outstanding Shares'],
                 forex_rate=forex_rate)
-            print_buffett_valuation(buffett_result,
-                                    forex_rate=forex_rate, stock_currency=stock_currency)
+            _show_buffett = input(f'{S.prompt("View Buffett Quick Valuation? (y/N, Enter to skip): ")}').strip().lower()
+            if _show_buffett in ('y', 'yes'):
+                print_buffett_valuation(buffett_result,
+                                        forex_rate=forex_rate, stock_currency=stock_currency)
         break
 
 
