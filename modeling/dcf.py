@@ -496,12 +496,13 @@ def calculate_buffett(summary_df, company_profile, outstanding_shares, forex_rat
     """Buffett-style Owner Earnings valuation.
 
     Owner Earnings = Net Income + D&A - Maintenance CapEx - ΔWorking Capital
-    Approximation: Maintenance CapEx ≈ D&A (conservative assumption)
-    → Owner Earnings ≈ Net Income - ΔWorking Capital
+    Approximation: Maintenance CapEx ≈ D&A → Owner Earnings ≈ Net Income - ΔWC
 
-    Discount rate: max(10%, risk-free rate + 5%)
-    Growth: ROE × (1 - Payout Ratio), capped at risk-free + 3%
-    Terminal growth: risk-free rate (GDP-like)
+    For A-shares: uses 扣非归母净利润 (Deducted NI) if available.
+    Growth = avg_ROE × (1 - recent_payout), capped at [0%, rf+8%].
+    ΔWC uses historical average across available years.
+    Terminal growth = 3%.
+    Discount rate = max(10%, rf + 5%).
     """
     import numpy as np
 
@@ -510,29 +511,48 @@ def calculate_buffett(summary_df, company_profile, outstanding_shares, forex_rat
     mapped = country_map.get(country, country)
     rf = get_risk_free_rate(mapped)
 
-    # ── Extract base year data (first column = most recent) ──
+    n_cols = len(summary_df.columns)
+
+    # ── Helper: extract value from summary_df ──
     def _val(row_name, col=0):
         if row_name in summary_df.index:
             v = pd.to_numeric(summary_df.loc[row_name].iloc[col], errors='coerce')
             return float(v) if pd.notnull(v) else 0.0
         return 0.0
 
-    net_income = _val('Net Income')       # in millions
-    da = _val('(-) D&A')                  # in millions
-    capex = _val('(+) Capital Expenditure')  # in millions
-    wc = _val('(+) ΔWorking Capital')     # in millions
+    def _vals(row_name):
+        """Get all non-NaN values for a row across years."""
+        if row_name not in summary_df.index:
+            return []
+        result = []
+        for i in range(n_cols):
+            v = pd.to_numeric(summary_df.loc[row_name].iloc[i], errors='coerce')
+            if pd.notnull(v):
+                result.append(float(v))
+        return result
+
+    # ── Net Income: use Deducted NI for A-shares if available ──
+    deducted_ni = _val('_Deducted NI')
+    regular_ni = _val('Net Income')
+    is_a_share = country in ('CN', 'China')
+    if is_a_share and deducted_ni != 0:
+        net_income = deducted_ni
+        ni_label = '扣非归母净利润'
+    else:
+        net_income = regular_ni
+        ni_label = '归母净利润'
+
+    # ── Base year data ──
+    da = _val('(-) D&A')
+    wc = _val('(+) ΔWorking Capital')
     cash = _val('(-) Cash & Equivalents')
     total_investments = _val('(-) Total Investments')
     total_debt = _val('(+) Total Debt')
     minority = _val('Minority Interest')
-    roe = _val('ROE (%)')
-    payout = _val('Payout Ratio (%)')
     reported_currency = summary_df.loc['Reported Currency'].iloc[0] if 'Reported Currency' in summary_df.index else 'USD'
 
-    # ── Owner Earnings ──
-    # Maintenance CapEx ≈ D&A (what's needed just to maintain current capacity)
-    # Growth CapEx = Total CapEx - D&A (discretionary spending for growth)
-    maintenance_capex = da  # conservative: assume D&A approximates maintenance capex
+    # ── Owner Earnings (base year) ──
+    maintenance_capex = da
     owner_earnings = net_income + da - maintenance_capex - wc  # = net_income - wc
 
     if owner_earnings <= 0:
@@ -542,40 +562,52 @@ def calculate_buffett(summary_df, company_profile, outstanding_shares, forex_rat
             'owner_earnings': owner_earnings,
         }
 
+    # ── Historical average ROE ──
+    roe_vals = _vals('ROE (%)')
+    roe_vals_positive = [r for r in roe_vals if r > 0]
+    avg_roe = np.mean(roe_vals_positive) if roe_vals_positive else 0
+    base_roe = _val('ROE (%)')
+
+    # ── Historical average ΔWC ──
+    wc_vals = _vals('(+) ΔWorking Capital')
+    avg_wc = np.mean(wc_vals) if wc_vals else wc
+
+    # ── Recent Payout Ratio (most recent available, look back up to 1 year) ──
+    payout = 0
+    payout_year_offset = None
+    if 'Payout Ratio (%)' in summary_df.index:
+        for i in range(min(2, n_cols)):  # check col 0 (most recent) then col 1
+            v = pd.to_numeric(summary_df.loc['Payout Ratio (%)'].iloc[i], errors='coerce')
+            if pd.notnull(v) and v > 0:
+                payout = float(v)
+                payout_year_offset = i
+                break
+
     # ── Discount rate: Buffett's hurdle rate ──
     discount_rate = max(0.10, rf + 0.05)
 
-    # ── Growth rate ──
-    # Sustainable growth = ROE × Retention Ratio
-    retention = 1 - (payout / 100) if payout > 0 else 0.7  # default 70% retention
-    if roe > 0:
-        sustainable_growth = (roe / 100) * retention
+    # ── Growth rate: avg_ROE × (1 - payout) ──
+    retention = 1 - (payout / 100) if payout > 0 else 0.7
+    if avg_roe > 0:
+        sustainable_growth = (avg_roe / 100) * retention
     else:
-        sustainable_growth = rf  # fallback
+        sustainable_growth = rf
 
-    # Historical growth for sanity check
-    rev_growth_vals = []
-    if 'Revenue Growth (%)' in summary_df.index:
-        for i in range(min(3, len(summary_df.columns))):
-            v = pd.to_numeric(summary_df.loc['Revenue Growth (%)'].iloc[i], errors='coerce')
-            if pd.notnull(v):
-                rev_growth_vals.append(v / 100)
-    hist_growth = np.mean(rev_growth_vals) if rev_growth_vals else rf
+    growth_phase1 = min(sustainable_growth, rf + 0.08)
+    growth_phase1 = max(growth_phase1, 0)
 
-    # Use the more conservative of sustainable growth and historical growth
-    growth_phase1 = min(sustainable_growth, max(hist_growth, rf))
-    # Cap growth phase 1 at rf + 8% (no wildly optimistic assumptions)
-    growth_phase1 = min(growth_phase1, rf + 0.08)
-    growth_phase1 = max(growth_phase1, 0)  # no negative growth in phase 1
+    terminal_growth = 0.03  # 3% perpetual growth
 
-    terminal_growth = rf  # GDP-like perpetual growth
+    # ── Owner Earnings using historical avg ΔWC ──
+    owner_earnings_avg = net_income - avg_wc
 
-    # ── 10-year DCF with two phases ──
-    # Phase 1 (years 1-5): growth_phase1
-    # Phase 2 (years 6-10): linear fade to terminal_growth
-    # Terminal: perpetuity at terminal_growth
+    if owner_earnings_avg <= 0:
+        # Fall back to base year OE if avg-based is negative
+        owner_earnings_avg = owner_earnings
+
+    # ── 10-year DCF ──
     pv_total = 0
-    oe = owner_earnings
+    oe = owner_earnings_avg
     projection_table = []
 
     for yr in range(1, 11):
@@ -608,16 +640,20 @@ def calculate_buffett(summary_df, company_profile, outstanding_shares, forex_rat
 
     return {
         'available': True,
-        'owner_earnings': owner_earnings,
+        'owner_earnings': owner_earnings_avg,
         'net_income': net_income,
+        'ni_label': ni_label,
         'da': da,
         'maintenance_capex': maintenance_capex,
+        'avg_wc': avg_wc,
         'wc_change': wc,
         'discount_rate': discount_rate,
         'growth_phase1': growth_phase1,
         'terminal_growth': terminal_growth,
         'sustainable_growth': sustainable_growth,
-        'hist_avg_growth': hist_growth,
+        'avg_roe': avg_roe,
+        'base_roe': base_roe,
+        'roe_years': len(roe_vals_positive),
         'pv_cash_flows': pv_total,
         'pv_terminal': pv_terminal,
         'total_value': total_value,
@@ -627,8 +663,8 @@ def calculate_buffett(summary_df, company_profile, outstanding_shares, forex_rat
         'outstanding_shares': outstanding_shares,
         'reported_currency': reported_currency,
         'projection': projection_table,
-        'roe': roe,
         'payout': payout,
+        'payout_year_offset': payout_year_offset,
     }
 
 
@@ -645,11 +681,12 @@ def print_buffett_valuation(result, forex_rate=None, stock_currency=None):
     print(f"\n{S.header('Buffett Owner Earnings Valuation')}")
 
     # Owner Earnings breakdown
+    ni_label = result.get('ni_label', '归母净利润')
     print(f"\n  {S.label('Owner Earnings Breakdown')} ({reported_currency}, millions):")
-    print(f"    Net Income (归母)         : {result['net_income']:>12,.0f}")
+    print(f"    Net Income ({ni_label}): {result['net_income']:>12,.0f}")
     print(f"    (+) D&A                   : {result['da']:>12,.0f}")
     print(f"    (-) Maintenance CapEx ≈D&A: {result['maintenance_capex']:>12,.0f}")
-    print(f"    (-) ΔWorking Capital      : {result['wc_change']:>12,.0f}")
+    print(f"    (-) ΔWC (historical avg)  : {result['avg_wc']:>12,.0f}")
     print(f"    {S.BOLD}= Owner Earnings          : {result['owner_earnings']:>12,.0f}{S.RESET}")
 
     # Key assumptions
@@ -657,10 +694,13 @@ def print_buffett_valuation(result, forex_rate=None, stock_currency=None):
     print(f"    Discount Rate (hurdle)    : {result['discount_rate']*100:.1f}%")
     print(f"    Growth Phase 1 (yr 1-5)   : {result['growth_phase1']*100:.1f}%")
     print(f"    Terminal Growth           : {result['terminal_growth']*100:.1f}%")
-    if result['roe'] > 0:
-        print(f"    {S.DIM}ROE: {result['roe']:.1f}% × Retention: {(100 - result['payout']):.0f}% → Sustainable: {result['sustainable_growth']*100:.1f}%{S.RESET}")
-    if result['hist_avg_growth'] != 0:
-        print(f"    {S.DIM}Historical avg revenue growth (3yr): {result['hist_avg_growth']*100:.1f}%{S.RESET}")
+    avg_roe = result.get('avg_roe', 0)
+    if avg_roe > 0:
+        roe_note = f"avg {result['roe_years']}yr" if result.get('roe_years', 0) > 1 else ""
+        print(f"    {S.DIM}ROE ({roe_note}): {avg_roe:.1f}% × Retention: {(100 - result['payout']):.0f}% → Sustainable: {result['sustainable_growth']*100:.1f}%{S.RESET}")
+    payout_offset = result.get('payout_year_offset')
+    if payout_offset is not None and payout_offset > 0:
+        print(f"    {S.DIM}Payout Ratio: {result['payout']:.1f}% (from prior year, current unavailable){S.RESET}")
 
     # Valuation
     print(f"\n  {S.label('Valuation')} ({reported_currency}, millions):")

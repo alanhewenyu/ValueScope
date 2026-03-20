@@ -131,13 +131,15 @@ export interface DCFResult {
     reason?: string;
     owner_earnings?: number;
     net_income?: number;
+    ni_label?: string;
+    avg_wc?: number;
     discount_rate?: number;
     growth_phase1?: number;
     terminal_growth?: number;
     intrinsic_per_share?: number;
     margin_of_safety_price?: number;
     reported_currency?: string;
-    roe?: number;
+    avg_roe?: number;
     payout?: number;
   } | null;
 }

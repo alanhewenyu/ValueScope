@@ -1392,7 +1392,7 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
                         </h4>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs mb-3">
                           <div>
-                            <div className="text-gray-500 dark:text-gray-400 mb-0.5">{t.fin_netIncome}</div>
+                            <div className="text-gray-500 dark:text-gray-400 mb-0.5">{b.ni_label ? `NI (${b.ni_label})` : t.fin_netIncome}</div>
                             <div className="font-mono font-medium">{b.net_income?.toLocaleString(undefined, {maximumFractionDigits: 0})}M</div>
                           </div>
                           <div>
