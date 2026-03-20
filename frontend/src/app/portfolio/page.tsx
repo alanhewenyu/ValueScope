@@ -1464,7 +1464,7 @@ function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; on
               {zh ? "设置现金余额" : "Set Cash Balances"}
             </h3>
             <p className="text-xs text-gray-500 leading-relaxed mb-2">
-              {zh ? "录入各账户的现金余额和杠杆。导入持仓后系统会自动创建对应的现金账户（余额为 0），你只需更新金额。" : "Enter cash balances and leverage for each account. After importing positions, cash accounts are auto-created (balance 0) — just update the amounts."}
+              {zh ? "录入各账户的现金余额和杠杆。完成第 2 步导入持仓后，系统会自动创建对应的现金账户（余额为 0），你只需更新金额。" : "Enter cash balances and leverage for each account. After completing Step 2 (import positions), cash accounts are auto-created (balance 0) — just update the amounts."}
             </p>
             <button onClick={onOpenPanel}
               className="text-xs text-blue-600 hover:text-blue-800 font-medium">
