@@ -1518,7 +1518,7 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                     ttm_ebit = ttm_income['operatingIncome'] / 1_000_000
                     ttm_tax_rate = (ttm_income['incomeTaxExpense'] / ttm_income['incomeBeforeTax'] * 100
                                     ) if ttm_income['incomeBeforeTax'] != 0 else summary_data[0]['Tax Rate (%)']
-                    _ttm_net_income_m = (ttm_income['incomeBeforeTax'] - ttm_income['incomeTaxExpense']) / 1_000_000
+                    _ttm_net_income_m = (ttm_income.get('netIncome') or (ttm_income['incomeBeforeTax'] - ttm_income['incomeTaxExpense'])) / 1_000_000
 
                     # Growth: TTM vs prior-year TTM (not vs FY)
                     prior_ttm_rev = ttm_income.get('_prior_ttm_revenue')
@@ -1624,7 +1624,7 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                         ttm_pbt = ttm_income['incomeBeforeTax']
                         ttm_tax_exp = ttm_income['incomeTaxExpense']
                         ttm_tax_rate = (ttm_tax_exp / ttm_pbt * 100) if ttm_pbt != 0 else summary_data[0]['Tax Rate (%)']
-                        _ttm_net_income_m = (ttm_pbt - ttm_tax_exp) / 1_000_000
+                        _ttm_net_income_m = (ttm_income.get('netIncome') or (ttm_pbt - ttm_tax_exp)) / 1_000_000
 
                         prev_revenue = summary_data[0]['Revenue']
                         prev_ebit = summary_data[0]['EBIT']
@@ -1701,7 +1701,7 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                             ttm_pbt = yf_ttm['incomeBeforeTax']
                             ttm_tax_exp = yf_ttm['incomeTaxExpense']
                             ttm_tax_rate = (ttm_tax_exp / ttm_pbt * 100) if ttm_pbt != 0 else summary_data[0]['Tax Rate (%)']
-                            _ttm_net_income_m = (ttm_pbt - ttm_tax_exp) / 1_000_000
+                            _ttm_net_income_m = (yf_ttm.get('netIncome') or (ttm_pbt - ttm_tax_exp)) / 1_000_000
 
                             prev_revenue = summary_data[0]['Revenue']
                             prev_ebit = summary_data[0]['EBIT']

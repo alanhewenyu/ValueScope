@@ -466,6 +466,12 @@ def _extract_yf_income_row(df, col, currency):
     interest_income = _safe_get(df, 'Interest Income', col) or 0
     pretax_income = _safe_get(df, 'Pretax Income', col) or 0
     tax_provision = _safe_get_fallback(df, ['Tax Provision', 'Income Tax Expense'], col) or 0
+    # Net Income Common Stockholders = 归母净利润 (excludes minority interest)
+    net_income = _safe_get(df, 'Net Income Common Stockholders', col)
+    if net_income is None:
+        net_income = _safe_get(df, 'Net Income', col)
+    if net_income is None:
+        net_income = (pretax_income - tax_provision) if pretax_income else 0
 
     return {
         'calendarYear': year,
@@ -477,13 +483,14 @@ def _extract_yf_income_row(df, col, currency):
         'interestIncome': interest_income,
         'incomeBeforeTax': pretax_income,
         'incomeTaxExpense': tax_provision,
+        'netIncome': net_income,
     }
 
 
 def _compute_h2_income(fy_row, h1_row):
     """Compute H2 = FY - H1 for income statement fields."""
     flow_fields = ['revenue', 'operatingIncome', 'interestExpense', 'interestIncome',
-                   'incomeBeforeTax', 'incomeTaxExpense']
+                   'incomeBeforeTax', 'incomeTaxExpense', 'netIncome']
     h2 = {
         'calendarYear': fy_row['calendarYear'],
         'date': fy_row['date'],
@@ -1117,6 +1124,11 @@ def fetch_yfinance_hk_ttm(ticker):
     tax = _safe_get_fallback(ttm_inc, ['Tax Provision', 'Income Tax Expense'], col) or 0
     interest_exp = _val(ttm_inc, 'Interest Expense') or 0
     interest_inc = _val(ttm_inc, 'Interest Income') or 0
+    net_income = _val(ttm_inc, 'Net Income Common Stockholders')
+    if net_income is None:
+        net_income = _val(ttm_inc, 'Net Income')
+    if net_income is None:
+        net_income = pbt - tax
 
     result = {
         'has_ttm_income': True,
@@ -1129,6 +1141,7 @@ def fetch_yfinance_hk_ttm(ticker):
         'incomeTaxExpense': tax,
         'interestExpense': interest_exp,
         'interestIncome': interest_inc,
+        'netIncome': net_income,
     }
 
     # Cash flow TTM
