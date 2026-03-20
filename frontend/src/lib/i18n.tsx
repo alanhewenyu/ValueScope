@@ -220,7 +220,17 @@ const en = {
   growthRate: "Growth (yr 1-5)",
   buffettIntrinsic: "Intrinsic Value",
   buffettMos: "Margin of Safety (20% discount)",
-  buffettNote: "Buffett method: Owner Earnings = Net Income - ΔWC (hist avg). Growth = avg ROE × (1 - payout), capped at Rf+8%. Discount = max(10%, Rf+5%). Terminal 3%. A-shares use deducted NI (扣非归母).",
+  buffettTitle: "Buffett Quick Valuation",
+  buffettSubtitle: "Automated estimate based on Buffett's Owner Earnings method — no parameters needed",
+  buffettNotes: [
+    "Owner Earnings = Net Income − ΔWorking Capital (historical average)",
+    "Growth rate = avg ROE × (1 − payout ratio), capped at risk-free rate + 8%",
+    "Discount rate = max(10%, risk-free rate + 5%)",
+    "Terminal growth rate: 3%",
+    "Margin of Safety: 20% discount to intrinsic value",
+    "A-shares use deducted non-recurring NI (扣非归母净利润)",
+    "This is a simplified model for quick reference — run DCF for a full analysis",
+  ],
   forecastTableCurrency: (currency: string) => `Projected cash flows from the DCF model (${currency}, in millions)`,
 
   // AI Valuation
@@ -244,6 +254,7 @@ const en = {
   dcfTabForecast: "Forecast",
   dcfTabSensitivity: "Sensitivity",
   dcfTabAI: "AI Analysis",
+  dcfTabBuffett: "Buffett Quick Valuation",
   // Gap Analysis
   gapAnalysis: "DCF vs Market Price — AI Analysis",
   gapAnalysisDesc: "AI will analyze the gap between your DCF estimate and the current market price, considering market sentiment, analyst consensus, and risk factors.",
@@ -577,7 +588,17 @@ const zh: Translations = {
   growthRate: "增长率 (1-5年)",
   buffettIntrinsic: "内在价值",
   buffettMos: "安全边际价 (8折)",
-  buffettNote: "巴菲特方法：股东盈余 = 归母净利润 - ΔWC（历史均值）。增长率 = 平均ROE ×（1 - 派息率），上限 Rf+8%。折现率 = max(10%, Rf+5%)。终端增长 3%。A股使用扣非归母净利润。",
+  buffettTitle: "Buffett Quick Valuation",
+  buffettSubtitle: "基于巴菲特股东盈余法的自动估值 — 无需手动输入参数",
+  buffettNotes: [
+    "股东盈余 = 归母净利润 − ΔWC（历史均值）",
+    "增长率 = 平均 ROE ×（1 − 派息率），上限为无风险利率 + 8%",
+    "折现率 = max(10%, 无风险利率 + 5%)",
+    "终端增长率：3%",
+    "安全边际：内在价值打 8 折",
+    "A 股使用扣非归母净利润",
+    "本模型用于快速参考 — 完整分析请运行 DCF 估值",
+  ],
   forecastTableCurrency: (currency: string) => `DCF 模型预测的现金流（${currency}，百万）`,
 
   aiValuation: "AI 估值",
@@ -599,6 +620,7 @@ const zh: Translations = {
   dcfTabForecast: "现金流预测",
   dcfTabSensitivity: "敏感性分析",
   dcfTabAI: "AI 分析",
+  dcfTabBuffett: "Buffett Quick Valuation",
   gapAnalysis: "DCF 估值 vs 市场价 — AI 分析",
   gapAnalysisDesc: "AI 将分析 DCF 估值与当前市价之间的差异，综合考虑市场情绪、分析师共识及风险因素。",
   gapAnalysisWait: "预计需要 1-3 分钟",
