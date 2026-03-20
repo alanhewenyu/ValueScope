@@ -714,7 +714,7 @@ def main(args):
                     _export_excel(False, use_ai, company_name, base_year_data, financial_data,
                                   valuation_params, company_profile, total_equity_risk_premium,
                                   gap_analysis_result, ai_result, wacc_results, wacc_base)
-                continue
+                break
             elif choice == 'g':
                 gap_analysis_result = _run_gap_analysis(
                     False, ticker, company_profile, results, valuation_params,
