@@ -49,6 +49,7 @@ def _get_db():
     db_path = os.environ.get('VS_DB_PATH',
         os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                      'data', 'valuations.db'))
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
@@ -82,11 +83,21 @@ def _init_users_table():
 
 
 # Initialize on import (only if auth deps available)
+_users_table_ready = False
 if _AUTH_AVAILABLE:
     try:
         _init_users_table()
+        _users_table_ready = True
     except Exception as e:
         logger.warning(f"Failed to init users table: {e}")
+
+
+def _ensure_users_table():
+    """Lazily init users table if it wasn't created at import time."""
+    global _users_table_ready
+    if not _users_table_ready:
+        _init_users_table()
+        _users_table_ready = True
 
 
 def _check_auth_deps():
@@ -186,6 +197,7 @@ class AuthResponse(BaseModel):
 def register(req: RegisterRequest):
     """Register a new account with email and password."""
     _check_auth_deps()
+    _ensure_users_table()
     email = req.email.strip().lower()
     password = req.password
 
@@ -221,6 +233,7 @@ def register(req: RegisterRequest):
 def login(req: LoginRequest):
     """Login with email and password."""
     _check_auth_deps()
+    _ensure_users_table()
     email = req.email.strip().lower()
 
     conn = _get_db()
