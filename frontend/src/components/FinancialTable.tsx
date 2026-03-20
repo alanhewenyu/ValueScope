@@ -29,6 +29,7 @@ const FIN_LABEL_MAP: Record<string, string> = {
   "Revenue Growth (%)": "fin_revGrowth",
   "EBIT Growth (%)": "fin_ebitGrowth",
   "EBIT Margin (%)": "fin_ebitMargin",
+  "Incremental Margin (%)": "fin_incrementalMargin",
   "Tax Rate (%)": "fin_taxRate",
   "(+) Capital Expenditure": "fin_capex",
   "(-) D&A": "fin_da",

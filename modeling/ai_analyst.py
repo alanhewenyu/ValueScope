@@ -902,25 +902,6 @@ def interactive_review(ai_result, calculated_wacc, calculated_tax_rate, company_
             print(f"\n  {S.ai_label('AI 分析:')}")
             _format_ai_text(reasoning)
 
-        # For ebit_margin: show current margin and incremental margin reference
-        if key == "ebit_margin" and summary_df is not None:
-            try:
-                import pandas as _pd
-                _cur_margin = float(_pd.to_numeric(summary_df.loc['EBIT Margin (%)'], errors='coerce').iloc[0])
-                print(f"\n  {S.muted(f'当前 EBIT Margin: {_cur_margin:.1f}%')}")
-                if 'Incremental Margin (%)' in summary_df.index:
-                    _im = _pd.to_numeric(summary_df.loc['Incremental Margin (%)'], errors='coerce').dropna()
-                    # Use recent 3 years (exclude NaN)
-                    _im_valid = [v for v in _im.iloc[:-1] if _pd.notnull(v)]
-                    _im_recent = _im_valid[:3]
-                    if _im_recent:
-                        _im_avg = sum(_im_recent) / len(_im_recent)
-                        _im_latest = _im_recent[0]
-                        _trend = "↑ margin扩张" if _im_avg > _cur_margin else ("→ margin稳定" if abs(_im_avg - _cur_margin) < 3 else "↓ margin收缩")
-                        print(f"  {S.muted(f'Incremental Margin: 最新 {_im_latest:.1f}% | 平均 {_im_avg:.1f}% ({_trend})')}")
-            except Exception:
-                pass
-
         # For WACC: show the model calculation details
         if key == "wacc" and wacc_details:
             from .dcf import print_wacc_details

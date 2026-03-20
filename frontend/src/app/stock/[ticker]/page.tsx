@@ -857,7 +857,6 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
                 historyHint={
                   <>
                     <HistoryHint metric={hist?.ebit_margin ?? null} t={t} periodLabel={periodLabel} />
-                    <HistoryHint metric={hist?.incremental_margin ?? null} t={t} periodLabel={periodLabel} label="Incremental Margin" />
                   </>
                 }
               />

@@ -441,6 +441,8 @@ def main(args):
         print(f"\n{S.header(f'{company_name} Historical Financial Data (Summary, in millions)')}")
         formatted_summary_df = format_summary_df(summary_df)
         print(formatted_summary_df.to_string())
+        if 'Incremental Margin (%)' in summary_df.index:
+            print(S.muted("  ⓘ Incremental Margin (%) = ΔEBIT / ΔRevenue × 100 — 衡量经营杠杆。> 当前 EBIT Margin 说明 margin 扩张，< 则收缩。收入变动 < 3% 时显示 N/A。"))
         print()
 
         ttm_note = financial_data.get('ttm_note', '')

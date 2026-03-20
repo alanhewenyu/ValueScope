@@ -344,7 +344,13 @@ def get_financials(
                 if val and val != "N/A":
                     formatted.at[row_name, col0] = val + " *"
 
-    # Build response
+    # Replace NaN/Inf with None for JSON serialization
+    import math
+    def _clean_val(v):
+        if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+            return None
+        return v
+    _summary_data = [[_clean_val(v) for v in row] for row in summary_df.values.tolist()]
     result = {
         "ticker": normalized,
         "company_name": profile.get("companyName", ""),
@@ -352,7 +358,7 @@ def get_financials(
         "summary": {
             "columns": list(summary_df.columns),
             "index": list(summary_df.index),
-            "data": summary_df.values.tolist(),
+            "data": _summary_data,
         },
         "formatted_summary": {
             "columns": list(formatted.columns),

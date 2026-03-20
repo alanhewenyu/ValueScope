@@ -817,6 +817,11 @@ export default function OverviewTab({
               {financials.ttm_note}
             </p>
           )}
+          {financials.formatted_summary.index.includes("Incremental Margin (%)") && (
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
+              ⓘ {t.fin_incrementalMarginNote}
+            </p>
+          )}
         </div>
       )}
 
