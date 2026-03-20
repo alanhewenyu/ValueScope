@@ -897,6 +897,11 @@ export default function OverviewTab({
               ⓘ {t.fin_incrementalMarginNote}
             </p>
           )}
+          {financials.formatted_summary.index.includes("Net Income") && (
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
+              ⓘ {t.fin_netIncomeNote}
+            </p>
+          )}
         </div>
       )}
 

@@ -443,6 +443,11 @@ def main(args):
         print(formatted_summary_df.to_string())
         if 'Incremental Margin (%)' in summary_df.index:
             print(S.muted("  ⓘ Incremental Margin (%) = ΔEBIT / ΔRevenue × 100 — 衡量经营杠杆。> 当前 EBIT Margin 说明 margin 扩张，< 则收缩。收入变动 < 3% 时显示 N/A。"))
+        if 'Net Income' in summary_df.index:
+            if is_a_share(ticker):
+                print(S.muted("  ⓘ Net Income = 归母净利润。Buffett 估值使用扣非归母净利润（扣除非经常性损益）"))
+            else:
+                print(S.muted("  ⓘ Net Income = 归母净利润（归属于母公司股东的净利润）"))
         print()
 
         ttm_note = financial_data.get('ttm_note', '')
