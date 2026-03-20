@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import { useSettings } from "@/lib/settings";
 import { useI18n } from "@/lib/i18n";
 import { formatNumber } from "@/lib/format";
 import {
@@ -116,12 +117,11 @@ function KpiCard({ label, value, sub, subColor }: {
 function FxBanner({ fx }: { fx: Record<string, number> }) {
   const pairs: [string, string, number][] = [["USD/CNY", "USD", 4], ["HKD/CNY", "HKD", 4], ["JPY/CNY", "JPY", 5]];
   return (
-    <div className="flex gap-6 text-xs font-mono text-gray-500 dark:text-gray-400 mb-3">
+    <span className="flex gap-4 text-[11px] font-mono text-gray-400 dark:text-gray-500">
       {pairs.map(([label, cur, dec]) => (
-        <span key={cur}>{label}: <span className="font-semibold text-gray-700 dark:text-gray-300">{fx[cur] ? fx[cur].toFixed(dec as number) : "—"}</span></span>
+        <span key={cur}>{label} <span className="text-gray-600 dark:text-gray-400">{fx[cur] ? fx[cur].toFixed(dec as number) : "—"}</span></span>
       ))}
-      <span className="opacity-40 text-[11px]">via Yahoo Finance</span>
-    </div>
+    </span>
   );
 }
 
@@ -426,31 +426,40 @@ function HoldingsTable({ holdings, summary, locale, onEdit, compact, onShowAll }
                 </tr>
               ))}
             </tbody>
-            {filtered.length > 0 && !compact && (
-              <tfoot className="sticky bottom-0 bg-white dark:bg-gray-900 z-10">
-                <tr className="border-t-2 border-gray-300 dark:border-gray-700 font-semibold text-xs">
-                  <td className="px-2 py-2 sticky left-0 bg-white dark:bg-gray-900 z-20">{locale === "zh" ? "合计" : "Total"} ({filtered.length})</td>
-                  <td /><td /><td /><td />
-                  {hasIndustry && <td />}
-                  <td /><td /><td /><td />
-                  <td className="text-right px-2 py-2">{formatNumber(summary.equity_cny)}</td>
-                  <td className="text-right px-2 py-2">100%</td>
-                  {showDaily && <>
-                    <td className={`text-right px-2 py-2 ${pnlColor(summary.daily_pnl_cny)}`}>{pnlSign(summary.daily_pnl_cny)}</td>
-                    <td />
-                  </>}
-                  {showYtd && <>
-                    <td className={`text-right px-2 py-2 ${pnlColor(summary.ytd_pnl_cny)}`}>{pnlSign(summary.ytd_pnl_cny)}</td>
-                    <td />
-                  </>}
-                  {showTotal && <>
-                    <td className={`text-right px-2 py-2 ${pnlColor(summary.total_pnl_cny)}`}>{pnlSign(summary.total_pnl_cny)}</td>
-                    <td className={`text-right px-2 py-2 ${pnlColor(summary.total_pnl_pct)}`}>{pctStr(summary.total_pnl_pct)}</td>
-                  </>}
-                  {showDcf && <><td /><td /></>}
-                </tr>
-              </tfoot>
-            )}
+            {filtered.length > 0 && !compact && (() => {
+              const fMvCny = filtered.reduce((s, h) => s + h.market_value_cny, 0);
+              const fCostCny = filtered.reduce((s, h) => s + (h.market_value_cny - (h.pnl_cny ?? 0)), 0);
+              const fDailyPnl = filtered.reduce((s, h) => s + (h.daily_pnl_cny ?? 0), 0);
+              const fYtdPnl = filtered.reduce((s, h) => s + (h.ytd_pnl_cny ?? 0), 0);
+              const fTotalPnl = filtered.reduce((s, h) => s + (h.pnl_cny ?? 0), 0);
+              const fTotalPct = fCostCny !== 0 ? (fTotalPnl / fCostCny) * 100 : 0;
+              const fWt = filtered.reduce((s, h) => s + h.weight, 0);
+              return (
+                <tfoot className="sticky bottom-0 bg-white dark:bg-gray-900 z-10">
+                  <tr className="border-t-2 border-gray-300 dark:border-gray-700 font-semibold text-xs">
+                    <td className="px-2 py-2 sticky left-0 bg-white dark:bg-gray-900 z-20">{locale === "zh" ? "合计" : "Total"} ({filtered.length})</td>
+                    <td /><td /><td /><td />
+                    {hasIndustry && <td />}
+                    <td /><td /><td /><td />
+                    <td className="text-right px-2 py-2">{formatNumber(fMvCny)}</td>
+                    <td className="text-right px-2 py-2">{fWt.toFixed(1)}%</td>
+                    {showDaily && <>
+                      <td className={`text-right px-2 py-2 ${pnlColor(fDailyPnl)}`}>{pnlSign(fDailyPnl)}</td>
+                      <td />
+                    </>}
+                    {showYtd && <>
+                      <td className={`text-right px-2 py-2 ${pnlColor(fYtdPnl)}`}>{pnlSign(fYtdPnl)}</td>
+                      <td />
+                    </>}
+                    {showTotal && <>
+                      <td className={`text-right px-2 py-2 ${pnlColor(fTotalPnl)}`}>{pnlSign(fTotalPnl)}</td>
+                      <td className={`text-right px-2 py-2 ${pnlColor(fTotalPct)}`}>{pctStr(fTotalPct)}</td>
+                    </>}
+                    {showDcf && <><td /><td /></>}
+                  </tr>
+                </tfoot>
+              );
+            })()}
           </table>
         </div>
         {compact && filtered.length > 10 && onShowAll && (
@@ -2177,28 +2186,233 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
 }
 
 // ══════════════════════════════════════════
+// Earnings Calendar (month grid)
+// ══════════════════════════════════════════
+
+/** Extract short display name: "Xiaomi Corporation" → "Xiaomi", "安踏体育用品有限公司" → "安踏体育" */
+function shortName(name: string, ticker: string): string {
+  if (!name || name === ticker) return ticker;
+  // Chinese names: keep first 2-4 chars (before 集团/公司/有限/控股/股份 etc.)
+  const zhCut = name.match(/^([\u4e00-\u9fff]{2,4})/);
+  if (zhCut) return zhCut[1];
+  // English: take first word (skip generic prefixes), limit length
+  const word = name.replace(/^(The|the)\s+/, "").split(/[\s,.(]+/)[0];
+  return word.length > 10 ? word.slice(0, 9) : word;
+}
+
+function EarningsCalendar({ earnings, zh }: { earnings: PortfolioEarningsEvent[]; zh: boolean }) {
+  const eventsByDate = useMemo(() => {
+    const map: Record<string, PortfolioEarningsEvent[]> = {};
+    for (const e of earnings) {
+      const d = e.date?.slice(0, 10);
+      if (!d) continue;
+      if (!map[d]) map[d] = [];
+      map[d].push(e);
+    }
+    return map;
+  }, [earnings]);
+
+  const months = useMemo(() => {
+    const dates = earnings.map((e) => e.date?.slice(0, 7)).filter(Boolean);
+    const unique = [...new Set(dates)].sort();
+    if (unique.length === 0) {
+      const now = new Date();
+      return [`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`];
+    }
+    return unique;
+  }, [earnings]);
+
+  const [activeMonth, setActiveMonth] = useState(() => {
+    const upcomingMonth = earnings.find((e) => e.status === "upcoming")?.date?.slice(0, 7);
+    return upcomingMonth && months.includes(upcomingMonth) ? upcomingMonth : months[0];
+  });
+
+  const monthIdx = months.indexOf(activeMonth);
+  const canPrev = monthIdx > 0;
+  const canNext = monthIdx < months.length - 1;
+
+  const calendarDays = useMemo(() => {
+    const [y, m] = activeMonth.split("-").map(Number);
+    const firstDay = new Date(y, m - 1, 1);
+    const startDow = (firstDay.getDay() + 6) % 7; // Monday=0
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const cells: { day: number; dateStr: string; events: PortfolioEarningsEvent[] }[] = [];
+    for (let i = 0; i < startDow; i++) cells.push({ day: 0, dateStr: "", events: [] });
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${activeMonth}-${String(d).padStart(2, "0")}`;
+      cells.push({ day: d, dateStr, events: eventsByDate[dateStr] || [] });
+    }
+    // Pad to fill last row
+    while (cells.length % 7 !== 0) cells.push({ day: 0, dateStr: "", events: [] });
+    return cells;
+  }, [activeMonth, eventsByDate]);
+
+  const today = new Date().toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" }).slice(0, 10);
+  const dayHeaders = zh
+    ? ["一", "二", "三", "四", "五", "六", "日"]
+    : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  const formatMonth = (ym: string) => {
+    const [y, m] = ym.split("-").map(Number);
+    if (zh) return `${y}年${m}月`;
+    const names = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    return `${names[m - 1]} ${y}`;
+  };
+
+  // Color palette for earnings tags — cycle through
+  const tagColors = [
+    "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300",
+    "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300",
+    "bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300",
+    "bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300",
+    "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300",
+    "bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700 dark:text-cyan-300",
+  ];
+  // Assign stable colors by ticker
+  const tickerColorMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    const tickers = [...new Set(earnings.map((e) => e.ticker))];
+    tickers.forEach((t, i) => { map[t] = tagColors[i % tagColors.length]; });
+    return map;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [earnings]);
+
+  const daysUntil = (dateStr: string) => {
+    const diff = new Date(dateStr).getTime() - Date.now();
+    const days = Math.ceil(diff / 86400000);
+    if (days < 0) return "";
+    if (days === 0) return zh ? "今天" : "Today";
+    return zh ? `${days}天后` : `in ${days}d`;
+  };
+
+  return (
+    <div>
+      {/* Month navigation */}
+      <div className="flex items-center justify-center gap-6 mb-4">
+        <button onClick={() => canPrev && setActiveMonth(months[monthIdx - 1])}
+          disabled={!canPrev}
+          className="w-7 h-7 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-20 disabled:hover:bg-transparent transition-colors">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <span className="text-[15px] font-semibold text-gray-800 dark:text-gray-200 min-w-[150px] text-center">
+          {formatMonth(activeMonth)}
+        </span>
+        <button onClick={() => canNext && setActiveMonth(months[monthIdx + 1])}
+          disabled={!canNext}
+          className="w-7 h-7 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-20 disabled:hover:bg-transparent transition-colors">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 6 15 12 9 18"/></svg>
+        </button>
+      </div>
+
+      {/* Day headers */}
+      <div className="grid grid-cols-7 bg-gray-100 dark:bg-gray-800 rounded-t-lg">
+        {dayHeaders.map((d, i) => (
+          <div key={d} className={`text-center text-xs font-semibold py-2 ${
+            i >= 5 ? "text-gray-400 dark:text-gray-500" : "text-gray-600 dark:text-gray-300"
+          }`}>{d}</div>
+        ))}
+      </div>
+
+      {/* Calendar grid */}
+      <div className="grid grid-cols-7 rounded-b-lg border border-gray-100 dark:border-gray-800 border-t-0 divide-x divide-gray-100 dark:divide-gray-800">
+        {calendarDays.map((cell, i) => {
+          const isToday = cell.dateStr === today;
+          const isWeekend = i % 7 >= 5;
+          const isFirstRow = i < 7;
+          return (
+            <div key={i} className={`min-h-[72px] p-1.5 ${
+              !isFirstRow ? "border-t border-gray-100 dark:border-gray-800" : ""
+            } ${
+              cell.day === 0
+                ? ""
+                : isToday
+                  ? "bg-blue-50/60 dark:bg-blue-950/20"
+                  : ""
+            }`}>
+              {cell.day > 0 && (
+                <>
+                  {isToday ? (
+                    <span className="inline-flex w-5.5 h-5.5 rounded-full bg-blue-600 text-white text-[11px] font-bold items-center justify-center mb-1">
+                      {cell.day}
+                    </span>
+                  ) : (
+                    <span className={`block text-xs mb-1 ${isWeekend ? "text-gray-300 dark:text-gray-600" : "text-gray-400 dark:text-gray-500"}`}>
+                      {cell.day}
+                    </span>
+                  )}
+                  <div className="space-y-0.5">
+                    {cell.events.map((ev, j) => (
+                      <div key={j}
+                        className={`text-[11px] leading-snug px-1.5 py-[3px] rounded-md truncate font-medium cursor-default ${
+                          ev.status === "upcoming"
+                            ? tickerColorMap[ev.ticker]
+                            : "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 line-through"
+                        }`}
+                        title={`${ev.ticker} — ${ev.name}${ev.eps_actual != null ? ` | EPS: ${ev.eps_actual}` : ev.eps_estimated != null ? ` | Est: ${ev.eps_estimated}` : ""}`}>
+                        {shortName(ev.name, ev.ticker)}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Upcoming detail list */}
+      {earnings.some((e) => e.status === "upcoming") && (
+        <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-800">
+          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">{zh ? "即将发布" : "Upcoming Earnings"}</p>
+          <div className="space-y-1.5">
+            {earnings.filter((e) => e.status === "upcoming").map((e, i) => (
+              <div key={i} className="flex items-center gap-3 text-[13px]">
+                <span className="text-gray-400 w-14 shrink-0">{e.date?.slice(5, 10)}</span>
+                <span className={`px-1.5 py-0.5 rounded text-[11px] font-medium shrink-0 ${tickerColorMap[e.ticker]}`}>
+                  {e.ticker}
+                </span>
+                <span className="font-medium text-gray-700 dark:text-gray-300 truncate flex-1">{e.name}</span>
+                {e.eps_estimated != null && (
+                  <span className="text-[11px] text-gray-400 shrink-0">Est EPS: {e.eps_estimated}</span>
+                )}
+                <span className="text-[11px] text-amber-500 shrink-0">{daysUntil(e.date)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ══════════════════════════════════════════
 // Events Tab
 // ══════════════════════════════════════════
 
-function EventsSection({ locale }: { locale: string }) {
+function EventsSection({ locale, fmpApiKey }: { locale: string; fmpApiKey: string }) {
   const zh = locale === "zh";
   const [news, setNews] = useState<PortfolioNewsItem[]>([]);
   const [earnings, setEarnings] = useState<PortfolioEarningsEvent[]>([]);
   const [ratings, setRatings] = useState<PortfolioRatingChange[]>([]);
   const [loading, setLoading] = useState(true);
   const [tickerFilter, setTickerFilter] = useState("");
+  const [subTab, setSubTab] = useState<"news" | "earnings" | "ratings">("news");
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([getPortfolioNews(), getPortfolioEarnings(), getPortfolioRatings()])
+    Promise.all([getPortfolioNews(fmpApiKey), getPortfolioEarnings(fmpApiKey), getPortfolioRatings(fmpApiKey)])
       .then(([n, e, r]) => { setNews(n); setEarnings(e); setRatings(r); })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [fmpApiKey]);
 
-  const filteredNews = tickerFilter
-    ? news.filter((n) => n.ticker.toLowerCase().includes(tickerFilter.toLowerCase()))
-    : news;
+  const filterMatch = (ticker: string) =>
+    !tickerFilter || ticker.toLowerCase().includes(tickerFilter.toLowerCase());
+
+  const filteredNews = news.filter((n) => filterMatch(n.ticker));
+  const filteredEarnings = earnings.filter((e) => filterMatch(e.ticker));
+  const filteredRatings = ratings.filter((r) => filterMatch(r.ticker));
 
   const dirColor = (d: string) =>
     d === "upgrade" ? "text-green-600 dark:text-green-400"
@@ -2223,121 +2437,124 @@ function EventsSection({ locale }: { locale: string }) {
     return zh ? `${days} 天后` : `in ${days}d`;
   };
 
-  if (loading) {
-    return (
-      <div className="space-y-4">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 animate-pulse">
-            <div className="h-5 w-40 bg-gray-200 dark:bg-gray-700 rounded mb-4" />
-            <div className="space-y-3">
-              <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-full" />
-              <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4" />
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  }
+  const subTabs = [
+    { key: "news" as const, label: zh ? "新闻" : "News", count: filteredNews.length },
+    { key: "earnings" as const, label: zh ? "财报日历" : "Earnings", count: filteredEarnings.length },
+    { key: "ratings" as const, label: zh ? "评级变动" : "Ratings", count: filteredRatings.length },
+  ];
 
   return (
-    <div className="space-y-4">
-      {/* News Feed */}
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-            <span>📰</span> {zh ? "持仓新闻" : "Portfolio News"}
-          </h3>
-          <input
-            type="text"
-            placeholder={zh ? "按代码过滤..." : "Filter by ticker..."}
-            className="text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-transparent text-gray-600 dark:text-gray-400 w-32"
-            value={tickerFilter}
-            onChange={(e) => setTickerFilter(e.target.value)}
-          />
-        </div>
-        {filteredNews.length === 0 ? (
-          <p className="text-sm text-gray-400">{zh ? "暂无新闻" : "No news available"}</p>
-        ) : (
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {filteredNews.map((item, i) => (
-              <a key={i} href={item.url} target="_blank" rel="noopener noreferrer"
-                className="block p-2.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors border border-transparent hover:border-gray-200 dark:hover:border-gray-700">
-                <div className="flex items-start gap-2">
-                  <span className="inline-block px-1.5 py-0.5 text-[10px] font-medium rounded bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 shrink-0">
-                    {item.ticker}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-800 dark:text-gray-200 line-clamp-2 leading-snug">
-                      {item.title}
-                    </p>
-                    <p className="text-[10px] text-gray-400 mt-1">
-                      {item.source} · {timeAgo(item.date)}
-                    </p>
-                  </div>
-                </div>
-              </a>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Earnings Calendar */}
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-        <h3 className="text-base font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-3">
-          <span>📅</span> {zh ? "财报日历" : "Earnings Calendar"}
-        </h3>
-        {earnings.length === 0 ? (
-          <p className="text-sm text-gray-400">{zh ? "暂无财报日程" : "No earnings data"}</p>
-        ) : (
-          <div className="space-y-1.5">
-            {earnings.map((e, i) => (
-              <div key={i} className={`flex items-center gap-3 text-sm py-2 px-2 rounded-lg ${
-                e.status === "upcoming" ? "bg-amber-50/50 dark:bg-amber-900/10" : ""
+    <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800">
+      {/* Header: sub-tabs + filter */}
+      <div className="flex items-center justify-between px-4 pt-3 pb-0">
+        <div className="flex gap-0">
+          {subTabs.map((tab) => (
+            <button key={tab.key}
+              onClick={() => setSubTab(tab.key)}
+              className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
+                subTab === tab.key
+                  ? "border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400"
+                  : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
               }`}>
-                <span className="text-xs text-gray-400 w-20 shrink-0">{e.date?.slice(0, 10)}</span>
-                <span className="font-medium text-gray-700 dark:text-gray-300 w-16 shrink-0">{e.ticker}</span>
-                <span className="text-gray-500 dark:text-gray-400 truncate flex-1">{e.name}</span>
-                {e.status === "upcoming" ? (
-                  <span className="text-xs text-amber-600 dark:text-amber-400 shrink-0">
-                    ⏰ {daysUntil(e.date)}
-                  </span>
-                ) : (
-                  <span className="text-xs text-gray-400 shrink-0">
-                    EPS: {e.eps_actual ?? "—"}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+              {tab.label}
+              {!loading && <span className="ml-1 text-[10px] opacity-60">({tab.count})</span>}
+            </button>
+          ))}
+        </div>
+        <input
+          type="text"
+          placeholder={zh ? "按代码过滤..." : "Filter ticker..."}
+          className="text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-transparent text-gray-600 dark:text-gray-400 w-28"
+          value={tickerFilter}
+          onChange={(e) => setTickerFilter(e.target.value)}
+        />
       </div>
 
-      {/* Rating Changes */}
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-        <h3 className="text-base font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-3">
-          <span>📊</span> {zh ? "评级变动 (3M)" : "Rating Changes (3M)"}
-        </h3>
-        {ratings.length === 0 ? (
-          <p className="text-sm text-gray-400">{zh ? "暂无评级变动" : "No rating changes"}</p>
+      <div className="border-t border-gray-100 dark:border-gray-800" />
+
+      {/* Content */}
+      <div className="p-4">
+        {loading ? (
+          <div className="space-y-3 animate-pulse">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="h-4 bg-gray-200 dark:bg-gray-700 rounded" style={{ width: `${85 - i * 8}%` }} />
+            ))}
+          </div>
+        ) : !fmpApiKey && news.length === 0 && earnings.length === 0 && ratings.length === 0 ? (
+          <div className="text-center py-10">
+            <div className="text-3xl mb-3 opacity-60">🔑</div>
+            <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              {zh ? "需要 FMP API Key" : "FMP API Key Required"}
+            </p>
+            <p className="text-xs text-gray-400 max-w-sm mx-auto">
+              {zh
+                ? "新闻、财报日历和评级变动数据来自 Financial Modeling Prep (FMP)。请点击右上角 ⚙️ 设置图标配置 API Key。"
+                : "News, earnings calendar, and rating changes are powered by Financial Modeling Prep (FMP). Click the ⚙️ icon in the top-right corner to configure your API key."}
+            </p>
+          </div>
         ) : (
-          <div className="space-y-1.5">
-            {ratings.map((r, i) => (
-              <div key={i} className="flex items-center gap-3 text-sm py-1.5 border-b border-gray-50 dark:border-gray-800 last:border-0">
-                <span className="text-xs text-gray-400 w-20 shrink-0">{r.date.slice(0, 10)}</span>
-                <span className="font-medium text-gray-700 dark:text-gray-300 w-16 shrink-0">{r.ticker}</span>
-                <span className="text-gray-500 dark:text-gray-400 w-24 shrink-0 truncate">{r.company}</span>
-                <span className={`font-medium ${dirColor(r.direction)}`}>
-                  {r.previous} {dirIcon(r.direction)} {r.new}
-                </span>
-              </div>
-            ))}
-          </div>
+          <>
+            {/* News */}
+            {subTab === "news" && (
+              filteredNews.length === 0 ? (
+                <p className="text-sm text-gray-400 py-4">{zh ? "暂无新闻" : "No news available"}</p>
+              ) : (
+                <div className="space-y-1 max-h-[480px] overflow-y-auto">
+                  {filteredNews.map((item, i) => (
+                    <a key={i} href={item.url} target="_blank" rel="noopener noreferrer"
+                      className="block p-2.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                      <div className="flex items-start gap-2">
+                        <span className="inline-block px-1.5 py-0.5 text-[10px] font-medium rounded bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 shrink-0 mt-0.5">
+                          {item.ticker}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-800 dark:text-gray-200 line-clamp-2 leading-snug">{item.title}</p>
+                          <p className="text-[10px] text-gray-400 mt-1">{item.source} · {timeAgo(item.date)}</p>
+                        </div>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              )
+            )}
+
+            {/* Earnings Calendar */}
+            {subTab === "earnings" && (
+              filteredEarnings.length === 0 ? (
+                <p className="text-sm text-gray-400 py-4">{zh ? "暂无财报日程" : "No earnings data"}</p>
+              ) : (
+                <EarningsCalendar earnings={filteredEarnings} zh={zh} />
+              )
+            )}
+
+            {/* Rating Changes */}
+            {subTab === "ratings" && (
+              filteredRatings.length === 0 ? (
+                <p className="text-sm text-gray-400 py-4">{zh ? "暂无评级变动" : "No rating changes"}</p>
+              ) : (
+                <div className="space-y-1">
+                  {filteredRatings.map((r, i) => (
+                    <div key={i} className="flex items-center gap-3 text-sm py-1.5 border-b border-gray-50 dark:border-gray-800 last:border-0">
+                      <span className="text-xs text-gray-400 w-20 shrink-0">{r.date.slice(0, 10)}</span>
+                      <span className="font-medium text-gray-700 dark:text-gray-300 w-16 shrink-0">{r.ticker}</span>
+                      <span className="text-gray-500 dark:text-gray-400 w-24 shrink-0 truncate">{r.company}</span>
+                      <span className={`font-medium ${dirColor(r.direction)}`}>
+                        {r.previous} {dirIcon(r.direction)} {r.new}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+          </>
         )}
       </div>
 
-      <p className="text-[10px] text-gray-400 text-right">
-        {zh ? "数据来源: FMP (美股/港股) · 东方财富 (A股)" : "Data: FMP (US/HK) · Eastmoney (A-shares)"}
-      </p>
+      <div className="px-4 pb-2">
+        <p className="text-[10px] text-gray-400 text-right">
+          {zh ? "数据来源: FMP (美股/港股) · 东方财富 (A股)" : "Data: FMP (US/HK) · Eastmoney (A-shares)"}
+        </p>
+      </div>
     </div>
   );
 }
@@ -2349,6 +2566,7 @@ function EventsSection({ locale }: { locale: string }) {
 
 export default function PortfolioPage() {
   const { t, locale } = useI18n();
+  const { fmpApiKey } = useSettings();
   const [available, setAvailable] = useState<boolean | null>(null);
   const [data, setData] = useState<PortfolioData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2563,6 +2781,7 @@ export default function PortfolioPage() {
           )}
           <span className="text-[11px] text-gray-400 italic">in CNY, unless otherwise noted</span>
           <span className="text-xs text-gray-400 font-mono">{new Date().toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" }).slice(0, 16)}</span>
+          {data && data.fx && <FxBanner fx={data.fx} />}
           <div className="ml-auto flex gap-2">
             <button onClick={() => { setPanelEditHolding(null); setPanelOpen(true); }} className="px-3 py-1 text-xs border border-gray-300 dark:border-gray-700 rounded hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
               {locale === "zh" ? "管理" : "Manage"}
@@ -2617,8 +2836,6 @@ export default function PortfolioPage() {
 
         {data && data.holdings.length > 0 && (
           <>
-            <FxBanner fx={data.fx} />
-
             {/* ════════ OVERVIEW TAB ════════ */}
             {pageTab === "overview" && (
               <>
@@ -2730,7 +2947,7 @@ export default function PortfolioPage() {
             )}
 
             {pageTab === "events" && (
-              <EventsSection key={`events-${refreshKey}`} locale={locale} />
+              <EventsSection key={`events-${refreshKey}`} locale={locale} fmpApiKey={fmpApiKey} />
             )}
 
           </>
