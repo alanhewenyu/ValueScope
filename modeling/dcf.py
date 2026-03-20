@@ -628,8 +628,9 @@ def calculate_buffett(summary_df, company_profile, outstanding_shares, forex_rat
     pv_terminal = terminal_value / (1 + discount_rate) ** 10
 
     # ── Intrinsic value ──
-    total_value = pv_total + pv_terminal + cash + total_investments
-    equity_value = total_value - total_debt - minority
+    # Owner Earnings is equity-level (Net Income already deducts interest & minority)
+    # → no need to subtract debt or minority interest
+    equity_value = pv_total + pv_terminal + cash + total_investments
 
     if outstanding_shares > 0:
         intrinsic_per_share = (equity_value * 1_000_000) / outstanding_shares
@@ -654,9 +655,10 @@ def calculate_buffett(summary_df, company_profile, outstanding_shares, forex_rat
         'avg_roe': avg_roe,
         'base_roe': base_roe,
         'roe_years': len(roe_vals_positive),
+        'cash': cash,
+        'total_investments': total_investments,
         'pv_cash_flows': pv_total,
         'pv_terminal': pv_terminal,
-        'total_value': total_value,
         'equity_value': equity_value,
         'intrinsic_per_share': intrinsic_per_share,
         'margin_of_safety_price': margin_of_safety_price,
@@ -703,11 +705,11 @@ def print_buffett_valuation(result, forex_rate=None, stock_currency=None):
         print(f"    {S.DIM}Payout Ratio: {result['payout']:.1f}% (from prior year, current unavailable){S.RESET}")
 
     # Valuation
+    cash_inv = (result.get('cash', 0) or 0) + (result.get('total_investments', 0) or 0)
     print(f"\n  {S.label('Valuation')} ({reported_currency}, millions):")
     print(f"    PV of Owner Earnings (10yr): {result['pv_cash_flows']:>12,.0f}")
     print(f"    PV of Terminal Value       : {result['pv_terminal']:>12,.0f}")
-    print(f"    + Cash & Investments       : {(result['total_value'] - result['pv_cash_flows'] - result['pv_terminal']):>12,.0f}")
-    print(f"    - Debt & Minority          : {(result['total_value'] - result['equity_value']):>12,.0f}")
+    print(f"    + Cash & Investments       : {cash_inv:>12,.0f}")
     print(f"    {S.BOLD}= Equity Value             : {result['equity_value']:>12,.0f}{S.RESET}")
 
     # Per share

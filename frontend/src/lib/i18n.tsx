@@ -220,7 +220,7 @@ const en = {
   growthRate: "Growth (yr 1-5)",
   buffettIntrinsic: "Intrinsic Value",
   buffettMos: "Margin of Safety (35%)",
-  buffettNote: "Buffett method: Owner Earnings (Net Income - ΔWC) discounted at max(10%, Rf+5%). Growth = min(ROE × retention, hist avg). Conservative — no growth CapEx included.",
+  buffettNote: "Buffett method: Owner Earnings = Net Income - ΔWC (hist avg). Growth = avg ROE × (1 - payout), capped at Rf+8%. Discount = max(10%, Rf+5%). Terminal 3%. A-shares use deducted NI (扣非归母).",
   forecastTableCurrency: (currency: string) => `Projected cash flows from the DCF model (${currency}, in millions)`,
 
   // AI Valuation
@@ -576,7 +576,7 @@ const zh: Translations = {
   growthRate: "增长率 (1-5年)",
   buffettIntrinsic: "内在价值",
   buffettMos: "安全边际价 (35%)",
-  buffettNote: "巴菲特方法：股东盈余（归母净利润 - ΔWC）以 max(10%, Rf+5%) 折现。增长率 = min(ROE × 留存率, 历史均值)。保守估计 — 不含增长性资本支出。",
+  buffettNote: "巴菲特方法：股东盈余 = 归母净利润 - ΔWC（历史均值）。增长率 = 平均ROE ×（1 - 派息率），上限 Rf+8%。折现率 = max(10%, Rf+5%)。终端增长 3%。A股使用扣非归母净利润。",
   forecastTableCurrency: (currency: string) => `DCF 模型预测的现金流（${currency}，百万）`,
 
   aiValuation: "AI 估值",

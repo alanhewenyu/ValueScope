@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -17,7 +17,7 @@ import {
   Cell,
 } from "recharts";
 import { useI18n } from "@/lib/i18n";
-import { formatNumber } from "@/lib/format";
+import { formatNumber, formatCurrency } from "@/lib/format";
 import FinancialTable from "@/components/FinancialTable";
 import {
   type CompanyProfile,
@@ -27,7 +27,9 @@ import {
   type ScoresData,
   type EstimatesData,
   type TranscriptAnalysisResult,
+  type BuffettResult,
   runTranscriptAnalysis,
+  getBuffettValuation,
 } from "@/lib/api";
 
 // ── Helpers ──
@@ -546,6 +548,13 @@ export default function OverviewTab({
     };
   })();
 
+  // ── Buffett Owner Earnings Valuation ──
+  const [buffett, setBuffett] = useState<BuffettResult | null>(null);
+  useEffect(() => {
+    if (!ticker) return;
+    getBuffettValuation(ticker, apikey).then(setBuffett).catch(() => setBuffett(null));
+  }, [ticker, apikey]);
+
   const tooltipStyle = {
     contentStyle: {
       backgroundColor: "rgba(255,255,255,0.96)",
@@ -626,6 +635,72 @@ export default function OverviewTab({
           )}
         </div>
       </div>
+
+      {/* ── Buffett Owner Earnings Valuation Card ── */}
+      {buffett?.available && (() => {
+        const b = buffett;
+        const hasFx = b.forex_rate != null && b.stock_currency && b.reported_currency && b.stock_currency !== b.reported_currency;
+        const rawIntrinsic = b.intrinsic_per_share ?? 0;
+        const rawMos = b.margin_of_safety_price ?? 0;
+        const intrinsic = hasFx ? rawIntrinsic * (b.forex_rate ?? 1) : rawIntrinsic;
+        const mos = hasFx ? rawMos * (b.forex_rate ?? 1) : rawMos;
+        const displayCurrency = hasFx ? b.stock_currency! : (b.reported_currency ?? "USD");
+        const marketPrice = b.market_price ?? 0;
+        const diffPct = marketPrice ? ((intrinsic - marketPrice) / marketPrice * 100) : 0;
+        const diffColor = diffPct > 10 ? "text-green-600 dark:text-green-400" : diffPct < -10 ? "text-red-600 dark:text-red-400" : "text-gray-700 dark:text-gray-300";
+
+        return (
+          <div className="bg-white dark:bg-gray-900 rounded-xl border border-amber-200 dark:border-amber-800 p-5">
+            <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-4">
+              Buffett Owner Earnings Valuation
+            </h3>
+            {/* Result row */}
+            <div className="flex items-center gap-6 mb-4">
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-0.5">{t.buffettIntrinsic}</div>
+                <div className="text-2xl font-bold text-gray-900 dark:text-white">{formatCurrency(intrinsic, displayCurrency)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-0.5">{t.buffettMos}</div>
+                <div className="text-lg font-bold text-gray-900 dark:text-white">{formatCurrency(mos, displayCurrency)}</div>
+              </div>
+              {marketPrice > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-0.5">{t.upsideDownside}</div>
+                  <div className={`text-lg font-bold ${diffColor}`}>{diffPct > 0 ? "+" : ""}{diffPct.toFixed(1)}%</div>
+                </div>
+              )}
+            </div>
+            {/* Parameters */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs pt-3 border-t border-gray-100 dark:border-gray-800">
+              <div>
+                <div className="text-gray-400 mb-0.5">{b.ni_label ? `NI (${b.ni_label})` : "Net Income"}</div>
+                <div className="font-mono font-medium">{(b.net_income ?? 0).toLocaleString(undefined, {maximumFractionDigits: 0})}M</div>
+              </div>
+              <div>
+                <div className="text-gray-400 mb-0.5">Owner Earnings</div>
+                <div className="font-mono font-medium">{(b.owner_earnings ?? 0).toLocaleString(undefined, {maximumFractionDigits: 0})}M</div>
+              </div>
+              <div>
+                <div className="text-gray-400 mb-0.5">{t.discountRate}</div>
+                <div className="font-mono font-medium">{((b.discount_rate ?? 0) * 100).toFixed(1)}%</div>
+              </div>
+              <div>
+                <div className="text-gray-400 mb-0.5">{t.growthRate}</div>
+                <div className="font-mono font-medium">{((b.growth_phase1 ?? 0) * 100).toFixed(1)}%</div>
+              </div>
+              <div>
+                <div className="text-gray-400 mb-0.5">ROE (avg) / Payout</div>
+                <div className="font-mono font-medium">{(b.avg_roe ?? 0).toFixed(1)}% / {(b.payout ?? 0).toFixed(0)}%</div>
+              </div>
+            </div>
+            {/* Calculation note */}
+            <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-3 leading-relaxed">
+              {t.buffettNote}
+            </p>
+          </div>
+        );
+      })()}
 
       {/* ── Key Drivers: 4 charts in 2×2 grid ── */}
       {chartData && (

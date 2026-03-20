@@ -344,6 +344,70 @@ def run_dcf(params: DCFParams):
     })
 
 
+@router.get("/buffett/{ticker}")
+def get_buffett_valuation(
+    ticker: str,
+    apikey: str = Query("", description="FMP API key"),
+):
+    """Standalone Buffett Owner Earnings valuation (no DCF needed)."""
+    is_valid, err = validate_ticker(ticker)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=err)
+
+    normalized = _normalize_ticker(ticker)
+    ck = make_key("buffett", normalized, apikey[:8] if apikey else "nokey")
+    cached = cache_get(ck)
+    if cached is not None:
+        return cached
+
+    financial_data = get_historical_financials(
+        normalized, "annual", apikey, HISTORICAL_DATA_PERIODS_ANNUAL
+    )
+    if financial_data is None:
+        raise HTTPException(status_code=404, detail=f"Financial data not found: {ticker}")
+
+    profile = fetch_company_profile(normalized, apikey)
+    profile = _fill_profile_from_financial_data(profile, financial_data)
+    share_info = get_company_share_float(normalized, apikey, company_profile=profile)
+    summary_df = financial_data["summary"]
+    outstanding_shares = share_info.get("outstandingShares", 0) or 0
+
+    # Forex rate for currency conversion
+    forex_rate = None
+    reported_currency = summary_df.loc["Reported Currency"].iloc[0] if "Reported Currency" in summary_df.index else "USD"
+    stock_currency = profile.get("currency", "USD")
+    if reported_currency and stock_currency and reported_currency != stock_currency:
+        try:
+            if apikey:
+                forex_data = fetch_forex_data(apikey)
+                forex_key = f"{stock_currency}/{reported_currency}"
+                rate = forex_data.get(forex_key)
+                if rate and rate != 0:
+                    forex_rate = 1.0 / rate
+                else:
+                    reverse_key = f"{reported_currency}/{stock_currency}"
+                    reverse_rate = forex_data.get(reverse_key)
+                    if reverse_rate and reverse_rate != 0:
+                        forex_rate = reverse_rate
+            if forex_rate is None:
+                from modeling.yfinance_data import fetch_forex_yfinance
+                forex_rate = fetch_forex_yfinance(reported_currency, stock_currency)
+            if forex_rate is None:
+                from modeling.data import fetch_forex_akshare
+                forex_rate = fetch_forex_akshare(reported_currency, stock_currency)
+        except Exception as e:
+            logger.debug("forex fetch failed for buffett: %s", e)
+
+    result = _buffett_to_json(summary_df, profile, outstanding_shares, forex_rate)
+    result["forex_rate"] = forex_rate
+    result["reported_currency"] = reported_currency
+    result["stock_currency"] = stock_currency
+    result["market_price"] = profile.get("price")
+
+    cache_put(ck, result, ttl=3600)
+    return result
+
+
 def _buffett_to_json(summary_df, profile, outstanding_shares, forex_rate):
     """Run Buffett Owner Earnings valuation and return JSON-safe dict."""
     try:

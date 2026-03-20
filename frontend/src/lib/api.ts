@@ -144,6 +144,34 @@ export interface DCFResult {
   } | null;
 }
 
+export interface BuffettResult {
+  available: boolean;
+  reason?: string;
+  owner_earnings?: number;
+  net_income?: number;
+  ni_label?: string;
+  avg_wc?: number;
+  da?: number;
+  maintenance_capex?: number;
+  discount_rate?: number;
+  growth_phase1?: number;
+  terminal_growth?: number;
+  sustainable_growth?: number;
+  avg_roe?: number;
+  payout?: number;
+  payout_year_offset?: number;
+  intrinsic_per_share?: number;
+  margin_of_safety_price?: number;
+  reported_currency?: string;
+  pv_cash_flows?: number;
+  pv_terminal?: number;
+  equity_value?: number;
+  // From standalone endpoint
+  forex_rate?: number | null;
+  stock_currency?: string;
+  market_price?: number | null;
+}
+
 export interface AIAnalysisResult {
   parameters: Record<string, { value: number; reasoning: string }>;
   reasoning: string;
@@ -385,6 +413,14 @@ export async function getDCFDefaults(
 ): Promise<DCFDefaults> {
   const params = apikey ? `?apikey=${apikey}` : "";
   return fetchAPI<DCFDefaults>(`/api/valuation/dcf-defaults/${ticker}${params}`);
+}
+
+export async function getBuffettValuation(
+  ticker: string,
+  apikey = ""
+): Promise<BuffettResult> {
+  const params = apikey ? `?apikey=${apikey}` : "";
+  return fetchAPI<BuffettResult>(`/api/valuation/buffett/${ticker}${params}`);
 }
 
 export async function getRelativeValuation(
