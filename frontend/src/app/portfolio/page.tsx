@@ -38,7 +38,13 @@ import {
   getImportTemplateUrl,
   listPortfolios,
   switchPortfolio,
+  getPortfolioNews,
+  getPortfolioEarnings,
+  getPortfolioRatings,
   type PortfolioInfo,
+  type PortfolioNewsItem,
+  type PortfolioEarningsEvent,
+  type PortfolioRatingChange,
 } from "@/lib/api";
 
 // ══════════════════════════════════════════
@@ -2171,6 +2177,173 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
 }
 
 // ══════════════════════════════════════════
+// Events Tab
+// ══════════════════════════════════════════
+
+function EventsSection({ locale }: { locale: string }) {
+  const zh = locale === "zh";
+  const [news, setNews] = useState<PortfolioNewsItem[]>([]);
+  const [earnings, setEarnings] = useState<PortfolioEarningsEvent[]>([]);
+  const [ratings, setRatings] = useState<PortfolioRatingChange[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [tickerFilter, setTickerFilter] = useState("");
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([getPortfolioNews(), getPortfolioEarnings(), getPortfolioRatings()])
+      .then(([n, e, r]) => { setNews(n); setEarnings(e); setRatings(r); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filteredNews = tickerFilter
+    ? news.filter((n) => n.ticker.toLowerCase().includes(tickerFilter.toLowerCase()))
+    : news;
+
+  const dirColor = (d: string) =>
+    d === "upgrade" ? "text-green-600 dark:text-green-400"
+    : d === "downgrade" ? "text-red-600 dark:text-red-400"
+    : "text-gray-400";
+  const dirIcon = (d: string) => d === "upgrade" ? "↑" : d === "downgrade" ? "↓" : "→";
+
+  const timeAgo = (dateStr: string) => {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const hours = Math.floor(diff / 3600000);
+    if (hours < 1) return zh ? "刚刚" : "just now";
+    if (hours < 24) return `${hours}h`;
+    const days = Math.floor(hours / 24);
+    return `${days}d`;
+  };
+
+  const daysUntil = (dateStr: string) => {
+    const diff = new Date(dateStr).getTime() - Date.now();
+    const days = Math.ceil(diff / 86400000);
+    if (days < 0) return "";
+    if (days === 0) return zh ? "今天" : "Today";
+    return zh ? `${days} 天后` : `in ${days}d`;
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 animate-pulse">
+            <div className="h-5 w-40 bg-gray-200 dark:bg-gray-700 rounded mb-4" />
+            <div className="space-y-3">
+              <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-full" />
+              <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* News Feed */}
+      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <span>📰</span> {zh ? "持仓新闻" : "Portfolio News"}
+          </h3>
+          <input
+            type="text"
+            placeholder={zh ? "按代码过滤..." : "Filter by ticker..."}
+            className="text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-transparent text-gray-600 dark:text-gray-400 w-32"
+            value={tickerFilter}
+            onChange={(e) => setTickerFilter(e.target.value)}
+          />
+        </div>
+        {filteredNews.length === 0 ? (
+          <p className="text-sm text-gray-400">{zh ? "暂无新闻" : "No news available"}</p>
+        ) : (
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {filteredNews.map((item, i) => (
+              <a key={i} href={item.url} target="_blank" rel="noopener noreferrer"
+                className="block p-2.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors border border-transparent hover:border-gray-200 dark:hover:border-gray-700">
+                <div className="flex items-start gap-2">
+                  <span className="inline-block px-1.5 py-0.5 text-[10px] font-medium rounded bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 shrink-0">
+                    {item.ticker}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-800 dark:text-gray-200 line-clamp-2 leading-snug">
+                      {item.title}
+                    </p>
+                    <p className="text-[10px] text-gray-400 mt-1">
+                      {item.source} · {timeAgo(item.date)}
+                    </p>
+                  </div>
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Earnings Calendar */}
+      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-3">
+          <span>📅</span> {zh ? "财报日历" : "Earnings Calendar"}
+        </h3>
+        {earnings.length === 0 ? (
+          <p className="text-sm text-gray-400">{zh ? "暂无财报日程" : "No earnings data"}</p>
+        ) : (
+          <div className="space-y-1.5">
+            {earnings.map((e, i) => (
+              <div key={i} className={`flex items-center gap-3 text-sm py-2 px-2 rounded-lg ${
+                e.status === "upcoming" ? "bg-amber-50/50 dark:bg-amber-900/10" : ""
+              }`}>
+                <span className="text-xs text-gray-400 w-20 shrink-0">{e.date?.slice(0, 10)}</span>
+                <span className="font-medium text-gray-700 dark:text-gray-300 w-16 shrink-0">{e.ticker}</span>
+                <span className="text-gray-500 dark:text-gray-400 truncate flex-1">{e.name}</span>
+                {e.status === "upcoming" ? (
+                  <span className="text-xs text-amber-600 dark:text-amber-400 shrink-0">
+                    ⏰ {daysUntil(e.date)}
+                  </span>
+                ) : (
+                  <span className="text-xs text-gray-400 shrink-0">
+                    EPS: {e.eps_actual ?? "—"}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Rating Changes */}
+      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-3">
+          <span>📊</span> {zh ? "评级变动 (3M)" : "Rating Changes (3M)"}
+        </h3>
+        {ratings.length === 0 ? (
+          <p className="text-sm text-gray-400">{zh ? "暂无评级变动" : "No rating changes"}</p>
+        ) : (
+          <div className="space-y-1.5">
+            {ratings.map((r, i) => (
+              <div key={i} className="flex items-center gap-3 text-sm py-1.5 border-b border-gray-50 dark:border-gray-800 last:border-0">
+                <span className="text-xs text-gray-400 w-20 shrink-0">{r.date.slice(0, 10)}</span>
+                <span className="font-medium text-gray-700 dark:text-gray-300 w-16 shrink-0">{r.ticker}</span>
+                <span className="text-gray-500 dark:text-gray-400 w-24 shrink-0 truncate">{r.company}</span>
+                <span className={`font-medium ${dirColor(r.direction)}`}>
+                  {r.previous} {dirIcon(r.direction)} {r.new}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <p className="text-[10px] text-gray-400 text-right">
+        {zh ? "数据来源: FMP (美股/港股) · 东方财富 (A股)" : "Data: FMP (US/HK) · Eastmoney (A-shares)"}
+      </p>
+    </div>
+  );
+}
+
+
+// ══════════════════════════════════════════
 // Main Page
 // ══════════════════════════════════════════
 
@@ -2185,7 +2358,7 @@ export default function PortfolioPage() {
   const [portfolios, setPortfolios] = useState<PortfolioInfo[]>([]);
   const activePortfolio = portfolios.find((p) => p.active)?.name || "";
   const [refreshKey, setRefreshKey] = useState(0);
-  const [pageTab, setPageTab] = useState<"overview" | "holdings" | "performance" | "trades">("overview");
+  const [pageTab, setPageTab] = useState<"overview" | "holdings" | "performance" | "trades" | "events">("overview");
 
   const load = useCallback(async () => {
     try { setLoading(true); setError(null);
@@ -2407,6 +2580,7 @@ export default function PortfolioPage() {
               { key: "holdings", zh: "持仓", en: "Holdings" },
               { key: "performance", zh: "分析", en: "Analysis" },
               { key: "trades", zh: "日志", en: "Journals" },
+              { key: "events", zh: "动态", en: "Events" },
             ] as const).map((tab) => (
               <button key={tab.key}
                 onClick={() => setPageTab(tab.key)}
@@ -2553,6 +2727,10 @@ export default function PortfolioPage() {
                 <PnlJournal key={`journal-${refreshKey}`} locale={locale} />
                 <ClosedTradesSection key={`trades-${refreshKey}`} locale={locale} />
               </>
+            )}
+
+            {pageTab === "events" && (
+              <EventsSection key={`events-${refreshKey}`} locale={locale} />
             )}
 
           </>

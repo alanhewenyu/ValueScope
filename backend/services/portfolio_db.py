@@ -713,6 +713,16 @@ def get_dcf_valuations() -> dict[str, dict]:
         return {}
 
 
+# ── Query helpers ──
+
+def get_open_tickers(conn: sqlite3.Connection) -> list[dict]:
+    """Return list of open positions with ticker, name, market."""
+    rows = conn.execute(
+        "SELECT DISTINCT ticker, name, market FROM positions WHERE status='open'"
+    ).fetchall()
+    return [{"ticker": r[0], "name": r[1], "market": r[2]} for r in rows]
+
+
 # ── CRUD operations ──
 
 def upsert_position(conn: sqlite3.Connection, ticker: str, name: str, market: str,

@@ -793,3 +793,226 @@ def export_all():
         "account_settings": _query(path, "SELECT * FROM account_settings ORDER BY broker"),
         "closed_trades": _query(path, "SELECT * FROM closed_trades ORDER BY market, name"),
     }
+
+
+# ── Portfolio Event Feeds ──────────────────────────────────
+
+import time
+from urllib.request import urlopen, Request
+import json as _json
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+_event_cache: dict[str, tuple[float, list]] = {}  # key → (timestamp, data)
+_EVENT_TTL_NEWS = 600   # 10 min
+_EVENT_TTL_OTHER = 3600  # 1 hour
+
+
+def _cached_or_fetch(cache_key: str, ttl: int, fetch_fn):
+    """Return cached data or call fetch_fn and cache result."""
+    entry = _event_cache.get(cache_key)
+    if entry and (time.time() - entry[0]) < ttl:
+        return entry[1]
+    data = fetch_fn()
+    _event_cache[cache_key] = (time.time(), data)
+    return data
+
+
+def _fmp_get(path: str, apikey: str, params: str = "") -> list:
+    """Quick FMP API GET, returns list or []."""
+    if not apikey:
+        return []
+    url = f"https://financialmodelingprep.com/api/v3/{path}?apikey={apikey}{params}"
+    try:
+        req = Request(url, headers={"User-Agent": "ValueScope/1.0"})
+        with urlopen(req, timeout=10) as resp:
+            data = _json.loads(resp.read())
+            return data if isinstance(data, list) else []
+    except Exception as e:
+        logger.warning(f"FMP API error ({path}): {e}")
+        return []
+
+
+def _get_tickers_by_market(db_path: str) -> dict[str, list[dict]]:
+    """Group open tickers by market type."""
+    from backend.services.portfolio_db import get_conn, get_open_tickers
+    conn = get_conn(db_path)
+    tickers = get_open_tickers(conn)
+    conn.close()
+    groups: dict[str, list[dict]] = {"us": [], "hk": [], "ashare": [], "jp": []}
+    for t in tickers:
+        mk = (t.get("market") or "").upper()
+        tk = t["ticker"]
+        if mk in ("SHZ", "SHA", "BJ") or tk.endswith((".SZ", ".SS", ".BJ")):
+            groups["ashare"].append(t)
+        elif mk == "HKSE" or tk.endswith(".HK"):
+            groups["hk"].append(t)
+        elif tk.endswith(".T"):
+            groups["jp"].append(t)
+        else:
+            groups["us"].append(t)
+    return groups
+
+
+@router.get("/news")
+def portfolio_news(apikey: str = Query("", description="FMP API key")):
+    """Aggregated news for all portfolio holdings."""
+    path = _require_db()
+    apikey = apikey or os.environ.get("FMP_API_KEY", "")
+
+    def _fetch():
+        groups = _get_tickers_by_market(path)
+        all_news = []
+
+        # FMP news for US + HK stocks
+        fmp_tickers = [t["ticker"] for t in groups["us"] + groups["hk"]]
+        if fmp_tickers and apikey:
+            # FMP accepts comma-separated symbols
+            symbols = ",".join(fmp_tickers[:20])  # limit to 20
+            items = _fmp_get("stock_news", apikey, f"&tickers={symbols}&limit=30")
+            for item in items:
+                all_news.append({
+                    "title": item.get("title", ""),
+                    "url": item.get("url", ""),
+                    "source": item.get("site", ""),
+                    "date": item.get("publishedDate", ""),
+                    "ticker": item.get("symbol", ""),
+                    "image": item.get("image", ""),
+                })
+
+        # A-share news via akshare
+        for t in groups["ashare"][:10]:
+            try:
+                import akshare as ak
+                code = t["ticker"].split(".")[0]
+                df = ak.stock_news_em(symbol=code)
+                if df is not None and not df.empty:
+                    for _, row in df.head(3).iterrows():
+                        all_news.append({
+                            "title": str(row.get("新闻标题", "")),
+                            "url": str(row.get("新闻链接", "")),
+                            "source": str(row.get("文章来源", "东方财富")),
+                            "date": str(row.get("发布时间", "")),
+                            "ticker": t["ticker"],
+                            "image": "",
+                        })
+            except Exception as e:
+                logger.warning(f"akshare news error for {t['ticker']}: {e}")
+
+        # Sort by date descending
+        all_news.sort(key=lambda x: x.get("date", ""), reverse=True)
+        return all_news[:50]
+
+    return _cached_or_fetch(f"news:{path}", _EVENT_TTL_NEWS, _fetch)
+
+
+@router.get("/earnings-calendar")
+def portfolio_earnings(apikey: str = Query("", description="FMP API key")):
+    """Upcoming and recent earnings for portfolio holdings."""
+    path = _require_db()
+    apikey = apikey or os.environ.get("FMP_API_KEY", "")
+
+    def _fetch():
+        from datetime import datetime, timedelta
+        groups = _get_tickers_by_market(path)
+        events = []
+
+        fmp_tickers = groups["us"] + groups["hk"] + groups["jp"]
+        ticker_names = {t["ticker"]: t.get("name", t["ticker"]) for t in fmp_tickers}
+        ticker_set = set(ticker_names.keys())
+
+        if apikey and fmp_tickers:
+            # Fetch calendar for a date range and filter for our tickers
+            today = datetime.now()
+            from_date = (today - timedelta(days=30)).strftime("%Y-%m-%d")
+            to_date = (today + timedelta(days=90)).strftime("%Y-%m-%d")
+            items = _fmp_get("earning_calendar", apikey,
+                             f"&from={from_date}&to={to_date}")
+
+            for item in items:
+                sym = item.get("symbol", "")
+                if sym not in ticker_set:
+                    continue
+                eps_est = item.get("epsEstimated")
+                eps_act = item.get("eps")
+                status = "reported" if eps_act is not None else "upcoming"
+                events.append({
+                    "ticker": sym,
+                    "name": ticker_names.get(sym, sym),
+                    "date": item.get("date", ""),
+                    "eps_estimated": eps_est,
+                    "eps_actual": eps_act,
+                    "revenue_estimated": item.get("revenueEstimated"),
+                    "revenue_actual": item.get("revenue"),
+                    "status": status,
+                })
+
+        # Sort: upcoming first (by date asc), then reported (by date desc)
+        upcoming = sorted([e for e in events if e["status"] == "upcoming"],
+                          key=lambda x: x["date"])
+        reported = sorted([e for e in events if e["status"] == "reported"],
+                          key=lambda x: x["date"], reverse=True)
+        return upcoming + reported
+
+    return _cached_or_fetch(f"earnings:{path}", _EVENT_TTL_OTHER, _fetch)
+
+
+@router.get("/rating-changes")
+def portfolio_ratings(apikey: str = Query("", description="FMP API key")):
+    """Recent analyst rating changes for portfolio holdings."""
+    path = _require_db()
+    apikey = apikey or os.environ.get("FMP_API_KEY", "")
+
+    def _fetch():
+        groups = _get_tickers_by_market(path)
+        changes = []
+
+        fmp_tickers = groups["us"] + groups["hk"]
+        if apikey and fmp_tickers:
+            from datetime import datetime, timedelta
+            cutoff = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+
+            def _fetch_grades(t):
+                items = _fmp_get(f"grade/{t['ticker']}", apikey, "&limit=10")
+                result = []
+                for item in items:
+                    dt = item.get("date", "")[:10]
+                    if dt < cutoff:
+                        continue
+                    prev = item.get("previousGrade", "")
+                    new = item.get("newGrade", "")
+                    direction = "maintain"
+                    # Simple upgrade/downgrade detection
+                    buy_words = {"buy", "overweight", "outperform", "strong buy", "positive"}
+                    sell_words = {"sell", "underweight", "underperform", "strong sell", "negative"}
+                    hold_words = {"hold", "neutral", "equal-weight", "market perform", "equal weight", "sector perform", "in-line"}
+                    prev_l, new_l = prev.lower(), new.lower()
+                    prev_rank = 3 if any(w in prev_l for w in buy_words) else (1 if any(w in prev_l for w in sell_words) else 2)
+                    new_rank = 3 if any(w in new_l for w in buy_words) else (1 if any(w in new_l for w in sell_words) else 2)
+                    if new_rank > prev_rank:
+                        direction = "upgrade"
+                    elif new_rank < prev_rank:
+                        direction = "downgrade"
+
+                    result.append({
+                        "ticker": t["ticker"],
+                        "name": t.get("name", t["ticker"]),
+                        "date": dt,
+                        "company": item.get("gradingCompany", ""),
+                        "previous": prev,
+                        "new": new,
+                        "direction": direction,
+                    })
+                return result
+
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                futures = {pool.submit(_fetch_grades, t): t for t in fmp_tickers[:20]}
+                for f in as_completed(futures):
+                    try:
+                        changes.extend(f.result())
+                    except Exception as e:
+                        logger.warning(f"Rating fetch error: {e}")
+
+        changes.sort(key=lambda x: x["date"], reverse=True)
+        return changes
+
+    return _cached_or_fetch(f"ratings:{path}", _EVENT_TTL_OTHER, _fetch)

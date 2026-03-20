@@ -1089,3 +1089,47 @@ export async function importCSV(file: File): Promise<ImportResult> {
 export async function exportPortfolio(): Promise<Record<string, unknown[]>> {
   return fetchAPI<Record<string, unknown[]>>("/api/portfolio/export");
 }
+
+// ── Portfolio Event Feeds ──
+
+export interface PortfolioNewsItem {
+  title: string;
+  url: string;
+  source: string;
+  date: string;
+  ticker: string;
+  image: string;
+}
+
+export interface PortfolioEarningsEvent {
+  ticker: string;
+  name: string;
+  date: string;
+  eps_estimated: number | null;
+  eps_actual: number | null;
+  revenue_estimated: number | null;
+  revenue_actual: number | null;
+  status: "upcoming" | "reported";
+}
+
+export interface PortfolioRatingChange {
+  ticker: string;
+  name: string;
+  date: string;
+  company: string;
+  previous: string;
+  new: string;
+  direction: "upgrade" | "downgrade" | "maintain";
+}
+
+export async function getPortfolioNews(apikey = ""): Promise<PortfolioNewsItem[]> {
+  return fetchAPI<PortfolioNewsItem[]>(`/api/portfolio/news?apikey=${apikey}`);
+}
+
+export async function getPortfolioEarnings(apikey = ""): Promise<PortfolioEarningsEvent[]> {
+  return fetchAPI<PortfolioEarningsEvent[]>(`/api/portfolio/earnings-calendar?apikey=${apikey}`);
+}
+
+export async function getPortfolioRatings(apikey = ""): Promise<PortfolioRatingChange[]> {
+  return fetchAPI<PortfolioRatingChange[]>(`/api/portfolio/rating-changes?apikey=${apikey}`);
+}
