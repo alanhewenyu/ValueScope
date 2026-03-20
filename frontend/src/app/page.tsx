@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import SearchBar from "@/components/SearchBar";
 import LanguageToggle from "@/components/LanguageToggle";
 import { useI18n } from "@/lib/i18n";
@@ -9,13 +10,25 @@ import { useAuth } from "@/lib/auth-context";
 
 export default function Home() {
   const { t, locale } = useI18n();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, logout } = useAuth();
+  const router = useRouter();
   const [isLocal, setIsLocal] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const h = window.location.hostname;
     setIsLocal(h === "localhost" || h === "127.0.0.1");
   }, []);
   const showPrivate = isLocal || !!user;
+
+  // Close menu on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    }
+    if (menuOpen) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [menuOpen]);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -39,6 +52,29 @@ export default function Home() {
           >
             {t.authLogin}
           </Link>
+        )}
+        {!authLoading && user && (
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="w-7 h-7 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-medium hover:bg-blue-700 transition-colors"
+            >
+              {user.email[0].toUpperCase()}
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-lg py-2 z-50">
+                <div className="px-4 py-2 text-xs text-gray-500 dark:text-gray-400 truncate border-b border-gray-100 dark:border-gray-800">
+                  {user.email}
+                </div>
+                <button
+                  onClick={() => { logout(); setMenuOpen(false); router.push("/"); }}
+                  className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+                >
+                  {t.authLogout}
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </div>
       {/* Hero section */}

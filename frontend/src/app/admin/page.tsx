@@ -26,20 +26,19 @@ export default function AdminPage() {
 
   const loadData = useCallback(async () => {
     try {
-      const [statsData, usersData, systemData] = await Promise.all([
-        getAdminStats(),
-        getAdminUsers(),
-        getAdminSystem(),
-      ]);
+      // Load stats first — if this fails with 403, user is not admin
+      const statsData = await getAdminStats();
       setStats(statsData);
-      setUsers(usersData.users);
-      setSystem(systemData);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load admin data");
-    } finally {
       setLoading(false);
+      return;
     }
+    // Load users and system independently — don't let one failure break the page
+    try { const usersData = await getAdminUsers(); setUsers(usersData.users); } catch {}
+    try { const systemData = await getAdminSystem(); setSystem(systemData); } catch {}
+    setLoading(false);
   }, []);
 
   useEffect(() => {
