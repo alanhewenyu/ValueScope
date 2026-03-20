@@ -633,7 +633,7 @@ const zh: Translations = {
   growthRate: "增长率 (1-5年)",
   buffettIntrinsic: "内在价值",
   buffettMos: "安全边际价 (8折)",
-  buffettTitle: "Buffett Quick Valuation",
+  buffettTitle: "巴菲特快速估值",
   buffettSubtitle: "基于巴菲特股东盈余法的自动估值 — 无需手动输入参数",
   buffettNotes: [
     "股东盈余 = 归母净利润 − ΔWC（历史均值）",
@@ -665,7 +665,7 @@ const zh: Translations = {
   dcfTabForecast: "现金流预测",
   dcfTabSensitivity: "敏感性分析",
   dcfTabAI: "AI 分析",
-  dcfTabBuffett: "Buffett Quick Valuation",
+  dcfTabBuffett: "巴菲特快速估值",
   gapAnalysis: "DCF 估值 vs 市场价 — AI 分析",
   gapAnalysisDesc: "AI 将分析 DCF 估值与当前市价之间的差异，综合考虑市场情绪、分析师共识及风险因素。",
   gapAnalysisWait: "预计需要 1-3 分钟",
