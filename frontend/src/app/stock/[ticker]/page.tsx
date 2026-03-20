@@ -157,8 +157,8 @@ export default function StockPage() {
               <>
                 <p className="text-xl text-amber-600 dark:text-amber-400 mb-2">
                   {locale === "zh"
-                    ? "美股/港股数据需要 FMP API Key"
-                    : "US/HK stock data requires an FMP API Key"}
+                    ? "美股数据需要 FMP API Key"
+                    : "US stock data requires an FMP API Key"}
                 </p>
                 <p className="text-sm text-gray-400">
                   {locale === "zh"
