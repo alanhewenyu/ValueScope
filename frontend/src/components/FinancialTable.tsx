@@ -26,6 +26,7 @@ const FIN_LABEL_MAP: Record<string, string> = {
   "▸ Key Ratios": "fin_secRatios",
   "Revenue": "fin_revenue",
   "EBIT": "fin_ebit",
+  "Net Income": "fin_netIncome",
   "Revenue Growth (%)": "fin_revGrowth",
   "EBIT Growth (%)": "fin_ebitGrowth",
   "EBIT Margin (%)": "fin_ebitMargin",

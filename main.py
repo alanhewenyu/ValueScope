@@ -6,7 +6,7 @@ import re
 import sys
 from datetime import date
 from modeling.data import get_historical_financials, get_company_share_float, fetch_company_profile, fetch_forex_data, format_summary_df, validate_ticker, _normalize_ticker, is_a_share, is_hk_stock, is_jpn_stock, _fill_profile_from_financial_data, _calculate_beta_akshare
-from modeling.dcf import calculate_dcf, print_dcf_results, sensitivity_analysis, print_sensitivity_table, wacc_sensitivity_analysis, print_wacc_sensitivity, calculate_wacc, print_wacc_details, get_risk_free_rate
+from modeling.dcf import calculate_dcf, print_dcf_results, sensitivity_analysis, print_sensitivity_table, wacc_sensitivity_analysis, print_wacc_sensitivity, calculate_wacc, print_wacc_details, get_risk_free_rate, calculate_buffett, print_buffett_valuation
 from modeling.constants import HISTORICAL_DATA_PERIODS_ANNUAL, HISTORICAL_DATA_PERIODS_QUARTER, TERMINAL_RISK_PREMIUM, TERMINAL_RONIC_PREMIUM
 from modeling.ai_analyst import analyze_company, interactive_review, analyze_valuation_gap, _ensure_ai_engine, set_ai_engine, _ai_engine_display_name
 from modeling import excel_export as _excel
@@ -626,6 +626,13 @@ def main(args):
                                forex_rate=forex_rate, stock_currency=stock_currency,
                                reported_currency=reported_currency)
 
+        # ── Buffett Owner Earnings Valuation ──
+        buffett_result = calculate_buffett(
+            summary_df, company_profile, base_year_data['Outstanding Shares'],
+            forex_rate=forex_rate)
+        print_buffett_valuation(buffett_result,
+                                forex_rate=forex_rate, stock_currency=stock_currency)
+
         gap_analysis_result = None
 
         # ── Exit or continue ──
@@ -761,6 +768,13 @@ def main(args):
             print_wacc_sensitivity(wacc_results, wacc_base,
                                    forex_rate=forex_rate, stock_currency=stock_currency,
                                    reported_currency=reported_currency)
+
+            # Buffett valuation (uses summary_df, not user-adjustable params)
+            buffett_result = calculate_buffett(
+                summary_df, company_profile, base_year_data['Outstanding Shares'],
+                forex_rate=forex_rate)
+            print_buffett_valuation(buffett_result,
+                                    forex_rate=forex_rate, stock_currency=stock_currency)
         break
 
 

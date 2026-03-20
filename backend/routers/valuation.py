@@ -30,6 +30,7 @@ from backend.data_cache import get_historical_financials
 from modeling.dcf import (
     calculate_dcf,
     calculate_wacc,
+    calculate_buffett,
     get_risk_free_rate,
     reverse_dcf,
     sensitivity_analysis,
@@ -335,7 +336,24 @@ def run_dcf(params: DCFParams):
         },
         "forecast_table": _dcf_table_to_json(results.get("dcf_table")),
         "reverse_dcf": reverse_dcf_result,
+        "buffett": _buffett_to_json(
+            summary_df, profile,
+            base_year_data.get("Outstanding Shares", 0),
+            forex_rate
+        ),
     })
+
+
+def _buffett_to_json(summary_df, profile, outstanding_shares, forex_rate):
+    """Run Buffett Owner Earnings valuation and return JSON-safe dict."""
+    try:
+        result = calculate_buffett(summary_df, profile, outstanding_shares, forex_rate)
+        # Remove projection table (too verbose for API)
+        result.pop('projection', None)
+        return _safe_json(result)
+    except Exception as e:
+        logger.debug("Buffett valuation failed: %s", e)
+        return {"available": False, "reason": str(e)}
 
 
 def _dcf_table_to_json(dcf_table) -> list[dict] | None:

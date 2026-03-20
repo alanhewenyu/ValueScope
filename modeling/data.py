@@ -1390,6 +1390,7 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
             cash_val = (bs.get('cashAndCashEquivalents', 0) or 0) / 1_000_000
             invest_val = (bs.get('totalInvestments', 0) or 0) / 1_000_000
             ic_val = (invested_capital or 0) / 1_000_000
+            net_income_val = (inc.get('netIncome', 0) or 0) / 1_000_000
             ebit_margin = (ebit / (inc.get('revenue', 0) or 1)) * 100 if inc.get('revenue', 0) != 0 else 0
 
             # Tag whether this quarter has actual cashflow data (vs. date-gap fill with zeros)
@@ -1405,6 +1406,7 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                 '▸ Profitability': '',
                 'Revenue': revenue_val,
                 'EBIT': ebit_val,
+                'Net Income': net_income_val,
                 'Revenue Growth (%)': revenue_growth,
                 'EBIT Growth (%)': ebit_growth,
                 'EBIT Margin (%)': ebit_margin,
@@ -1533,6 +1535,7 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                         '▸ Profitability': '',
                         'Revenue': ttm_revenue,
                         'EBIT': ttm_ebit,
+                        'Net Income': _ttm_net_income_m if _ttm_net_income_m is not None else 0,
                         'Revenue Growth (%)': ((ttm_revenue - prev_revenue) / prev_revenue * 100) if prev_revenue != 0 else 0,
                         'EBIT Growth (%)': ((ttm_ebit - prev_ebit) / prev_ebit * 100) if prev_ebit != 0 else 0,
                         'EBIT Margin (%)': (ttm_ebit / ttm_revenue * 100) if ttm_revenue != 0 else 0,
@@ -1631,6 +1634,7 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                             '▸ Profitability': '',
                             'Revenue': ttm_revenue,
                             'EBIT': ttm_ebit,
+                            'Net Income': _ttm_net_income_m if _ttm_net_income_m is not None else 0,
                             'Revenue Growth (%)': ((ttm_revenue - prev_revenue) / prev_revenue * 100) if prev_revenue != 0 else 0,
                             'EBIT Growth (%)': ((ttm_ebit - prev_ebit) / prev_ebit * 100) if prev_ebit != 0 else 0,
                             'EBIT Margin (%)': (ttm_ebit / ttm_revenue * 100) if ttm_revenue != 0 else 0,
@@ -1707,6 +1711,7 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                                 '▸ Profitability': '',
                                 'Revenue': ttm_revenue,
                                 'EBIT': ttm_ebit,
+                                'Net Income': _ttm_net_income_m if _ttm_net_income_m is not None else 0,
                                 'Revenue Growth (%)': ((ttm_revenue - prev_revenue) / prev_revenue * 100) if prev_revenue != 0 else 0,
                                 'EBIT Growth (%)': ((ttm_ebit - prev_ebit) / prev_ebit * 100) if prev_ebit != 0 else 0,
                                 'EBIT Margin (%)': (ttm_ebit / ttm_revenue * 100) if ttm_revenue != 0 else 0,
@@ -1865,6 +1870,7 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                         '▸ Profitability': '',
                         'Revenue': ttm_revenue,
                         'EBIT': ttm_ebit,
+                        'Net Income': _ttm_net_income_m if _ttm_net_income_m is not None else 0,
                         'Revenue Growth (%)': ((ttm_revenue - prev_revenue) / prev_revenue * 100) if prev_revenue != 0 else 0,
                         'EBIT Growth (%)': ((ttm_ebit - prev_ebit) / prev_ebit * 100) if prev_ebit != 0 else 0,
                         'EBIT Margin (%)': (ttm_ebit / ttm_revenue * 100) if ttm_revenue != 0 else 0,
@@ -1927,6 +1933,7 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                         '▸ Profitability': '',
                         'Revenue': ttm_revenue,
                         'EBIT': ttm_ebit,
+                        'Net Income': _ttm_net_income_m if _ttm_net_income_m is not None else 0,
                         'Revenue Growth (%)':((ttm_revenue - prev_revenue) / prev_revenue * 100) if prev_revenue != 0 else 0,
                         'EBIT Growth (%)': ((ttm_ebit - prev_ebit) / prev_ebit * 100) if prev_ebit != 0 else 0,
                         'EBIT Margin (%)': (ttm_ebit / ttm_revenue * 100) if ttm_revenue != 0 else 0,
@@ -2175,7 +2182,7 @@ def format_summary_df(summary_df):
     """Format summary_df for terminal display. Returns a new formatted copy; original is NOT modified."""
     df = summary_df.copy()
 
-    AMOUNT_ROWS = ['Revenue', 'EBIT',
+    AMOUNT_ROWS = ['Revenue', 'EBIT', 'Net Income',
                    '(+) Capital Expenditure', '(-) D&A', '(+) ΔWorking Capital', 'Total Reinvestment',
                    '(+) Total Debt', '(+) Total Equity',
                    '(-) Cash & Equivalents', '(-) Total Investments',

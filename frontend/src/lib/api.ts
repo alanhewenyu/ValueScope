@@ -126,6 +126,20 @@ export interface DCFResult {
     margin_converged: boolean;
     your_margin: number;
   } | null;
+  buffett?: {
+    available: boolean;
+    reason?: string;
+    owner_earnings?: number;
+    net_income?: number;
+    discount_rate?: number;
+    growth_phase1?: number;
+    terminal_growth?: number;
+    intrinsic_per_share?: number;
+    margin_of_safety_price?: number;
+    reported_currency?: string;
+    roe?: number;
+    payout?: number;
+  } | null;
 }
 
 export interface AIAnalysisResult {

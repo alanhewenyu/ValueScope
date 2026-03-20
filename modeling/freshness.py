@@ -426,6 +426,7 @@ def _akshare_cn(ticker: str, target_date: str) -> dict | None:
         "revenue": revenue,
         "operatingIncome": _safe_float(row.get("OPERATE_PROFIT")),
         "incomeTaxExpense": _safe_float(row.get("INCOME_TAX")),
+        "netIncome": _safe_float(row.get("PARENT_NETPROFIT")),
         "periodEndDate": target_date,
         **cf_data,
         **bs_data,
@@ -765,6 +766,8 @@ def _merge_into_summary(financial_data: dict, ak_data: dict, period_key: str) ->
             new_col[idx] = revenue_m
         elif idx == "EBIT":
             new_col[idx] = ebit_m
+        elif idx == "Net Income":
+            new_col[idx] = net_income / M if net_income else 0
         elif idx == "Revenue Growth (%)":
             new_col[idx] = rev_growth
         elif idx == "EBIT Growth (%)":

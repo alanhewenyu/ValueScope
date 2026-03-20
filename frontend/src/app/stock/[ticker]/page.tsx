@@ -1376,6 +1376,59 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
                     </div>
                   )}
 
+                  {/* Buffett Owner Earnings Valuation */}
+                  {result.buffett?.available && (() => {
+                    const b = result.buffett!;
+                    const bRaw = b.intrinsic_per_share ?? 0;
+                    const bMosRaw = b.margin_of_safety_price ?? 0;
+                    const bIntrinsic = hasFx ? bRaw * (result.forex_rate ?? 1) : bRaw;
+                    const bMos = hasFx ? bMosRaw * (result.forex_rate ?? 1) : bMosRaw;
+                    const bDiffPct = result.market_price ? ((bIntrinsic - result.market_price) / result.market_price * 100) : 0;
+                    const bColor = bDiffPct > 10 ? "text-green-600 dark:text-green-400" : bDiffPct < -10 ? "text-red-600 dark:text-red-400" : "text-gray-700 dark:text-gray-300";
+                    return (
+                      <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 p-4">
+                        <h4 className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-3">
+                          Buffett Owner Earnings Valuation
+                        </h4>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs mb-3">
+                          <div>
+                            <div className="text-gray-500 dark:text-gray-400 mb-0.5">{t.fin_netIncome}</div>
+                            <div className="font-mono font-medium">{b.net_income?.toLocaleString(undefined, {maximumFractionDigits: 0})}M</div>
+                          </div>
+                          <div>
+                            <div className="text-gray-500 dark:text-gray-400 mb-0.5">Owner Earnings</div>
+                            <div className="font-mono font-medium">{b.owner_earnings?.toLocaleString(undefined, {maximumFractionDigits: 0})}M</div>
+                          </div>
+                          <div>
+                            <div className="text-gray-500 dark:text-gray-400 mb-0.5">{t.discountRate}</div>
+                            <div className="font-mono font-medium">{((b.discount_rate ?? 0) * 100).toFixed(1)}%</div>
+                          </div>
+                          <div>
+                            <div className="text-gray-500 dark:text-gray-400 mb-0.5">{t.growthRate}</div>
+                            <div className="font-mono font-medium">{((b.growth_phase1 ?? 0) * 100).toFixed(1)}%</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-6 pt-2 border-t border-amber-200 dark:border-amber-800">
+                          <div>
+                            <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-0.5">{t.buffettIntrinsic}</div>
+                            <div className="text-lg font-bold text-gray-900 dark:text-white">{formatCurrency(bIntrinsic, result.currency)}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-0.5">{t.buffettMos}</div>
+                            <div className="text-lg font-bold text-gray-900 dark:text-white">{formatCurrency(bMos, result.currency)}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-0.5">{t.upsideDownside}</div>
+                            <div className={`text-lg font-bold ${bColor}`}>{bDiffPct > 0 ? "+" : ""}{bDiffPct.toFixed(1)}%</div>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-2">
+                          {t.buffettNote}
+                        </p>
+                      </div>
+                    );
+                  })()}
+
                   <p className="text-[10px] text-gray-400 dark:text-gray-500 leading-relaxed">
                     {t.sensitivityLegend}
                   </p>

@@ -488,3 +488,196 @@ def print_dcf_results(results, company_name, ttm_quarter='', ttm_label='', forex
         else:
             formatted_value = f"{val:,.0f}" if isinstance(val, (int, float)) else str(val)
             print(f"  {lbl.ljust(max_label_length)} : {formatted_value.rjust(max_value_length)}")
+
+
+# ── Buffett Owner Earnings Valuation ──────────────────────────────────
+
+def calculate_buffett(summary_df, company_profile, outstanding_shares, forex_rate=None):
+    """Buffett-style Owner Earnings valuation.
+
+    Owner Earnings = Net Income + D&A - Maintenance CapEx - ΔWorking Capital
+    Approximation: Maintenance CapEx ≈ D&A (conservative assumption)
+    → Owner Earnings ≈ Net Income - ΔWorking Capital
+
+    Discount rate: max(10%, risk-free rate + 5%)
+    Growth: ROE × (1 - Payout Ratio), capped at risk-free + 3%
+    Terminal growth: risk-free rate (GDP-like)
+    """
+    import numpy as np
+
+    country = company_profile.get('country', 'United States')
+    country_map = {'CN': 'China', 'US': 'United States', 'HK': 'Hong Kong'}
+    mapped = country_map.get(country, country)
+    rf = get_risk_free_rate(mapped)
+
+    # ── Extract base year data (first column = most recent) ──
+    def _val(row_name, col=0):
+        if row_name in summary_df.index:
+            v = pd.to_numeric(summary_df.loc[row_name].iloc[col], errors='coerce')
+            return float(v) if pd.notnull(v) else 0.0
+        return 0.0
+
+    net_income = _val('Net Income')       # in millions
+    da = _val('(-) D&A')                  # in millions
+    capex = _val('(+) Capital Expenditure')  # in millions
+    wc = _val('(+) ΔWorking Capital')     # in millions
+    cash = _val('(-) Cash & Equivalents')
+    total_investments = _val('(-) Total Investments')
+    total_debt = _val('(+) Total Debt')
+    minority = _val('Minority Interest')
+    roe = _val('ROE (%)')
+    payout = _val('Payout Ratio (%)')
+    reported_currency = summary_df.loc['Reported Currency'].iloc[0] if 'Reported Currency' in summary_df.index else 'USD'
+
+    # ── Owner Earnings ──
+    # Maintenance CapEx ≈ D&A (what's needed just to maintain current capacity)
+    # Growth CapEx = Total CapEx - D&A (discretionary spending for growth)
+    maintenance_capex = da  # conservative: assume D&A approximates maintenance capex
+    owner_earnings = net_income + da - maintenance_capex - wc  # = net_income - wc
+
+    if owner_earnings <= 0:
+        return {
+            'available': False,
+            'reason': 'Owner Earnings ≤ 0 (company not generating positive owner earnings)',
+            'owner_earnings': owner_earnings,
+        }
+
+    # ── Discount rate: Buffett's hurdle rate ──
+    discount_rate = max(0.10, rf + 0.05)
+
+    # ── Growth rate ──
+    # Sustainable growth = ROE × Retention Ratio
+    retention = 1 - (payout / 100) if payout > 0 else 0.7  # default 70% retention
+    if roe > 0:
+        sustainable_growth = (roe / 100) * retention
+    else:
+        sustainable_growth = rf  # fallback
+
+    # Historical growth for sanity check
+    rev_growth_vals = []
+    if 'Revenue Growth (%)' in summary_df.index:
+        for i in range(min(3, len(summary_df.columns))):
+            v = pd.to_numeric(summary_df.loc['Revenue Growth (%)'].iloc[i], errors='coerce')
+            if pd.notnull(v):
+                rev_growth_vals.append(v / 100)
+    hist_growth = np.mean(rev_growth_vals) if rev_growth_vals else rf
+
+    # Use the more conservative of sustainable growth and historical growth
+    growth_phase1 = min(sustainable_growth, max(hist_growth, rf))
+    # Cap growth phase 1 at rf + 8% (no wildly optimistic assumptions)
+    growth_phase1 = min(growth_phase1, rf + 0.08)
+    growth_phase1 = max(growth_phase1, 0)  # no negative growth in phase 1
+
+    terminal_growth = rf  # GDP-like perpetual growth
+
+    # ── 10-year DCF with two phases ──
+    # Phase 1 (years 1-5): growth_phase1
+    # Phase 2 (years 6-10): linear fade to terminal_growth
+    # Terminal: perpetuity at terminal_growth
+    pv_total = 0
+    oe = owner_earnings
+    projection_table = []
+
+    for yr in range(1, 11):
+        if yr <= 5:
+            g = growth_phase1
+        else:
+            g = growth_phase1 + (terminal_growth - growth_phase1) * (yr - 5) / 5
+        oe = oe * (1 + g)
+        pv = oe / (1 + discount_rate) ** yr
+        pv_total += pv
+        projection_table.append({
+            'year': yr, 'growth': g, 'owner_earnings': oe, 'pv': pv
+        })
+
+    # Terminal value
+    terminal_oe = oe * (1 + terminal_growth)
+    terminal_value = terminal_oe / (discount_rate - terminal_growth)
+    pv_terminal = terminal_value / (1 + discount_rate) ** 10
+
+    # ── Intrinsic value ──
+    total_value = pv_total + pv_terminal + cash + total_investments
+    equity_value = total_value - total_debt - minority
+
+    if outstanding_shares > 0:
+        intrinsic_per_share = (equity_value * 1_000_000) / outstanding_shares
+    else:
+        intrinsic_per_share = 0
+
+    margin_of_safety_price = intrinsic_per_share * 0.65  # 35% margin of safety
+
+    return {
+        'available': True,
+        'owner_earnings': owner_earnings,
+        'net_income': net_income,
+        'da': da,
+        'maintenance_capex': maintenance_capex,
+        'wc_change': wc,
+        'discount_rate': discount_rate,
+        'growth_phase1': growth_phase1,
+        'terminal_growth': terminal_growth,
+        'sustainable_growth': sustainable_growth,
+        'hist_avg_growth': hist_growth,
+        'pv_cash_flows': pv_total,
+        'pv_terminal': pv_terminal,
+        'total_value': total_value,
+        'equity_value': equity_value,
+        'intrinsic_per_share': intrinsic_per_share,
+        'margin_of_safety_price': margin_of_safety_price,
+        'outstanding_shares': outstanding_shares,
+        'reported_currency': reported_currency,
+        'projection': projection_table,
+        'roe': roe,
+        'payout': payout,
+    }
+
+
+def print_buffett_valuation(result, forex_rate=None, stock_currency=None):
+    """Print Buffett Owner Earnings valuation results to terminal."""
+    if not result.get('available'):
+        print(f"\n{S.header('Buffett Owner Earnings Valuation')}")
+        print(f"  {S.DIM}{result.get('reason', 'Not available')}{S.RESET}")
+        return
+
+    reported_currency = result.get('reported_currency', 'USD')
+    need_convert = forex_rate and stock_currency and reported_currency != stock_currency
+
+    print(f"\n{S.header('Buffett Owner Earnings Valuation')}")
+
+    # Owner Earnings breakdown
+    print(f"\n  {S.label('Owner Earnings Breakdown')} ({reported_currency}, millions):")
+    print(f"    Net Income (归母)         : {result['net_income']:>12,.0f}")
+    print(f"    (+) D&A                   : {result['da']:>12,.0f}")
+    print(f"    (-) Maintenance CapEx ≈D&A: {result['maintenance_capex']:>12,.0f}")
+    print(f"    (-) ΔWorking Capital      : {result['wc_change']:>12,.0f}")
+    print(f"    {S.BOLD}= Owner Earnings          : {result['owner_earnings']:>12,.0f}{S.RESET}")
+
+    # Key assumptions
+    print(f"\n  {S.label('Assumptions')}:")
+    print(f"    Discount Rate (hurdle)    : {result['discount_rate']*100:.1f}%")
+    print(f"    Growth Phase 1 (yr 1-5)   : {result['growth_phase1']*100:.1f}%")
+    print(f"    Terminal Growth           : {result['terminal_growth']*100:.1f}%")
+    if result['roe'] > 0:
+        print(f"    {S.DIM}ROE: {result['roe']:.1f}% × Retention: {(100 - result['payout']):.0f}% → Sustainable: {result['sustainable_growth']*100:.1f}%{S.RESET}")
+    if result['hist_avg_growth'] != 0:
+        print(f"    {S.DIM}Historical avg revenue growth (3yr): {result['hist_avg_growth']*100:.1f}%{S.RESET}")
+
+    # Valuation
+    print(f"\n  {S.label('Valuation')} ({reported_currency}, millions):")
+    print(f"    PV of Owner Earnings (10yr): {result['pv_cash_flows']:>12,.0f}")
+    print(f"    PV of Terminal Value       : {result['pv_terminal']:>12,.0f}")
+    print(f"    + Cash & Investments       : {(result['total_value'] - result['pv_cash_flows'] - result['pv_terminal']):>12,.0f}")
+    print(f"    - Debt & Minority          : {(result['total_value'] - result['equity_value']):>12,.0f}")
+    print(f"    {S.BOLD}= Equity Value             : {result['equity_value']:>12,.0f}{S.RESET}")
+
+    # Per share
+    intrinsic = result['intrinsic_per_share']
+    mos = result['margin_of_safety_price']
+    print(f"\n  {S.BOLD}{S.BRIGHT_GREEN}Intrinsic Value / Share ({reported_currency}) : {intrinsic:>12,.2f}{S.RESET}")
+    if need_convert:
+        converted_intrinsic = intrinsic * forex_rate
+        converted_mos = mos * forex_rate
+        print(f"  {S.BOLD}{S.BRIGHT_GREEN}Intrinsic Value / Share ({stock_currency}) : {converted_intrinsic:>12,.2f}{S.RESET}  {S.DIM}(× {forex_rate:.4f}){S.RESET}")
+        print(f"  {S.BOLD}Margin of Safety Price ({stock_currency})  : {converted_mos:>12,.2f}{S.RESET}  {S.DIM}(35% discount){S.RESET}")
+    else:
+        print(f"  {S.BOLD}Margin of Safety Price         : {mos:>12,.2f}{S.RESET}  {S.DIM}(35% discount){S.RESET}")
