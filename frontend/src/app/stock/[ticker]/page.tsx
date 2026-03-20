@@ -162,8 +162,8 @@ export default function StockPage() {
                 </p>
                 <p className="text-sm text-gray-400">
                   {locale === "zh"
-                    ? "请点击右上角 ⚙ 设置 FMP API Key。免费注册：financialmodelingprep.com"
-                    : "Please set it in ⚙ Settings (top right). Free signup: financialmodelingprep.com"}
+                    ? "请点击右上角 ⚙ 设置 FMP API Key"
+                    : "Please set it in ⚙ Settings (top right)"}
                 </p>
               </>
             ) : isBackendDown ? (
