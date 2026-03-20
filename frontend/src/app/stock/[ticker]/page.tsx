@@ -147,13 +147,26 @@ export default function StockPage() {
     const isBackendDown = error === "__backend_down__";
     // Check if this looks like a US stock (no dot suffix) and user has no FMP API key
     const isLikelyUS = !decodeURIComponent(ticker).includes(".");
-    const needsApiKey = !isBackendDown && isLikelyUS && !fmpApiKey;
+    const needsApiKey = isLikelyUS && !fmpApiKey;
     return (
       <>
         <Navbar />
         <div className="flex items-center justify-center min-h-[60vh]">
           <div className="text-center">
-            {isBackendDown ? (
+            {needsApiKey ? (
+              <>
+                <p className="text-xl text-amber-600 dark:text-amber-400 mb-2">
+                  {locale === "zh"
+                    ? "美股/港股数据需要 FMP API Key"
+                    : "US/HK stock data requires an FMP API Key"}
+                </p>
+                <p className="text-sm text-gray-400">
+                  {locale === "zh"
+                    ? "请点击右上角 ⚙ 设置 FMP API Key。免费注册：financialmodelingprep.com"
+                    : "Please set it in ⚙ Settings (top right). Free signup: financialmodelingprep.com"}
+                </p>
+              </>
+            ) : isBackendDown ? (
               <>
                 <p className="text-xl text-gray-500 mb-2">
                   {locale === "zh" ? "无法连接后端服务" : "Cannot connect to backend service"}
@@ -171,13 +184,6 @@ export default function StockPage() {
                   {t.errorHelp}
                 </p>
               </>
-            )}
-            {needsApiKey && (
-              <p className="text-sm text-amber-600 dark:text-amber-400 mt-3">
-                {locale === "zh"
-                  ? "美股数据需要 FMP API Key，请点击右上角 ⚙ 设置。"
-                  : "US stock data requires an FMP API Key. Please set it in ⚙ Settings (top right)."}
-              </p>
             )}
           </div>
         </div>
