@@ -1320,7 +1320,7 @@ function ClosedTradesSection({ locale }: { locale: string }) {
 // Onboarding — Empty state for new users
 // ══════════════════════════════════════════
 
-function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; onRefresh: () => void; onOpenPanel: () => void }) {
+function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; onRefresh: () => void; onOpenPanel: (tab?: "edit" | "close" | "cash" | "settings") => void }) {
   const zh = locale === "zh";
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{
@@ -1381,7 +1381,7 @@ function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; on
             : "📊 Cost mode: Capital = position cost + cash − realized P&L. Capital always equals original invested amount. No change needed for most accounts."}</p>
         </div>
 
-        <button onClick={onOpenPanel}
+        <button onClick={() => onOpenPanel("settings")}
           className="w-full px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-medium">
           {zh ? "前往设置 →" : "Go to Settings →"}
         </button>
@@ -1410,7 +1410,7 @@ function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; on
             <p className="text-xs text-gray-500 leading-relaxed mb-2">
               {zh ? "添加你的证券账户，选择入金模式或成本模式。所有后续操作的账户名都从这里获取。" : "Add your brokerage accounts and choose capital mode. All account names are sourced from here."}
             </p>
-            <button onClick={onOpenPanel}
+            <button onClick={() => onOpenPanel("settings")}
               className="text-xs text-blue-600 hover:text-blue-800 font-medium">
               {zh ? "打开管理面板 → Settings" : "Open Panel → Settings"}
             </button>
@@ -1430,7 +1430,7 @@ function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; on
               {zh ? "可以手动逐条添加，或下载 CSV 模板批量导入。" : "Add positions manually, or download a CSV template for bulk import."}
             </p>
             <div className="flex gap-2 flex-wrap">
-              <button onClick={onOpenPanel}
+              <button onClick={() => onOpenPanel("edit")}
                 className="px-3 py-1.5 text-xs rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700">
                 {zh ? "手动录入" : "Manual Entry"}
               </button>
@@ -1466,7 +1466,7 @@ function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; on
             <p className="text-xs text-gray-500 leading-relaxed mb-2">
               {zh ? "录入各账户的现金余额和杠杆。完成第 2 步导入持仓后，系统会自动创建对应的现金账户（余额为 0），你只需更新金额。" : "Enter cash balances and leverage for each account. After completing Step 2 (import positions), cash accounts are auto-created (balance 0) — just update the amounts."}
             </p>
-            <button onClick={onOpenPanel}
+            <button onClick={() => onOpenPanel("cash")}
               className="text-xs text-blue-600 hover:text-blue-800 font-medium">
               {zh ? "打开管理面板 → Cash/Margin" : "Open Panel → Cash/Margin"}
             </button>
@@ -1482,12 +1482,18 @@ function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; on
 // Sidebar — Data Management (slide-out panel)
 // ══════════════════════════════════════════
 
-function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHolding }: {
+function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHolding, initialTab = "edit" }: {
   holdings: PortfolioHolding[]; data: PortfolioData | null; locale: string;
   onRefresh: () => void; open: boolean; onClose: () => void;
   editHolding?: PortfolioHolding | null;
+  initialTab?: "edit" | "close" | "cash" | "settings";
 }) {
-  const [tab, setTab] = useState<"edit" | "close" | "cash" | "settings">("edit");
+  const [tab, setTab] = useState<"edit" | "close" | "cash" | "settings">(initialTab);
+
+  // Sync tab when panel opens with a specific initialTab
+  useEffect(() => {
+    if (open) setTab(initialTab);
+  }, [open, initialTab]);
   const [msg, setMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -2583,6 +2589,7 @@ export default function PortfolioPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [panelInitialTab, setPanelInitialTab] = useState<"edit" | "close" | "cash" | "settings">("edit");
   const [panelEditHolding, setPanelEditHolding] = useState<PortfolioHolding | null>(null);
   const [portfolios, setPortfolios] = useState<PortfolioInfo[]>([]);
   const activePortfolio = portfolios.find((p) => p.active)?.name || "";
@@ -2867,7 +2874,7 @@ export default function PortfolioPage() {
         {error && <div className="bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl p-4 mb-4">{error}</div>}
 
         {data && data.holdings.length === 0 && (
-          <OnboardingCard locale={locale} onRefresh={load} onOpenPanel={() => setPanelOpen(true)} />
+          <OnboardingCard locale={locale} onRefresh={load} onOpenPanel={(tab) => { setPanelInitialTab(tab || "edit"); setPanelOpen(true); }} />
         )}
 
         {data && data.holdings.length > 0 && (
@@ -2990,7 +2997,7 @@ export default function PortfolioPage() {
         )}
 
         {/* ── Data Management Panel (sidebar) — always available when data loaded ── */}
-        {data && <DataPanel holdings={data.holdings} data={data} locale={locale} onRefresh={load} open={panelOpen} onClose={() => { setPanelOpen(false); setPanelEditHolding(null); }} editHolding={panelEditHolding} />}
+        {data && <DataPanel holdings={data.holdings} data={data} locale={locale} onRefresh={load} open={panelOpen} onClose={() => { setPanelOpen(false); setPanelEditHolding(null); }} editHolding={panelEditHolding} initialTab={panelInitialTab} />}
       </main>
     </>
   );
