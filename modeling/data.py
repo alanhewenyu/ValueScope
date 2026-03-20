@@ -2095,6 +2095,36 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
         summary_df.columns = summary_df.iloc[0]
         summary_df = summary_df[1:]
 
+        # ── Compute Incremental EBIT Margin (%) post-hoc from summary rows ──
+        # IM = ΔEBIT / ΔRevenue * 100.  Columns are newest-first, so col i+1 is older.
+        # When |ΔRevenue/Revenue| < 3%, the ratio is unreliable → show N/A.
+        if 'EBIT' in summary_df.index and 'Revenue' in summary_df.index:
+            _rev = pd.to_numeric(summary_df.loc['Revenue'], errors='coerce')
+            _ebit = pd.to_numeric(summary_df.loc['EBIT'], errors='coerce')
+            _im_vals = []
+            for ci in range(len(summary_df.columns)):
+                if ci + 1 < len(summary_df.columns):
+                    d_rev = _rev.iloc[ci] - _rev.iloc[ci + 1]
+                    d_ebit = _ebit.iloc[ci] - _ebit.iloc[ci + 1]
+                    prev_rev = _rev.iloc[ci + 1]
+                    # Skip when revenue change is too small (<3%) — ratio is unreliable
+                    if prev_rev != 0 and abs(d_rev / prev_rev) < 0.03:
+                        _im_vals.append(float('nan'))
+                    elif d_rev != 0:
+                        _im_vals.append(d_ebit / d_rev * 100)
+                    else:
+                        _im_vals.append(float('nan'))
+                else:
+                    _im_vals.append(float('nan'))  # oldest year — no prior data
+            # Insert after EBIT Margin (%)
+            _margin_pos = summary_df.index.get_loc('EBIT Margin (%)')
+            _im_series = pd.Series(_im_vals, index=summary_df.columns, name='Incremental Margin (%)')
+            summary_df = pd.concat([
+                summary_df.iloc[:_margin_pos + 1],
+                _im_series.to_frame().T,
+                summary_df.iloc[_margin_pos + 1:],
+            ])
+
         income_df = pd.DataFrame(income_statement).T
         balance_df = pd.DataFrame(balance_sheet).T
         cashflow_df = pd.DataFrame(cashflow_statement).T
@@ -2150,7 +2180,8 @@ def format_summary_df(summary_df):
                    '(+) Total Debt', '(+) Total Equity',
                    '(-) Cash & Equivalents', '(-) Total Investments',
                    'Invested Capital', 'Minority Interest']
-    RATIO_ROWS = ['Revenue Growth (%)', 'EBIT Growth (%)', 'EBIT Margin (%)', 'Tax Rate (%)',
+    RATIO_ROWS = ['Revenue Growth (%)', 'EBIT Growth (%)', 'EBIT Margin (%)', 'Incremental Margin (%)',
+                  'Tax Rate (%)',
                   'Revenue / IC', 'Debt to Assets (%)', 'Cost of Debt (%)',
                   'ROIC (%)', 'ROE (%)', 'Dividend Yield (%)', 'Payout Ratio (%)']
     SECTION_HEADERS = ['▸ Profitability', '▸ Reinvestment', '▸ Capital Structure', '▸ Key Ratios']

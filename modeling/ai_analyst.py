@@ -527,10 +527,11 @@ ANALYSIS_PROMPT_TEMPLATE = """你是一位资深的股权研究分析师和DCF�
 **注意：下方历史财务数据的最新年度（最左列）是 {base_year} 年{ttm_context}。请基于 {base_year} 年的最新数据进行分析。{forecast_year_guidance}**
 
 **重要：请务必先使用 WebSearch 工具搜索以下信息再开始分析：**
-1. 搜索 "{ticker} earnings guidance revenue outlook {search_year}" — 获取公司管理层业绩指引（最优先参考）
-2. 搜索 "{ticker} revenue forecast {search_year} {search_year_2} analyst consensus" — 获取分析师一致预期
-3. 搜索 "{ticker} EBIT margin operating margin industry average" — 获取行业 benchmark
-4. 搜索 "{ticker} WACC cost of capital" — 获取多源 WACC 数据
+1. 搜索 "{ticker} {search_year} latest earnings results revenue profit" — 查找公司最新已披露的财报（年报或季报均可），获取最新实际收入、收入增速（同比）、经营利润率
+2. 搜索 "{ticker} earnings guidance revenue outlook {search_year}" — 获取公司管理层业绩指引（最优先参考）
+3. 搜索 "{ticker} revenue forecast {search_year} {search_year_2} analyst consensus" — 获取分析师一致预期
+4. 搜索 "{ticker} EBIT margin operating margin industry average" — 获取行业 benchmark
+5. 搜索 "{ticker} WACC cost of capital" — 获取多源 WACC 数据
 
 ## 公司基本信息
 - 公司名称: {company_name}
@@ -554,6 +555,13 @@ ANALYSIS_PROMPT_TEMPLATE = """你是一位资深的股权研究分析师和DCF�
 - **美股及其他**：使用数据源（FMP）提供的调整后 Operating Income，已剔除非经常性项目。
 因此，设定目标 EBIT Margin 时，**必须以上表中的历史 EBIT Margin 作为首要参考基准**，而不是外部搜索到的 GAAP operating margin（口径不同，直接对比会产生误导）。
 
+**关于 Incremental Margin（增量利润率）的说明：**
+上表中的 `Incremental Margin (%)` = ΔEBIT / ΔRevenue × 100，衡量的是每多赚1元收入中有多少转化为经营利润。这是经营杠杆（Operating Leverage）的直接体现：
+- **Incremental Margin > 当前 EBIT Margin**：公司有显著的规模效应（固定成本占比高），收入增长将带动 margin 扩张
+- **Incremental Margin ≈ 当前 EBIT Margin**：成本结构以可变成本为主，margin 随收入增长保持稳定
+- **Incremental Margin < 当前 EBIT Margin**：新增收入的盈利能力低于存量，margin 将随收入增长而收缩
+设定目标 EBIT Margin 时，**必须结合 Incremental Margin 趋势来判断 margin 扩张/收缩是否合理**。如果历史 Incremental Margin 持续高于当前 margin，说明规模效应显著，可以合理预期 margin 继续扩张；反之则应保守。
+
 ---
 
 请对以下每个参数进行**独立、深入**的分析。每个参数的分析必须包含：
@@ -575,7 +583,7 @@ ANALYSIS_PROMPT_TEMPLATE = """你是一位资深的股权研究分析师和DCF�
   }},
   "ebit_margin": {{
     "value": <数值>,
-    "reasoning": "<详细中文分析：**首要参考上方历史数据表中的 EBIT Margin 趋势和水平**（注意：该 EBIT 是为估值目的调整后的经营利润，口径与 GAAP 标准不同，不要直接与外部搜索到的 GAAP operating margin 对比）。在此基础上，结合行业长期趋势、公司运营杠杆、规模效应等因素，判断公司成熟期能达到的目标 EBIT margin。>"
+    "reasoning": "<详细中文分析：**首要参考上方历史数据表中的 EBIT Margin 趋势和水平**（注意：该 EBIT 是为估值目的调整后的经营利润，口径与 GAAP 标准不同，不要直接与外部搜索到的 GAAP operating margin 对比）。**其次参考 Incremental Margin（增量利润率）来判断 margin 扩张/收缩的合理性**：如果历史 Incremental Margin 持续高于当前 EBIT Margin，说明规模效应显著，目标 margin 可以适当高于当前水平；如果 Incremental Margin 低于或接近当前 margin，则目标 margin 不宜大幅高于当前水平。在此基础上，结合行业长期趋势、规模效应等因素，判断公司成熟期能达到的目标 EBIT margin。>"
   }},
   "convergence": {{
     "value": <数值>,
@@ -616,10 +624,11 @@ ANALYSIS_PROMPT_TEMPLATE_EN = """You are a senior equity research analyst and DC
 **Note: The most recent year in the historical data below (leftmost column) is {base_year}{ttm_context}. Please base your analysis on the latest {base_year} data. {forecast_year_guidance}**
 
 **Important: You MUST use WebSearch to search for the following information before starting your analysis:**
-1. Search "{ticker} earnings guidance revenue outlook {search_year}" — find management earnings guidance (highest priority)
-2. Search "{ticker} revenue forecast {search_year} {search_year_2} analyst consensus" — find analyst consensus estimates
-3. Search "{ticker} EBIT margin operating margin industry average" — find industry benchmarks
-4. Search "{ticker} WACC cost of capital" — find WACC data from multiple sources
+1. Search "{ticker} {search_year} latest earnings results revenue profit" — find the company's latest disclosed earnings (annual or quarterly), get actual revenue, YoY revenue growth, and operating margin
+2. Search "{ticker} earnings guidance revenue outlook {search_year}" — find management earnings guidance (highest priority)
+3. Search "{ticker} revenue forecast {search_year} {search_year_2} analyst consensus" — find analyst consensus estimates
+4. Search "{ticker} EBIT margin operating margin industry average" — find industry benchmarks
+5. Search "{ticker} WACC cost of capital" — find WACC data from multiple sources
 
 ## Company Information
 - Company Name: {company_name}
@@ -643,6 +652,13 @@ The EBIT figures in the table above are adjusted operating profit for DCF valuat
 - **US stocks and others**: Uses adjusted Operating Income from the data provider (FMP), with non-recurring items already excluded.
 Therefore, when setting the target EBIT Margin, you **must use the historical EBIT Margin shown in the table above as the primary benchmark**, rather than externally searched GAAP operating margins (which use a different definition and direct comparison would be misleading).
 
+**About Incremental Margin:**
+The `Incremental Margin (%)` in the table = ΔEBIT / ΔRevenue × 100, measuring how much of each additional dollar of revenue converts to operating profit. This directly reflects operating leverage:
+- **Incremental Margin > current EBIT Margin**: significant scale effects (high fixed cost ratio), revenue growth drives margin expansion
+- **Incremental Margin ≈ current EBIT Margin**: cost structure is mostly variable, margins stay stable with growth
+- **Incremental Margin < current EBIT Margin**: incremental revenue is less profitable, margins will contract with growth
+When setting the target EBIT Margin, **you must consider the Incremental Margin trend to validate whether margin expansion/contraction is realistic**.
+
 ---
 
 Please conduct **independent, in-depth** analysis for each parameter below. Each analysis must include:
@@ -664,7 +680,7 @@ Please conduct **independent, in-depth** analysis for each parameter below. Each
   }},
   "ebit_margin": {{
     "value": <number>,
-    "reasoning": "<Detailed analysis: **Primarily reference the historical EBIT Margin trends and levels shown in the data table above** (note: this EBIT is adjusted for valuation purposes and differs from standard GAAP — do not directly compare with externally searched GAAP operating margins). Based on this, consider long-term industry trends, operating leverage, scale effects, etc. to determine the target EBIT margin the company can achieve at maturity.>"
+    "reasoning": "<Detailed analysis: **Primarily reference the historical EBIT Margin trends and levels shown in the data table above** (note: this EBIT is adjusted for valuation purposes and differs from standard GAAP — do not directly compare with externally searched GAAP operating margins). **Then examine the Incremental Margin trend**: if Incremental Margin is consistently above current EBIT Margin, scale effects are significant and target margin can reasonably exceed current levels; if Incremental Margin is at or below current margin, target margin should not be set much higher. Based on this, consider long-term industry trends, scale effects, etc. to determine the target EBIT margin the company can achieve at maturity.>"
   }},
   "convergence": {{
     "value": <number>,
@@ -700,7 +716,7 @@ Please conduct **independent, in-depth** analysis for each parameter below. Each
 **Note: JSON must be valid format, all strings in double quotes, no comments. Cite data sources in reasoning where applicable.**"""
 
 
-def analyze_company(ticker, summary_df, base_year_data, company_profile, calculated_wacc, calculated_tax_rate, base_year, ttm_quarter='', ttm_end_date='', fy_end_month=12):
+def analyze_company(ticker, summary_df, base_year_data, company_profile, calculated_wacc, calculated_tax_rate, base_year, ttm_quarter='', ttm_end_date='', fy_end_month=12, freshness_info=None):
     """
     Call AI CLI (Claude or Gemini) to analyze a company and generate DCF valuation parameters.
 
@@ -763,6 +779,28 @@ def analyze_company(ticker, summary_df, base_year_data, company_profile, calcula
         ttm_base_label=ttm_base_label,
     )
 
+    # When data is stale AND akshare didn't supplement (data_source is still "api"),
+    # instruct AI to look up the latest earnings release for more accurate Year 1 forecasts
+    _stale_no_supplement = (
+        freshness_info and freshness_info.get("is_stale")
+        and freshness_info.get("data_source", "api") == "api"
+    )
+    if _stale_no_supplement:
+        _stale_period = freshness_info.get("expected_period", "")
+        # Q4 = annual report for Dec FY companies, make it clear
+        _stale_period_desc = _stale_period
+        if _stale_period.endswith("-Q4"):
+            _stale_year = _stale_period.replace("-Q4", "")
+            _stale_period_desc = f"FY{_stale_year} 年报（{_stale_period}）"
+        _stale_extra = (
+            f"\n\n**⚠ 重要：数据滞后提醒**\n"
+            f"该公司 {_stale_period_desc} 已经披露，但**上面的历史数据表格中尚未包含该期数据**。"
+            f"你在上面第1步搜索到的最新财报实际数据（收入、收入增速、经营利润率）是本次分析的**关键输入**，"
+            f"请务必以搜索到的实际财报数据为准来设定 Year 1 参数，"
+            f"而非仅依赖上面表格中的历史趋势外推。"
+        )
+        prompt += _stale_extra
+
     engine_name = _ai_engine_display_name()
     print(f"\n{S.ai_label(f'正在使用 AI 分析 {company_name} ({ticker})...')}  {S.muted(f'({engine_name})')}")
 
@@ -811,7 +849,7 @@ def _parse_structured_parameters(text):
     return None
 
 
-def interactive_review(ai_result, calculated_wacc, calculated_tax_rate, company_profile, wacc_details):
+def interactive_review(ai_result, calculated_wacc, calculated_tax_rate, company_profile, wacc_details, summary_df=None):
     """
     Interactive review of AI-suggested parameters.
     Each parameter shows ONLY its own reasoning from the structured AI output.
@@ -863,6 +901,25 @@ def interactive_review(ai_result, calculated_wacc, calculated_tax_rate, company_
         if reasoning:
             print(f"\n  {S.ai_label('AI 分析:')}")
             _format_ai_text(reasoning)
+
+        # For ebit_margin: show current margin and incremental margin reference
+        if key == "ebit_margin" and summary_df is not None:
+            try:
+                import pandas as _pd
+                _cur_margin = float(_pd.to_numeric(summary_df.loc['EBIT Margin (%)'], errors='coerce').iloc[0])
+                print(f"\n  {S.muted(f'当前 EBIT Margin: {_cur_margin:.1f}%')}")
+                if 'Incremental Margin (%)' in summary_df.index:
+                    _im = _pd.to_numeric(summary_df.loc['Incremental Margin (%)'], errors='coerce').dropna()
+                    # Use recent 3 years (exclude NaN)
+                    _im_valid = [v for v in _im.iloc[:-1] if _pd.notnull(v)]
+                    _im_recent = _im_valid[:3]
+                    if _im_recent:
+                        _im_avg = sum(_im_recent) / len(_im_recent)
+                        _im_latest = _im_recent[0]
+                        _trend = "↑ margin扩张" if _im_avg > _cur_margin else ("→ margin稳定" if abs(_im_avg - _cur_margin) < 3 else "↓ margin收缩")
+                        print(f"  {S.muted(f'Incremental Margin: 最新 {_im_latest:.1f}% | 平均 {_im_avg:.1f}% ({_trend})')}")
+            except Exception:
+                pass
 
         # For WACC: show the model calculation details
         if key == "wacc" and wacc_details:

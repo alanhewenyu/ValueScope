@@ -310,14 +310,9 @@ def _compute_forex_rate(results, company_profile, apikey):
             from modeling.data import fetch_forex_akshare
             forex_rate = fetch_forex_akshare(reported_currency, stock_currency)
 
-        if forex_rate:
-            print(S.muted(f"\n  ⓘ 汇率换算: 1 {reported_currency} = {forex_rate:.4f} {stock_currency}"))
-        else:
-            print(f"\n{S.warning(f'⚠ 无法获取 {reported_currency}/{stock_currency} 汇率，DCF 价格将使用原始 {reported_currency} 值进行比较')}")
-        return forex_rate
-    except Exception as e:
-        print(f"\n{S.warning(f'⚠ 获取汇率失败: {e}，DCF 价格将使用原始 {reported_currency} 值进行比较')}")
-        return None
+        return forex_rate, reported_currency, stock_currency
+    except Exception:
+        return None, reported_currency, stock_currency
 
 
 def _run_gap_analysis(auto_mode, ticker, company_profile, results, valuation_params,
@@ -411,6 +406,7 @@ def main(args):
                 sys.exit(1)
             continue
         # Freshness check — detect stale data, supplement from akshare if available
+        _freshness = {"is_stale": False}
         try:
             from modeling.freshness import check_data_freshness
             financial_data, _freshness = check_data_freshness(args.t, financial_data, args.apikey)
@@ -452,12 +448,16 @@ def main(args):
             print(S.muted(f"  ⓘ Note: {ttm_note}"))
             print()
 
-        # ── Key financial driver charts ──
-        print_key_drivers(summary_df, company_name)
-
-        # ── Relative valuation & historical percentiles ──
+        # ── Key financial driver charts (collapsed by default) ──
         _relval_data = _f_relval.result()  # already fetched in parallel
-        print_relative_valuation(ticker, apikey=args.apikey, prefetched=_relval_data)
+        if not auto_mode:
+            _show_charts = input(f'{S.prompt("View charts & relative valuation? (y/N, Enter to skip): ")}').strip().lower()
+            if _show_charts in ('y', 'yes'):
+                print_key_drivers(summary_df, company_name)
+                print_relative_valuation(ticker, apikey=args.apikey, prefetched=_relval_data)
+        else:
+            # In auto mode, skip charts (no user interaction)
+            pass
 
         # ── Collect Phase 2 results (should be done by now) ──
         if _f_beta:
@@ -489,22 +489,19 @@ def main(args):
         base_year_data['Total Reinvestment'] = summary_df.iloc[summary_df.index.get_loc('Total Reinvestment'), 0]
 
         # ── Start forex + WACC in background (runs while user reads data) ──
-        def _compute_wacc_bg():
-            fx = _compute_forex_rate(
+        def _fetch_forex_bg():
+            return _compute_forex_rate(
                 {'reported_currency': base_year_data.get('Reported Currency', '')},
                 company_profile, args.apikey)
+        _f_forex = _phase2_pool.submit(_fetch_forex_bg)
+
+        def _compute_wacc_bg():
+            fx, _, _ = _f_forex.result()
             _rfr = get_risk_free_rate(company_profile.get('country', 'United States'))
             _w, _erp, _wd = calculate_wacc(
                 base_year_data, company_profile, args.apikey, verbose=False, forex_rate=fx)
             return fx, _rfr, _w, _erp, _wd
         _f_wacc = _phase2_pool.submit(_compute_wacc_bg)
-
-        if _is_ttm:
-            _ttm_label = f'{base_year_col}{_ttm_quarter} TTM'
-            _ttm_date_str = f' (data through {_ttm_end_date})' if _ttm_end_date else ''
-            print(f"\n{S.info(f'Using {_ttm_label}{_ttm_date_str} as base year {base_year}. Forecast Year 1 ≈ {forecast_year_1}.')}")
-        else:
-            print(f"\n{S.info(f'The base year used for cashflow forecast is {base_year}.')}")
 
         # ── Optional: view quarterly data as reference (WACC computes in background) ──
         if not auto_mode:
@@ -520,8 +517,22 @@ def main(args):
                 else:
                     continue
 
+        # ── Display base year & forex info (after user confirms proceeding) ──
+        if _is_ttm:
+            _ttm_label = f'{base_year_col}{_ttm_quarter} TTM'
+            _ttm_date_str = f' (data through {_ttm_end_date})' if _ttm_end_date else ''
+            print(f"\n{S.info(f'Using {_ttm_label}{_ttm_date_str} as base year {base_year}. Forecast Year 1 ≈ {forecast_year_1}.')}")
+        else:
+            print(f"\n{S.info(f'The base year used for cashflow forecast is {base_year}.')}")
+
         # ── Collect WACC result (should be done by now — user was reading data) ──
         forex_rate, risk_free_rate, wacc, total_equity_risk_premium, wacc_details = _f_wacc.result()
+
+        _fx_rate, _fx_reported, _fx_stock = _f_forex.result()
+        if _fx_rate:
+            print(S.muted(f"  ⓘ 汇率换算: 1 {_fx_reported} = {_fx_rate:.4f} {_fx_stock}"))
+        elif _fx_reported and _fx_stock and _fx_reported != _fx_stock:
+            print(S.warning(f"  ⚠ 无法获取 {_fx_reported}/{_fx_stock} 汇率，DCF 价格将使用原始 {_fx_reported} 值进行比较"))
         average_tax_rate = base_year_data['Average Tax Rate']
 
         # ── Collect valuation parameters (AI or manual) ──
@@ -558,6 +569,7 @@ def main(args):
                     ttm_quarter=_ttm_quarter if _is_ttm else '',
                     ttm_end_date=_ttm_end_date,
                     fy_end_month=_fy_end_month,
+                    freshness_info=_freshness,
                 )
                 if auto_mode:
                     ai_params = _auto_accept_params(ai_result)
@@ -565,7 +577,7 @@ def main(args):
                         print(S.error("Auto 模式: AI 参数解析失败，退出。"))
                         sys.exit(1)
                 else:
-                    ai_params = interactive_review(ai_result, wacc, average_tax_rate, company_profile, wacc_details)
+                    ai_params = interactive_review(ai_result, wacc, average_tax_rate, company_profile, wacc_details, summary_df=summary_df)
             except Exception as e:
                 print(f"\n{S.error(f'AI 分析出错: {e}')}")
                 if auto_mode:

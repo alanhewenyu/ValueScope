@@ -832,7 +832,27 @@ def _merge_into_summary(financial_data: dict, ak_data: dict, period_key: str) ->
             financial_data["ttm_end_date"] = ""
             financial_data["ttm_note"] = ""
 
-    financial_data["summary"] = pd.concat([series.to_frame(), summary_df], axis=1)
+    summary_df = pd.concat([series.to_frame(), summary_df], axis=1)
+
+    # Recalculate Incremental Margin (%) after merge
+    if 'Incremental Margin (%)' in summary_df.index and 'EBIT' in summary_df.index and 'Revenue' in summary_df.index:
+        _rev = pd.to_numeric(summary_df.loc['Revenue'], errors='coerce')
+        _ebit = pd.to_numeric(summary_df.loc['EBIT'], errors='coerce')
+        for ci in range(len(summary_df.columns)):
+            if ci + 1 < len(summary_df.columns):
+                d_rev = _rev.iloc[ci] - _rev.iloc[ci + 1]
+                d_ebit = _ebit.iloc[ci] - _ebit.iloc[ci + 1]
+                prev_rev = _rev.iloc[ci + 1]
+                if prev_rev != 0 and abs(d_rev / prev_rev) < 0.03:
+                    summary_df.loc['Incremental Margin (%)', summary_df.columns[ci]] = float('nan')
+                elif d_rev != 0:
+                    summary_df.loc['Incremental Margin (%)', summary_df.columns[ci]] = d_ebit / d_rev * 100
+                else:
+                    summary_df.loc['Incremental Margin (%)', summary_df.columns[ci]] = float('nan')
+            else:
+                summary_df.loc['Incremental Margin (%)', summary_df.columns[ci]] = float('nan')
+
+    financial_data["summary"] = summary_df
 
     # Append freshness note about fallback data
     if freshness_note:

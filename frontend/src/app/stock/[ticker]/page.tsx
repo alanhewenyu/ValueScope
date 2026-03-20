@@ -76,9 +76,18 @@ export default function StockPage() {
     setError("");
 
     // Phase 1: Critical data (profile, financials) — blocks page render
+    // Track whether failures are network errors (backend down) vs data not found
+    let backendDown = false;
+    function catchWithDetect<T>(p: Promise<T>): Promise<T | null> {
+      return p.catch((e) => {
+        if (e instanceof TypeError && /fetch|network/i.test(e.message)) backendDown = true;
+        return null;
+      });
+    }
+
     const corePromise = Promise.all([
-      getProfile(decodedTicker, apikey).catch(() => null),
-      getFinancials(decodedTicker, apikey).catch(() => null),
+      catchWithDetect(getProfile(decodedTicker, apikey)),
+      catchWithDetect(getFinancials(decodedTicker, apikey)),
     ]);
 
     // Fire all secondary requests in parallel with Phase 1 (no dependency)
@@ -100,7 +109,7 @@ export default function StockPage() {
       .then(([p, f]) => {
         if (cancelled) return;
         if (!p && !f) {
-          setError(decodedTicker);
+          setError(backendDown ? "__backend_down__" : decodedTicker);
         }
         setProfile(p);
         if (p?.company_name) {
@@ -135,18 +144,34 @@ export default function StockPage() {
   }
 
   if (error) {
+    const isBackendDown = error === "__backend_down__";
     // Check if this looks like a US stock (no dot suffix) and user has no FMP API key
     const isLikelyUS = !decodeURIComponent(ticker).includes(".");
-    const needsApiKey = isLikelyUS && !fmpApiKey;
+    const needsApiKey = !isBackendDown && isLikelyUS && !fmpApiKey;
     return (
       <>
         <Navbar />
         <div className="flex items-center justify-center min-h-[60vh]">
           <div className="text-center">
-            <p className="text-xl text-gray-500 mb-2">{t.errorNotFound(error)}</p>
-            <p className="text-sm text-gray-400">
-              {t.errorHelp}
-            </p>
+            {isBackendDown ? (
+              <>
+                <p className="text-xl text-gray-500 mb-2">
+                  {locale === "zh" ? "无法连接后端服务" : "Cannot connect to backend service"}
+                </p>
+                <p className="text-sm text-gray-400">
+                  {locale === "zh"
+                    ? "请确认后端已启动 (uvicorn backend.main:app)"
+                    : "Please make sure the backend is running (uvicorn backend.main:app)"}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-xl text-gray-500 mb-2">{t.errorNotFound(error)}</p>
+                <p className="text-sm text-gray-400">
+                  {t.errorHelp}
+                </p>
+              </>
+            )}
             {needsApiKey && (
               <p className="text-sm text-amber-600 dark:text-amber-400 mt-3">
                 {locale === "zh"
