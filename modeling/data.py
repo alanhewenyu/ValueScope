@@ -715,6 +715,8 @@ def fetch_akshare_income_statement(ticker, period='annual', historical_periods=5
             'interestIncome': interest_income_val,
             'incomeBeforeTax': total_profit,
             'incomeTaxExpense': income_tax,
+            'netIncome': _safe_numeric(row.get('PARENT_NETPROFIT', 0)),
+            'deductedNetIncome': _safe_numeric(row.get('DEDUCT_PARENT_NETPROFIT', 0)),
         })
 
     # Build raw DataFrame for Excel export (transposed: fields as rows, dates as columns)
@@ -1391,6 +1393,7 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
             invest_val = (bs.get('totalInvestments', 0) or 0) / 1_000_000
             ic_val = (invested_capital or 0) / 1_000_000
             net_income_val = (inc.get('netIncome', 0) or 0) / 1_000_000
+            _deducted_ni_val = (inc.get('deductedNetIncome', 0) or 0) / 1_000_000
             ebit_margin = (ebit / (inc.get('revenue', 0) or 1)) * 100 if inc.get('revenue', 0) != 0 else 0
 
             # Tag whether this quarter has actual cashflow data (vs. date-gap fill with zeros)
@@ -1407,6 +1410,7 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                 'Revenue': revenue_val,
                 'EBIT': ebit_val,
                 'Net Income': net_income_val,
+                '_Deducted NI': _deducted_ni_val,  # hidden: A-share 扣非归母, 0 for others
                 'Revenue Growth (%)': revenue_growth,
                 'EBIT Growth (%)': ebit_growth,
                 'EBIT Margin (%)': ebit_margin,
@@ -2202,6 +2206,9 @@ def format_summary_df(summary_df):
                 lambda x: f"{x:.1f}" if pd.notnull(x) else 'N/A')
         elif index in SECTION_HEADERS:
             df.loc[index] = [''] * len(df.columns)
+
+    # Drop hidden rows (prefixed with _) — internal metadata not for display
+    df = df.loc[~df.index.str.startswith('_')]
 
     # Rename for display: EBIT → Operating Profit (EBIT)
     _DISPLAY_RENAME = {'EBIT': 'Operating Profit (EBIT)'}
