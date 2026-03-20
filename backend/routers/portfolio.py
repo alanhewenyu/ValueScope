@@ -33,10 +33,13 @@ def _get_db_path() -> str:
 
 
 def _require_db() -> str:
-    """Return DB_PATH or raise 404 if portfolio DB doesn't exist."""
+    """Return DB_PATH, auto-creating if missing."""
     path = _get_db_path()
     if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="Portfolio database not configured")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        from backend.services.portfolio_db import init_db
+        init_db(path)
+        logger.info("Auto-created portfolio DB at %s", path)
     return path
 
 
@@ -106,9 +109,19 @@ class ClosedTradeIn(BaseModel):
 # ── Endpoints ────────────────────────────────────────────
 
 @router.get("/status")
-def portfolio_status():
-    """Check if portfolio feature is available (DB exists)."""
+def portfolio_status(user_id: Optional[str] = Depends(get_current_user)):
+    """Check if portfolio feature is available.
+
+    For logged-in users, auto-create the database so the onboarding
+    flow (account setup, import templates) is shown instead of a
+    technical 'not configured' error.
+    """
     path = _get_db_path()
+    if not os.path.exists(path) and user_id and user_id != "local":
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        from backend.services.portfolio_db import init_db
+        init_db(path)
+        logger.info("Auto-created portfolio DB for user %s at %s", user_id, path)
     exists = os.path.exists(path)
     return {"available": exists, "db_path": path if exists else None}
 
