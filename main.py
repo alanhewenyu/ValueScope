@@ -612,51 +612,120 @@ def main(args):
                                forex_rate=forex_rate, stock_currency=stock_currency,
                                reported_currency=reported_currency)
 
-        # ── Gap analysis ──
+        # ── Gap analysis (first run) ──
         gap_analysis_result = _run_gap_analysis(
             auto_mode, ticker, company_profile, results, valuation_params,
             summary_df, base_year, forecast_year_1, forex_rate)
-
-        # ── Export: DB-first (when VS_DB_PATH set) or Excel (default) ──
-        _db_path = os.environ.get('VS_DB_PATH')
-        if _db_path:
-            # DB mode: prompt user (default yes), auto_mode skips prompt
-            _save_db = True
-            if not auto_mode:
-                _save_ans = input(f"\n{S.prompt('Save valuation to database? (Y/n): ')}").strip().lower()
-                _save_db = _save_ans != 'n'
-            if _save_db:
-                from modeling.db_export import maybe_save_to_db
-                maybe_save_to_db(
-                    ticker=ticker, company_name=company_name,
-                    mode='auto' if (use_ai and auto_mode) else ('copilot' if use_ai else 'manual'),
-                    ai_engine=_ai_engine_display_name() if use_ai else None,
-                    valuation_params=valuation_params, results=results,
-                    company_profile=company_profile,
-                    gap_analysis_result=gap_analysis_result, ai_result=ai_result,
-                    sensitivity_table=sensitivity_table,
-                    wacc_sensitivity=(wacc_results, wacc_base),
-                    financial_data=financial_data,
-                    forex_rate=forex_rate,
-                )
-                print(f"\n{S.success('Valuation saved to database.')}")
-            else:
-                print(f"\n{S.muted('Database save skipped.')}")
-        else:
-            # Default: Excel export (unchanged for other users)
-            _export_excel(auto_mode, use_ai, company_name, base_year_data, financial_data,
-                          valuation_params, company_profile, total_equity_risk_premium,
-                          gap_analysis_result, ai_result, wacc_results, wacc_base)
 
         # ── Exit or continue ──
         if auto_mode:
             print(f"\n{S.success('Auto 模式完成。')}")
             break
 
-        cont = input(f"\n{S.prompt('Valuation completed. Exit program? (y/n): ')}").strip().lower()
-        if cont == 'y':
-            print("Exiting...")
-            break
+        # ── Interactive parameter adjustment loop ──
+        _param_keys = [
+            ('1', 'revenue_growth_1', 'Revenue Growth Yr1 (%)'),
+            ('2', 'revenue_growth_2', 'Revenue Growth Yr2-5 (%)'),
+            ('3', 'ebit_margin', 'Target EBIT Margin (%)'),
+            ('4', 'convergence', 'Convergence Years'),
+            ('5', 'wacc', 'WACC (%)'),
+            ('6', 'tax_rate', 'Tax Rate (%)'),
+            ('7', 'revenue_invested_capital_ratio_1', 'Rev/IC Ratio Yr1'),
+            ('8', 'revenue_invested_capital_ratio_2', 'Rev/IC Ratio Yr3-5'),
+            ('9', 'revenue_invested_capital_ratio_3', 'Rev/IC Ratio Yr5-10'),
+        ]
+        while True:
+            print(f"\n{S.subheader('Adjust Parameters')}")
+            print(f"  {S.muted('Current parameters:')}")
+            for key, param, label in _param_keys:
+                val = valuation_params.get(param, raw_params.get(param, '?'))
+                if isinstance(val, float):
+                    val_str = f"{val:.2f}" if val < 10 else f"{val:.1f}"
+                else:
+                    val_str = str(val)
+                print(f"    [{key}] {label}: {val_str}")
+            print(f"    [e] Export to {'DB' if os.environ.get('VS_DB_PATH') else 'Excel'}")
+            print(f"    [g] Gap Analysis (AI)")
+            print(f"    [q] Exit")
+
+            choice = input(f"\n{S.prompt('Enter number to modify, or [e]xport/[g]ap/[q]uit: ')}").strip().lower()
+
+            if choice == 'q':
+                print("Exiting...")
+                break
+            elif choice == 'e':
+                _db_path = os.environ.get('VS_DB_PATH')
+                if _db_path:
+                    from modeling.db_export import maybe_save_to_db
+                    maybe_save_to_db(
+                        ticker=ticker, company_name=company_name,
+                        mode='auto' if (use_ai and auto_mode) else ('copilot' if use_ai else 'manual'),
+                        ai_engine=_ai_engine_display_name() if use_ai else None,
+                        valuation_params=valuation_params, results=results,
+                        company_profile=company_profile,
+                        gap_analysis_result=gap_analysis_result, ai_result=ai_result,
+                        sensitivity_table=sensitivity_table,
+                        wacc_sensitivity=(wacc_results, wacc_base),
+                        financial_data=financial_data,
+                        forex_rate=forex_rate,
+                    )
+                    print(f"\n{S.success('Valuation saved to database.')}")
+                else:
+                    _export_excel(auto_mode, use_ai, company_name, base_year_data, financial_data,
+                                  valuation_params, company_profile, total_equity_risk_premium,
+                                  gap_analysis_result, ai_result, wacc_results, wacc_base)
+                continue
+            elif choice == 'g':
+                gap_analysis_result = _run_gap_analysis(
+                    False, ticker, company_profile, results, valuation_params,
+                    summary_df, base_year, forecast_year_1, forex_rate)
+                continue
+
+            # Find matching param
+            matched = None
+            for key, param, label in _param_keys:
+                if choice == key:
+                    matched = (param, label)
+                    break
+
+            if not matched:
+                print(f"  {S.error('Invalid choice.')}")
+                continue
+
+            param_name, param_label = matched
+            current_val = valuation_params.get(param_name, raw_params.get(param_name, 0))
+            new_val = _input_float(
+                f"  {S.prompt(f'{param_label} (current: {current_val:.2f}): ')}",
+                default=current_val)
+
+            if new_val == current_val:
+                continue
+
+            # Update raw_params and rebuild
+            raw_params[param_name] = new_val
+            valuation_params = _build_valuation_params(
+                raw_params, base_year, risk_free_rate, _is_ttm, _ttm_quarter, _ttm_label,
+                forecast_year_1=forecast_year_1, fy_end_month=_fy_end_month)
+
+            # Recalculate DCF
+            print(f"\n{S.info('Recalculating...')}")
+            results = calculate_dcf(base_year_data, valuation_params, financial_data, company_info, company_profile)
+            print_dcf_results(results, company_name, ttm_label=valuation_params.get('ttm_label', ''),
+                              forex_rate=forex_rate, stock_currency=stock_currency)
+
+            # Recalculate sensitivity
+            sensitivity_table = sensitivity_analysis(base_year_data, valuation_params, financial_data, company_info, company_profile)
+            print(f"\n{S.subheader(f'Sensitivity Analysis - Revenue Growth vs EBIT Margin ({sensitivity_currency})')}")
+            print_sensitivity_table(sensitivity_table, valuation_params,
+                                    forex_rate=forex_rate, stock_currency=stock_currency,
+                                    reported_currency=reported_currency)
+
+            wacc_results, wacc_base = wacc_sensitivity_analysis(base_year_data, valuation_params, financial_data, company_info, company_profile)
+            print(f"\n{S.subheader(f'Sensitivity Analysis - WACC ({sensitivity_currency})')}")
+            print_wacc_sensitivity(wacc_results, wacc_base,
+                                   forex_rate=forex_rate, stock_currency=stock_currency,
+                                   reported_currency=reported_currency)
+        break
 
 
 if __name__ == '__main__':
