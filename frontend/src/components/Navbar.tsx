@@ -20,11 +20,23 @@ export default function Navbar() {
 
   // Show Portfolio/History if logged in OR on localhost
   const [isLocal, setIsLocal] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   useEffect(() => {
     const h = window.location.hostname;
     setIsLocal(h === "localhost" || h === "127.0.0.1");
   }, []);
   const showPrivate = isLocal || !!user;
+
+  // Check admin access when user changes
+  useEffect(() => {
+    if (!user) { setIsAdmin(false); return; }
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const token = localStorage.getItem("valuescope_token");
+    if (!token) return;
+    fetch(`${API_BASE}/api/admin/stats`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then(r => { setIsAdmin(r.ok); }).catch(() => { setIsAdmin(false); });
+  }, [user]);
 
   // Close user menu on outside click
   useEffect(() => {
@@ -66,6 +78,11 @@ export default function Navbar() {
             {showPrivate && (
               <Link href="/portfolio" className="hover:text-gray-900 dark:hover:text-white transition-colors">
                 {locale === "zh" ? "投资组合" : "Portfolio"}
+              </Link>
+            )}
+            {isAdmin && (
+              <Link href="/admin" className="hover:text-gray-900 dark:hover:text-white transition-colors text-amber-600 dark:text-amber-400">
+                Admin
               </Link>
             )}
             <LanguageToggle />
@@ -160,6 +177,15 @@ export default function Navbar() {
                     className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
                   >
                     {locale === "zh" ? "投资组合" : "Portfolio"}
+                  </Link>
+                )}
+                {isAdmin && (
+                  <Link
+                    href="/admin"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="block px-4 py-2 text-sm text-amber-600 dark:text-amber-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+                  >
+                    Admin
                   </Link>
                 )}
                 <div className="px-4 py-2">

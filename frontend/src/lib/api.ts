@@ -1194,3 +1194,44 @@ export async function getPortfolioEarnings(apikey = ""): Promise<PortfolioEarnin
 export async function getPortfolioRatings(apikey = ""): Promise<PortfolioRatingChange[]> {
   return fetchAPI<PortfolioRatingChange[]>(`/api/portfolio/rating-changes?apikey=${apikey}`);
 }
+
+// ── Admin API ──
+
+export interface AdminStats {
+  total_users: number;
+  total_valuations: number;
+  today_signups: number;
+  db_size_mb: { valuations: number; portfolio: number };
+  disk: { total_gb: number | null; free_gb: number | null; used_pct: number | null };
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  created_at: string;
+  valuation_count: number;
+  portfolio_count: number;
+}
+
+export interface AdminSystem {
+  python_version: string;
+  api_keys: Record<string, boolean>;
+  data_dir: string;
+  disk: { total_gb: number | null; free_gb: number | null };
+}
+
+export async function getAdminStats(): Promise<AdminStats> {
+  return fetchAPI<AdminStats>("/api/admin/stats");
+}
+
+export async function getAdminUsers(): Promise<{ users: AdminUser[] }> {
+  return fetchAPI<{ users: AdminUser[] }>("/api/admin/users");
+}
+
+export async function deleteAdminUser(userId: string): Promise<{ ok: boolean }> {
+  return fetchAPI<{ ok: boolean }>(`/api/admin/users/${encodeURIComponent(userId)}`, { method: "DELETE" });
+}
+
+export async function getAdminSystem(): Promise<AdminSystem> {
+  return fetchAPI<AdminSystem>("/api/admin/system");
+}

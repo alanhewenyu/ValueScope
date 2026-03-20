@@ -415,6 +415,27 @@ const en = {
   authPasswordMismatch: "Passwords do not match",
   authLoginRequired: "Log in to access your portfolio",
   authLoginRequiredDesc: "Your portfolio data is synced to your account. Please log in or sign up to continue.",
+
+  // Admin
+  adminTitle: "Admin Dashboard",
+  adminStats: "System Stats",
+  adminUsers: "Users",
+  adminSystem: "System",
+  adminTotalUsers: "Total Users",
+  adminTotalValuations: "Total Valuations",
+  adminTodaySignups: "Today",
+  adminDbSize: "DB Size",
+  adminDiskFree: "Disk Free",
+  adminEmail: "Email",
+  adminCreatedAt: "Registered",
+  adminValuations: "Valuations",
+  adminPortfolio: "Positions",
+  adminDelete: "Delete",
+  adminDeleteConfirm: (email: string) => `Delete user ${email} and all their data?`,
+  adminConfigured: "Configured",
+  adminNotConfigured: "Not configured",
+  adminNoAccess: "Admin access required",
+  adminNoAccessDesc: "You don't have permission to view this page.",
 };
 
 // ── Chinese translations ───────────────────────────────────────────
@@ -798,6 +819,27 @@ const zh: Translations = {
   authPasswordMismatch: "两次输入的密码不一致",
   authLoginRequired: "登录以访问投资组合",
   authLoginRequiredDesc: "投资组合数据已同步至你的账户，请先登录或注册。",
+
+  // Admin
+  adminTitle: "管理后台",
+  adminStats: "系统概览",
+  adminUsers: "用户管理",
+  adminSystem: "系统信息",
+  adminTotalUsers: "用户总数",
+  adminTotalValuations: "估值总数",
+  adminTodaySignups: "今日注册",
+  adminDbSize: "数据库大小",
+  adminDiskFree: "磁盘剩余",
+  adminEmail: "邮箱",
+  adminCreatedAt: "注册时间",
+  adminValuations: "估值",
+  adminPortfolio: "持仓",
+  adminDelete: "删除",
+  adminDeleteConfirm: (email: string) => `确认删除用户 ${email} 及其所有数据？`,
+  adminConfigured: "已配置",
+  adminNotConfigured: "未配置",
+  adminNoAccess: "需要管理员权限",
+  adminNoAccessDesc: "你没有权限查看此页面。",
 };
 
 // ── Translation registry ───────────────────────────────────────────
