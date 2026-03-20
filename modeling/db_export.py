@@ -87,7 +87,10 @@ CREATE TABLE IF NOT EXISTS valuations (
 
     -- Full data (JSON-serialized DataFrames)
     summary_json        TEXT,
-    dcf_table_json      TEXT
+    dcf_table_json      TEXT,
+
+    -- Multi-user support
+    user_id             TEXT NOT NULL DEFAULT 'local'
 );
 
 -- Migration: add columns if they don't exist (for existing databases)
@@ -98,6 +101,7 @@ CREATE INDEX IF NOT EXISTS idx_ticker ON valuations(ticker);
 CREATE INDEX IF NOT EXISTS idx_company_name ON valuations(company_name);
 CREATE INDEX IF NOT EXISTS idx_valuation_date ON valuations(valuation_date);
 CREATE INDEX IF NOT EXISTS idx_ticker_date ON valuations(ticker, valuation_date);
+CREATE INDEX IF NOT EXISTS idx_user_id ON valuations(user_id);
 """
 
 
@@ -106,7 +110,8 @@ def _migrate(conn):
     existing = {r[1] for r in conn.execute("PRAGMA table_info(valuations)").fetchall()}
     for col, typ in [('summary_json', 'TEXT'), ('dcf_table_json', 'TEXT'),
                       ('gap_adjusted_price_reporting', 'REAL'),
-                      ('forex_rate', 'REAL')]:
+                      ('forex_rate', 'REAL'),
+                      ('user_id', "TEXT NOT NULL DEFAULT 'local'")]:
         if col not in existing:
             conn.execute(f"ALTER TABLE valuations ADD COLUMN {col} {typ}")
     # Migrate old 'ai' mode to 'copilot' (idempotent: no-op if no 'ai' rows)
@@ -130,6 +135,7 @@ def save_to_db(
     financial_data=None,
     source='live',
     forex_rate=None,
+    user_id='local',
 ):
     """Insert one valuation record into SQLite. Returns the new row id."""
     conn = sqlite3.connect(db_path)
@@ -211,7 +217,8 @@ def save_to_db(
             gap_adjusted_price_reporting, gap_analysis_text,
             ai_raw_text, ai_parameters_json,
             sensitivity_json, wacc_sensitivity_json, wacc_base,
-            summary_json, dcf_table_json
+            summary_json, dcf_table_json,
+            user_id
         ) VALUES (
             ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?,
@@ -228,7 +235,8 @@ def save_to_db(
             ?, ?,
             ?, ?,
             ?, ?, ?,
-            ?, ?
+            ?, ?,
+            ?
         )
         """,
         (
@@ -284,6 +292,7 @@ def save_to_db(
             wacc_base_val,
             summary_json,
             dcf_table_json,
+            user_id,
         ),
     )
 
@@ -340,6 +349,7 @@ def maybe_save_to_db(
     wacc_sensitivity=None,
     financial_data=None,
     forex_rate=None,
+    user_id='local',
 ):
     """Save to DB if VS_DB_PATH is set. Silent no-op otherwise."""
     db_path = os.environ.get('VS_DB_PATH')
@@ -362,6 +372,7 @@ def maybe_save_to_db(
             wacc_sensitivity=wacc_sensitivity,
             financial_data=financial_data,
             forex_rate=forex_rate,
+            user_id=user_id,
         )
     except Exception as e:
         print(f"[VS DB] Warning: failed to save to database: {e}", file=sys.stderr)

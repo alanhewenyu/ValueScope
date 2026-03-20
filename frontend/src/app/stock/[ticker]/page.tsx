@@ -1226,8 +1226,8 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
                     onClick={async () => {
                       if (!historyOpen) {
                         try {
-                          const { getAllValuationHistory } = await import("@/lib/indexeddb");
-                          const h = await getAllValuationHistory();
+                          const { getAllHistory } = await import("@/lib/valuation-storage");
+                          const h = await getAllHistory();
                           setHistory(h);
                         } catch { setHistory([]); }
                       }
@@ -1270,8 +1270,8 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
                                 e.stopPropagation();
                                 if (item.id == null) return;
                                 try {
-                                  const { deleteValuation } = await import("@/lib/indexeddb");
-                                  await deleteValuation(item.id);
+                                  const { deleteHistory } = await import("@/lib/valuation-storage");
+                                  await deleteHistory(item.id);
                                   setHistory((prev) => prev.filter((h) => h.id !== item.id));
                                   if (detailItem?.id === item.id) setDetailItem(null);
                                 } catch {}

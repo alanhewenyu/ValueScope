@@ -1,7 +1,7 @@
 # Copyright (c) 2025-2026 Alan He. Licensed under AGPL-3.0. See LICENSE.
 """DCF Valuation API endpoints."""
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
@@ -1328,9 +1328,11 @@ class SaveValuationParams(BaseModel):
 
 
 @router.post("/save")
-def save_valuation(params: SaveValuationParams):
+def save_valuation(params: SaveValuationParams, request: Request):
     """Save valuation to SQLite if VS_DB_PATH is set."""
     from datetime import date
+    from backend.routers.auth import get_current_user
+    user_id = get_current_user(request)
 
     db_path = os.environ.get("VS_DB_PATH", "")
     if not db_path:
@@ -1434,6 +1436,7 @@ def save_valuation(params: SaveValuationParams):
             financial_data=financial_data,
             forex_rate=params.forex_rate,
             source='web',
+            user_id=user_id,
         )
         return {"saved": True, "id": row_id}
     except Exception as e:

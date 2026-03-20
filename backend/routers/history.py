@@ -65,7 +65,7 @@ def _parse_json_fields(record: dict) -> dict:
 # ── Endpoints ────────────────────────────────────────────
 
 @router.get("/status")
-def history_status():
+def history_status(user_id: str = Depends(get_current_user)):
     """Check if valuation history feature is available."""
     path = _get_db_path()
     exists = os.path.exists(path)
@@ -73,20 +73,20 @@ def history_status():
     if exists:
         try:
             with sqlite3.connect(path) as conn:
-                count = conn.execute("SELECT COUNT(*) FROM valuations").fetchone()[0]
+                count = conn.execute("SELECT COUNT(*) FROM valuations WHERE user_id=?", (user_id,)).fetchone()[0]
         except Exception:
             pass
     return {"available": exists, "count": count}
 
 
 @router.get("/filters")
-def get_filter_options():
+def get_filter_options(user_id: str = Depends(get_current_user)):
     """Get available filter options (modes, AI engines) for the search UI."""
     path = _require_db()
     with sqlite3.connect(path) as conn:
-        modes = [r[0] for r in conn.execute("SELECT DISTINCT mode FROM valuations").fetchall()]
+        modes = [r[0] for r in conn.execute("SELECT DISTINCT mode FROM valuations WHERE user_id=?", (user_id,)).fetchall()]
         engines = [r[0] for r in conn.execute(
-            "SELECT DISTINCT ai_engine FROM valuations WHERE ai_engine IS NOT NULL"
+            "SELECT DISTINCT ai_engine FROM valuations WHERE ai_engine IS NOT NULL AND user_id=?", (user_id,)
         ).fetchall()]
     return {"modes": modes, "engines": engines}
 
@@ -100,6 +100,7 @@ def search_valuations(
     date_end: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    user_id: str = Depends(get_current_user),
 ):
     """Search valuation records with optional filters."""
     path = _require_db()
@@ -109,8 +110,8 @@ def search_valuations(
                price_per_share, gap_dcf_price, market_price, gap_market_price, gap_pct,
                gap_adjusted_price, gap_adjusted_price_reporting, forex_rate,
                revenue_growth_1, revenue_growth_2, ebit_margin, wacc, base_year, ttm_label
-        FROM valuations WHERE 1=1"""
-    params = []
+        FROM valuations WHERE user_id=?"""
+    params: list = [user_id]
 
     if q:
         sql += " AND (company_name LIKE ? OR ticker LIKE ?)"
@@ -143,21 +144,21 @@ def search_valuations(
 
 
 @router.get("/{record_id}")
-def get_valuation_detail(record_id: int):
+def get_valuation_detail(record_id: int, user_id: str = Depends(get_current_user)):
     """Get full detail for a single valuation record (including JSON fields)."""
     path = _require_db()
-    rows = _query(path, "SELECT * FROM valuations WHERE id = ?", (record_id,))
+    rows = _query(path, "SELECT * FROM valuations WHERE id = ? AND user_id=?", (record_id, user_id))
     if not rows:
         raise HTTPException(status_code=404, detail="Valuation record not found")
     return _parse_json_fields(rows[0])
 
 
 @router.delete("/{record_id}")
-def delete_valuation(record_id: int):
+def delete_valuation(record_id: int, user_id: str = Depends(get_current_user)):
     """Delete a valuation record."""
     path = _require_db()
     with sqlite3.connect(path) as conn:
-        cursor = conn.execute("DELETE FROM valuations WHERE id = ?", (record_id,))
+        cursor = conn.execute("DELETE FROM valuations WHERE id = ? AND user_id=?", (record_id, user_id))
         conn.commit()
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Record not found")
@@ -165,7 +166,7 @@ def delete_valuation(record_id: int):
 
 
 @router.get("/{record_id}/compare")
-def compare_to_current(record_id: int):
+def compare_to_current(record_id: int, user_id: str = Depends(get_current_user)):
     """Compare a historical valuation to current market price.
 
     Returns the original DCF price, the market price at valuation time,
@@ -174,7 +175,7 @@ def compare_to_current(record_id: int):
     path = _require_db()
     rows = _query(path, "SELECT ticker, price_per_share, gap_dcf_price, market_price, "
                         "gap_market_price, gap_pct, currency, valuation_date "
-                        "FROM valuations WHERE id = ?", (record_id,))
+                        "FROM valuations WHERE id = ? AND user_id=?", (record_id, user_id))
     if not rows:
         raise HTTPException(status_code=404, detail="Record not found")
 
