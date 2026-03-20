@@ -429,7 +429,7 @@ def main(args):
         # ── Phase 2: Parallel — freshness, share_float, beta, AI detect (while user reads data) ──
         from concurrent.futures import ThreadPoolExecutor as _TP2
         _phase2_pool = _TP2(max_workers=4)
-        _f_share_float = _phase2_pool.submit(get_company_share_float, args.t, args.apikey, None, company_profile)
+        _f_share_float = _phase2_pool.submit(get_company_share_float, args.t, args.apikey, company_profile)
         _f_beta = _phase2_pool.submit(_calculate_beta_akshare, args.t) if is_a_share(args.t) else None
         if use_ai:
             _ai_detect_future = _phase2_pool.submit(_ensure_ai_engine)
