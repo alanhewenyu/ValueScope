@@ -795,8 +795,8 @@ def fetch_akshare_balance_sheet(ticker, period='annual', historical_periods=5):
 
 
 def _extract_cashflow_fields(row):
-    """Extract D&A, capex, WC change from a single akshare cashflow row.
-    Returns (da, capex, change_in_wc) — all in raw akshare units.
+    """Extract D&A, capex, WC change, dividends paid from a single akshare cashflow row.
+    Returns (da, capex, change_in_wc, dividends_paid) — all in raw akshare units.
     D&A and WC fields may be NaN in Q1/Q3 reports (indirect method not disclosed).
     """
     fa_depr = _safe_numeric(row.get('FA_IR_DEPR', 0))
@@ -815,7 +815,11 @@ def _extract_cashflow_fields(row):
     payable_add = _safe_numeric(row.get('OPERATE_PAYABLE_ADD', 0))
     change_in_wc = inv_reduce + recv_reduce + payable_add
 
-    return da, capex, change_in_wc
+    # ASSIGN_DIVIDEND_PORFIT = 分配股利、利润或偿付利息支付的现金
+    # This is positive in akshare (cash outflow), convert to negative (FMP convention)
+    dividends_paid = -abs(_safe_numeric(row.get('ASSIGN_DIVIDEND_PORFIT', 0)))
+
+    return da, capex, change_in_wc, dividends_paid
 
 
 def fetch_akshare_cashflow(ticker, period='annual', historical_periods=5):
@@ -843,11 +847,12 @@ def fetch_akshare_cashflow(ticker, period='annual', historical_periods=5):
 
     result = []
     for _, row in df.iterrows():
-        da, capex, change_in_wc = _extract_cashflow_fields(row)
+        da, capex, change_in_wc, dividends_paid = _extract_cashflow_fields(row)
         result.append({
             'depreciationAndAmortization': da,
             'investmentsInPropertyPlantAndEquipment': capex,
             'changeInWorkingCapital': change_in_wc,
+            'commonDividendsPaid': dividends_paid,
         })
 
     raw_df = _build_raw_excel_df(df)
@@ -1050,16 +1055,19 @@ def _compute_akshare_ttm_cashflow(ticker, df=None):
     prior_same_key = (latest_year - 1, latest_month)
     prior_same = ytd_lookup.get(prior_same_key)
 
-    da_latest, capex_latest, wc_latest = _extract_cashflow_fields(latest)
-    da_fy, capex_fy, wc_fy = _extract_cashflow_fields(prior_fy)
+    da_latest, capex_latest, wc_latest, div_latest = _extract_cashflow_fields(latest)
+    da_fy, capex_fy, wc_fy, div_fy = _extract_cashflow_fields(prior_fy)
 
     if prior_same is not None:
-        da_same, capex_same, wc_same = _extract_cashflow_fields(prior_same)
+        da_same, capex_same, wc_same, div_same = _extract_cashflow_fields(prior_same)
     else:
-        da_same, capex_same, wc_same = 0, 0, 0
+        da_same, capex_same, wc_same, div_same = 0, 0, 0, 0
 
     # Capex (CONSTRUCT_LONG_ASSET) is always available — use cumulative method
     capex_ttm = capex_latest + (capex_fy - capex_same)
+
+    # Dividends paid — cumulative method (same as capex, always available)
+    div_ttm = div_latest + (div_fy - div_same)
 
     # D&A and WC: only available in H1 (month=6) and FY (month=12)
     # Check if latest report has indirect-method data by inspecting a key field
@@ -1081,6 +1089,7 @@ def _compute_akshare_ttm_cashflow(ticker, df=None):
         'depreciationAndAmortization': da_ttm,
         'investmentsInPropertyPlantAndEquipment': capex_ttm,
         'changeInWorkingCapital': wc_ttm,
+        'commonDividendsPaid': div_ttm,
         '_note': note,
     }
 
@@ -1444,6 +1453,12 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                     _div_paid = abs(cf.get('commonDividendsPaid', 0) or cf.get('netDividendsPaid', 0) or 0)
                     _net_inc = abs(inc.get('netIncome', 0) or 0)
                     _payout = (_div_paid / _net_inc * 100) if _net_inc > 0 else 0
+                data['Payout Ratio (%)'] = _payout
+            else:
+                # A-share: compute payout ratio from cashflow ASSIGN_DIVIDEND_PORFIT
+                _div_paid = abs(cf.get('commonDividendsPaid', 0) or 0)
+                _net_inc = abs(inc.get('netIncome', 0) or 0)
+                _payout = (_div_paid / _net_inc * 100) if _net_inc > 0 else 0
                 data['Payout Ratio (%)'] = _payout
             summary_data.append(data)
 
@@ -2060,6 +2075,14 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                 if not is_a_share(ticker):
                     for ratio in ['Dividend Yield (%)', 'Payout Ratio (%)']:
                         ttm_data[ratio] = summary_data[0].get(ratio, 0)
+                else:
+                    # A-share TTM: compute payout ratio from TTM cashflow dividends / TTM net income
+                    if ttm_cf and ttm_cf.get('commonDividendsPaid') is not None:
+                        _ttm_div = abs(ttm_cf.get('commonDividendsPaid', 0))
+                        _ttm_ni = abs(ttm_data.get('Net Income', 0) * 1_000_000) if ttm_data.get('Net Income') else 0
+                        ttm_data['Payout Ratio (%)'] = (_ttm_div / _ttm_ni * 100) if _ttm_ni > 0 else 0
+                    else:
+                        ttm_data['Payout Ratio (%)'] = summary_data[0].get('Payout Ratio (%)', 0)
 
                 # Add note about reinvestment data sources (if any)
                 if ttm_note:
