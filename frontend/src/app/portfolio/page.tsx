@@ -38,6 +38,7 @@ import {
   type DepositRecord,
   importCSV,
   getImportTemplateUrl,
+  mergeAccounts,
   listPortfolios,
   switchPortfolio,
   getPortfolioNews,
@@ -1329,7 +1330,8 @@ function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; on
     setImporting(true);
     try {
       const result = await importCSV(file);
-      // Store warnings in sessionStorage so SetupTipsBanner can display them
+      // Store flags in sessionStorage so SetupTipsBanner can display tips
+      sessionStorage.setItem("vs_just_imported", "1");
       if (result.warnings && result.warnings.length > 0) {
         sessionStorage.setItem("vs_import_warnings", JSON.stringify(result.warnings));
       }
@@ -1341,36 +1343,117 @@ function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; on
     }
   }
 
-  return (
-    <div className="max-w-md mx-auto mt-16 p-8 rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-sm text-center">
-      <div className="text-4xl mb-4">📊</div>
-      <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-        {zh ? "欢迎使用 Portfolio Tracker" : "Welcome to Portfolio Tracker"}
-      </h2>
-      <p className="text-sm text-gray-500 mb-8">
-        {zh ? "导入你的持仓数据，即刻开始追踪投资组合。" : "Import your positions to start tracking your portfolio."}
-      </p>
+  // Mini demo data for preview
+  const demoKpis = zh
+    ? [{ l: "资产总值", v: "¥2,582,918" }, { l: "未实现盈亏", v: "+¥656,476", c: "text-red-500" }, { l: "日盈亏", v: "+¥8,759", c: "text-red-500" }, { l: "持仓数", v: "45" }]
+    : [{ l: "Total Assets", v: "¥2,582,918" }, { l: "Unrealized P&L", v: "+¥656,476", c: "text-red-500" }, { l: "Daily P&L", v: "+¥8,759", c: "text-red-500" }, { l: "Positions", v: "45" }];
+  const demoAlloc = [
+    { label: zh ? "A股" : "A-Share", pct: 42, color: "bg-blue-500" },
+    { label: zh ? "港股" : "HK", pct: 28, color: "bg-emerald-500" },
+    { label: zh ? "美股" : "US", pct: 22, color: "bg-amber-500" },
+    { label: zh ? "日股" : "JP", pct: 8, color: "bg-purple-500" },
+  ];
 
-      {/* Primary CTA: Upload CSV */}
-      <div className="space-y-3">
+  return (
+    <div className="max-w-2xl mx-auto mt-10 mb-8">
+      {/* Hero */}
+      <div className="text-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+          Portfolio Tracker
+        </h2>
+        <p className="text-sm text-gray-500 max-w-md mx-auto">
+          {zh
+            ? "跨市场投资组合追踪工具 — 一站式管理你在 A股、港股、美股、日股的所有持仓"
+            : "Cross-market portfolio tracker — manage A-shares, HK, US & JP stocks in one place"}
+        </p>
+      </div>
+
+      {/* Mini dashboard preview */}
+      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-sm overflow-hidden mb-6">
+        <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2">
+          <div className="flex gap-1">
+            <span className="w-2.5 h-2.5 rounded-full bg-red-400" />
+            <span className="w-2.5 h-2.5 rounded-full bg-yellow-400" />
+            <span className="w-2.5 h-2.5 rounded-full bg-green-400" />
+          </div>
+          <span className="text-[10px] text-gray-400 ml-1">Portfolio Tracker</span>
+        </div>
+        <div className="p-4 space-y-3">
+          {/* KPI row */}
+          <div className="grid grid-cols-4 gap-2">
+            {demoKpis.map((k) => (
+              <div key={k.l} className="text-center">
+                <div className="text-[10px] text-gray-400 truncate">{k.l}</div>
+                <div className={`text-sm font-semibold font-mono ${k.c || "text-gray-800 dark:text-gray-200"}`}>{k.v}</div>
+              </div>
+            ))}
+          </div>
+          {/* Allocation bar */}
+          <div>
+            <div className="text-[10px] text-gray-400 mb-1">{zh ? "资产配置" : "Asset Allocation"}</div>
+            <div className="flex h-3 rounded-full overflow-hidden">
+              {demoAlloc.map((a) => (
+                <div key={a.label} className={`${a.color} transition-all`} style={{ width: `${a.pct}%` }} />
+              ))}
+            </div>
+            <div className="flex justify-between mt-1">
+              {demoAlloc.map((a) => (
+                <span key={a.label} className="text-[9px] text-gray-400">{a.label} {a.pct}%</span>
+              ))}
+            </div>
+          </div>
+          {/* Mini chart placeholder */}
+          <div className="h-12 flex items-end gap-[2px]">
+            {[30,35,28,40,38,45,42,50,48,55,52,60,58,65,62,70,68,72,65,75,78,74,80,85,82,88,84,90].map((h, i) => (
+              <div key={i} className="flex-1 bg-blue-400/40 dark:bg-blue-500/30 rounded-t-sm" style={{ height: `${h}%` }} />
+            ))}
+          </div>
+          <div className="text-[9px] text-gray-400 text-center">{zh ? "净值走势（含基准对比）" : "NAV trend (with benchmark)"}</div>
+        </div>
+      </div>
+
+      {/* Feature highlights */}
+      <div className="grid grid-cols-2 gap-x-6 gap-y-3 mb-8 px-4">
+        {(zh ? [
+          { icon: "🌏", text: "A股 / 港股 / 美股 / 日股 / B股，多市场实时行情" },
+          { icon: "📈", text: "未实现 & 已实现盈亏、日 / 周 / YTD 收益追踪" },
+          { icon: "🎯", text: "资产配置分析（按市场 / 币种 / 行业）" },
+          { icon: "📊", text: "净值曲线 + 沪深300 / 恒指 / 标普 基准对比" },
+          { icon: "⚡", text: "风险分析 & 收益归因，量化投资表现" },
+          { icon: "📰", text: "持仓相关新闻、财报日历、评级变动推送" },
+        ] : [
+          { icon: "🌏", text: "A-share / HK / US / JP / B-share, real-time quotes" },
+          { icon: "📈", text: "Unrealized & realized P&L, daily / weekly / YTD" },
+          { icon: "🎯", text: "Allocation analysis by market / currency / sector" },
+          { icon: "📊", text: "NAV chart + CSI300 / HSI / S&P500 benchmarks" },
+          { icon: "⚡", text: "Risk analysis & return attribution, quantify performance" },
+          { icon: "📰", text: "News, earnings calendar & rating changes feed" },
+        ]).map((f, i) => (
+          <div key={i} className="flex items-start gap-2">
+            <span className="text-base shrink-0 mt-0.5">{f.icon}</span>
+            <span className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed">{f.text}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* CTA */}
+      <div className="max-w-sm mx-auto space-y-3">
         <input ref={fileRef} type="file" accept=".csv" className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImport(f); }} />
         <button onClick={() => fileRef.current?.click()} disabled={importing}
           className="w-full px-6 py-3 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 font-medium transition-colors">
-          {importing ? (zh ? "导入中..." : "Importing...") : (zh ? "上传 CSV 导入" : "Upload CSV to Import")}
+          {importing ? (zh ? "导入中..." : "Importing...") : (zh ? "上传 CSV 开始使用" : "Upload CSV to Start")}
         </button>
 
-        {/* Template download — single combined template */}
-        <a href={getImportTemplateUrl("portfolio")} download
-          className="block text-center text-xs text-gray-400 hover:text-blue-500 underline underline-offset-2">
-          {zh ? "下载 CSV 模板（含持仓 + 现金示例）" : "Download CSV template (positions + cash)"}
-        </a>
-
-        {/* Secondary: manual entry */}
-        <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
+        <div className="flex items-center justify-center gap-4">
+          <a href={getImportTemplateUrl("portfolio")} download
+            className="text-xs text-gray-400 hover:text-blue-500 underline underline-offset-2">
+            {zh ? "下载模板" : "Download template"}
+          </a>
+          <span className="text-gray-300 dark:text-gray-700">|</span>
           <button onClick={() => onOpenPanel("edit")}
-            className="text-sm text-gray-500 hover:text-blue-600 transition-colors">
-            {zh ? "或 手动添加持仓 →" : "or add positions manually →"}
+            className="text-xs text-gray-400 hover:text-blue-500 underline underline-offset-2">
+            {zh ? "手动添加" : "Add manually"}
           </button>
         </div>
       </div>
@@ -1407,8 +1490,9 @@ function SetupTipsBanner({ locale, data, onOpenPanel }: {
 
   // Show cash tip if total cash is 0
   const showCash = !dismissedCash && data.summary.cash_cny === 0;
-  // Show mode tip if not dismissed
-  const showMode = !dismissedMode;
+  // Show mode tip only right after an import (sessionStorage flag), not for returning users
+  const justImported = typeof window !== "undefined" && sessionStorage.getItem("vs_just_imported") === "1";
+  const showMode = !dismissedMode && justImported;
   // Show import warnings (similar account names)
   const showWarnings = !dismissedWarnings && importWarnings.length > 0;
 
@@ -1710,9 +1794,43 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
     } catch { setMsg("❌ Error"); } finally { setSaving(false); }
   }
 
+  const [mergeSource, setMergeSource] = useState<string | null>(null);
+  const [mergeTarget, setMergeTarget] = useState("");
+
   async function handleAcctDelete(broker: string) {
+    // Check if this account has positions — warn about data loss
+    const hasPositions = holdings.some((h) => h.broker === broker);
+    if (hasPositions) {
+      const msg = zh
+        ? `「${broker}」下有持仓记录。\n• 直接删除会丢失持仓数据\n• 建议先合并到其他账户\n\n选择「确定」打开合并，「取消」放弃`
+        : `"${broker}" has positions.\n• Deleting will lose position data\n• Consider merging first\n\nOK to open merge, Cancel to abort`;
+      if (confirm(msg)) {
+        setMergeSource(broker);
+        setMergeTarget("");
+        return;
+      }
+      return;
+    }
     if (!confirm(`${zh ? "删除" : "Delete"} ${broker}?`)) return;
     try { await deleteAccountSetting(broker); setAcctSettings(await getAccountSettings()); onRefresh(); } catch { alert("Error"); }
+  }
+
+  async function handleMerge() {
+    if (!mergeSource || !mergeTarget) return;
+    const msg = zh
+      ? `确认将「${mergeSource}」的所有数据合并到「${mergeTarget}」？\n合并后「${mergeSource}」将被删除。`
+      : `Merge all data from "${mergeSource}" into "${mergeTarget}"?\n"${mergeSource}" will be deleted after merge.`;
+    if (!confirm(msg)) return;
+    try {
+      await mergeAccounts(mergeSource, mergeTarget);
+      setMergeSource(null);
+      setMergeTarget("");
+      setAcctSettings(await getAccountSettings());
+      onRefresh();
+      setMsg(zh ? "✅ 合并成功" : "✅ Merge complete");
+    } catch (e: unknown) {
+      setMsg(`❌ ${e instanceof Error ? e.message : "Merge failed"}`);
+    }
   }
 
   // ── Tab style ──
@@ -2062,6 +2180,36 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                       )}
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* Merge panel — shown when user tries to delete an account with data */}
+              {mergeSource && (
+                <div className="mb-3 p-3 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 space-y-2">
+                  <div className="text-xs font-medium text-orange-800 dark:text-orange-200">
+                    🔀 {zh ? `合并「${mergeSource}」到：` : `Merge "${mergeSource}" into:`}
+                  </div>
+                  <div className="flex gap-2">
+                    <select className={`${inputCls} flex-1`} value={mergeTarget} onChange={(e) => setMergeTarget(e.target.value)}>
+                      <option value="">{zh ? "— 选择目标账户 —" : "— Select target —"}</option>
+                      {knownAccounts.filter((n) => n !== mergeSource).map((n) => (
+                        <option key={n} value={n}>{n}</option>
+                      ))}
+                    </select>
+                    <button onClick={handleMerge} disabled={!mergeTarget}
+                      className="px-3 py-1 text-xs bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                      {zh ? "合并" : "Merge"}
+                    </button>
+                    <button onClick={() => setMergeSource(null)}
+                      className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700">
+                      {zh ? "取消" : "Cancel"}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-orange-600 dark:text-orange-400">
+                    {zh
+                      ? "合并后，所有持仓、平仓记录、入金记录和现金余额将转移到目标账户。"
+                      : "All positions, closed trades, deposits and cash will be moved to the target account."}
+                  </p>
                 </div>
               )}
 

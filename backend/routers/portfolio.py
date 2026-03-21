@@ -293,6 +293,90 @@ def delete_account_setting_api(broker: str, user_id: str = Depends(get_current_u
     return {"ok": True}
 
 
+class MergeAccountRequest(BaseModel):
+    source: str       # account to merge FROM (will be deleted)
+    target: str       # account to merge INTO (will be kept)
+
+
+@router.post("/merge-accounts")
+def merge_accounts(req: MergeAccountRequest, user_id: str = Depends(get_current_user)):
+    """Merge one account into another: rename all records from source to target, then delete source settings."""
+    _require_db()
+    from backend.services.portfolio_db import init_db, get_conn
+    init_db()
+
+    if req.source == req.target:
+        raise HTTPException(status_code=400, detail="Source and target must be different")
+
+    with get_conn() as conn:
+        # Count affected records
+        counts = {}
+        for table, col in [("positions", "broker"), ("cash_balances", "account"),
+                           ("closed_trades", "broker"), ("deposit_records", "broker")]:
+            try:
+                cur = conn.execute(f"SELECT COUNT(*) FROM {table} WHERE {col}=? AND user_id=?",
+                                   (req.source, user_id))
+                counts[table] = cur.fetchone()[0]
+            except Exception:
+                counts[table] = 0
+
+        if sum(counts.values()) == 0:
+            # No records to merge — just check if source account_settings exists
+            cur = conn.execute("SELECT COUNT(*) FROM account_settings WHERE broker=? AND user_id=?",
+                               (req.source, user_id))
+            if cur.fetchone()[0] == 0:
+                raise HTTPException(status_code=404, detail=f"Account '{req.source}' not found")
+
+        # Rename all records from source to target
+        for table, col in [("positions", "broker"), ("closed_trades", "broker"),
+                           ("deposit_records", "broker")]:
+            try:
+                conn.execute(f"UPDATE {table} SET {col}=? WHERE {col}=? AND user_id=?",
+                             (req.target, req.source, user_id))
+            except Exception:
+                pass
+
+        # Cash balances: merge by summing if target already has same currency entry
+        try:
+            source_cash = conn.execute(
+                "SELECT currency, balance FROM cash_balances WHERE account=? AND user_id=?",
+                (req.source, user_id)
+            ).fetchall()
+            for currency, balance in source_cash:
+                existing = conn.execute(
+                    "SELECT balance FROM cash_balances WHERE account=? AND currency=? AND user_id=?",
+                    (req.target, currency, user_id)
+                ).fetchone()
+                if existing:
+                    conn.execute(
+                        "UPDATE cash_balances SET balance=?, updated_at=datetime('now','localtime') "
+                        "WHERE account=? AND currency=? AND user_id=?",
+                        (existing[0] + balance, req.target, currency, user_id)
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE cash_balances SET account=? WHERE account=? AND currency=? AND user_id=?",
+                        (req.target, req.source, currency, user_id)
+                    )
+            # Delete any remaining source cash rows
+            conn.execute("DELETE FROM cash_balances WHERE account=? AND user_id=?",
+                         (req.source, user_id))
+        except Exception:
+            pass
+
+        # Delete source account_settings
+        conn.execute("DELETE FROM account_settings WHERE broker=? AND user_id=?",
+                     (req.source, user_id))
+
+        conn.commit()
+
+    return {
+        "ok": True,
+        "merged": counts,
+        "message": f"Merged '{req.source}' into '{req.target}'",
+    }
+
+
 @router.get("/deposit-history/{broker}")
 def list_deposit_history(broker: str, user_id: str = Depends(get_current_user)):
     """List deposit history records for a broker."""

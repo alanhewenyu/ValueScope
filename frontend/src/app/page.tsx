@@ -95,7 +95,7 @@ export default function Home() {
         </div>
 
         {/* Feature cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto mt-8 sm:mt-16">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-3xl mx-auto mt-8 sm:mt-16">
           <FeatureCard
             icon="📊"
             title={t.featureDCFTitle}
@@ -111,6 +111,13 @@ export default function Home() {
             title={t.featureScoringTitle}
             description={t.featureScoringDesc}
           />
+          <FeatureCard
+            icon="💼"
+            title={t.featurePortfolioTitle}
+            description={t.featurePortfolioDesc}
+            href={showPrivate ? "/portfolio" : undefined}
+            actionLabel={showPrivate ? (locale === "zh" ? "进入 →" : "Open →") : undefined}
+          />
         </div>
       </main>
     </div>
@@ -122,14 +129,18 @@ function FeatureCard({
   title,
   description,
   badge,
+  href,
+  actionLabel,
 }: {
   icon: string;
   title: string;
   description: string;
   badge?: string;
+  href?: string;
+  actionLabel?: string;
 }) {
-  return (
-    <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 hover:shadow-md transition-shadow">
+  const card = (
+    <div className={`bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 hover:shadow-md transition-shadow ${href ? "cursor-pointer" : ""}`}>
       <div className="flex items-center gap-2 mb-3">
         <span className="text-2xl">{icon}</span>
         <h3 className="font-semibold text-gray-900 dark:text-white">{title}</h3>
@@ -142,6 +153,10 @@ function FeatureCard({
       <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
         {description}
       </p>
+      {actionLabel && (
+        <p className="mt-3 text-xs font-medium text-blue-600 dark:text-blue-400">{actionLabel}</p>
+      )}
     </div>
   );
+  return href ? <Link href={href}>{card}</Link> : card;
 }

@@ -1154,6 +1154,13 @@ export async function exportPortfolio(): Promise<Record<string, unknown[]>> {
   return fetchAPI<Record<string, unknown[]>>("/api/portfolio/export");
 }
 
+export async function mergeAccounts(source: string, target: string): Promise<{ ok: boolean; merged: Record<string, number>; message: string }> {
+  return fetchAPI("/api/portfolio/merge-accounts", {
+    method: "POST",
+    body: JSON.stringify({ source, target }),
+  });
+}
+
 // ── Portfolio Event Feeds ──
 
 export interface PortfolioNewsItem {

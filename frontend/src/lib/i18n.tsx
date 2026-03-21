@@ -33,6 +33,8 @@ const en = {
   featureRelDesc: "Current multiples vs historical percentiles across 3/5/10-year windows — see where the price sits in its own history.",
   featureScoringTitle: "4-Dimension Scoring",
   featureScoringDesc: "Valuation, Quality, Growth, and Momentum condensed into a single radar chart with transparent sub-factor breakdown.",
+  featurePortfolioTitle: "Portfolio Tracker",
+  featurePortfolioDesc: "Cross-market portfolio tracking — real-time P&L, asset allocation, NAV benchmarking, risk analysis & return attribution across A/HK/US/JP markets.",
 
   // Search
   searchPlaceholder: "600519.SS, 0700.HK, AAPL ...",
@@ -457,6 +459,8 @@ const zh: Translations = {
   featureRelDesc: "当前估值倍数对比 3/5/10 年历史分位，一眼看出当前价格在自身历史中的位置。",
   featureScoringTitle: "四维评分",
   featureScoringDesc: "估值、质量、成长、动量浓缩为一张雷达图，子因子透明可查。",
+  featurePortfolioTitle: "投资组合",
+  featurePortfolioDesc: "跨市场组合追踪 — 实时盈亏、资产配置、净值基准对比、风险分析与收益归因，覆盖 A股/港股/美股/日股。",
 
   searchPlaceholder: "600519.SS, 0700.HK, AAPL ...",
 
