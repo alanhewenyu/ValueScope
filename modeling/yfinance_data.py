@@ -822,6 +822,8 @@ def _extract_yf_cf_row(df, col):
     da = _safe_get(df, 'Depreciation And Amortization', col) or 0
     capex = _safe_get(df, 'Capital Expenditure', col) or 0  # negative
     wc = _safe_get(df, 'Change In Working Capital', col) or 0
+    # Dividends paid: negative (cash outflow)
+    div_paid = _safe_get(df, 'Common Stock Dividend Paid', col) or 0
     date_str = _yf_col_to_date_str(col)
     return {
         'calendarYear': date_str[:4],
@@ -829,13 +831,14 @@ def _extract_yf_cf_row(df, col):
         'depreciationAndAmortization': da,
         'investmentsInPropertyPlantAndEquipment': capex,
         'changeInWorkingCapital': wc,
+        'commonDividendsPaid': div_paid,
     }
 
 
 def _compute_h2_cashflow(fy_row, h1_row):
     """Compute H2 = FY - H1 for cash flow fields."""
     flow_fields = ['depreciationAndAmortization', 'investmentsInPropertyPlantAndEquipment',
-                   'changeInWorkingCapital']
+                   'changeInWorkingCapital', 'commonDividendsPaid']
     h2 = {
         'calendarYear': fy_row['calendarYear'],
         'date': fy_row['date'],
@@ -1026,7 +1029,10 @@ def fetch_yfinance_hk_key_metrics(ticker, balance_sheets, income_statements,
 
     # Use trailingAnnualDividendYield (more reliable than forward dividendYield)
     div_yield = info.get('trailingAnnualDividendYield', 0) or 0
-    payout = info.get('payoutRatio', 0) or 0
+    # NOTE: payoutRatio from info is a single current-period value — do NOT copy
+    # to all years. Let the cashflow fallback (commonDividendsPaid / netIncome)
+    # compute per-year payout ratio instead.
+    payout = 0  # force cashflow-based calculation per year
 
     result = []
     for i in range(len(balance_sheets)):
@@ -1159,18 +1165,21 @@ def fetch_yfinance_hk_ttm(ticker):
         da = _cf_val('Depreciation And Amortization')
         capex = _cf_val('Capital Expenditure')  # negative
         wc = _cf_val('Change In Working Capital')
+        div_paid = _cf_val('Common Stock Dividend Paid')  # negative
 
         result['has_ttm_cashflow'] = (da is not None or capex is not None)
         result['cf_end_date'] = cf_date
         result['depreciationAndAmortization'] = da
         result['investmentsInPropertyPlantAndEquipment'] = capex
         result['changeInWorkingCapital'] = wc
+        result['commonDividendsPaid'] = div_paid
     else:
         result['has_ttm_cashflow'] = False
         result['cf_end_date'] = ''
         result['depreciationAndAmortization'] = None
         result['investmentsInPropertyPlantAndEquipment'] = None
         result['changeInWorkingCapital'] = None
+        result['commonDividendsPaid'] = None
 
     return result
 

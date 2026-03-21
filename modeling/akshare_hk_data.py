@@ -347,6 +347,7 @@ _CF_CODES = {
     'da':              '001009',  # 折旧及摊销
     'capex_fixed':     '005005',  # 购建固定资产
     'capex_intang':    '005007',  # 购建无形资产及其他资产
+    'dividends_paid':  '007004',  # 已付股息(融资) — pure dividends, excludes interest
     # Working capital change items (002xxx, excluding subtotal 002999)
 }
 
@@ -370,10 +371,16 @@ def _parse_hk_cf(items):
         if k.startswith(_WC_PREFIX) and k != _WC_SUBTOTAL
     )
 
+    # Dividends paid: 007004 已付股息(融资) — negative (cash outflow)
+    dividends_paid = items.get(_CF_CODES['dividends_paid'], 0)
+    # Ensure negative (FMP convention: cash outflow is negative)
+    dividends_paid = -abs(dividends_paid) if dividends_paid else 0
+
     return {
         'depreciationAndAmortization': da,
         'investmentsInPropertyPlantAndEquipment': capex,
         'changeInWorkingCapital': wc_change,
+        'commonDividendsPaid': dividends_paid,
     }
 
 
@@ -686,8 +693,12 @@ def _compute_hk_ttm_cashflow(ticker, full_cumulative_df=None):
 
     wc = ttm_wc()
 
+    # Dividends paid TTM
+    div_paid = -abs(ttm_val(_CF_CODES['dividends_paid'])) if ttm_val(_CF_CODES['dividends_paid']) else 0
+
     return {
         'depreciationAndAmortization': da,
         'investmentsInPropertyPlantAndEquipment': capex,
         'changeInWorkingCapital': wc,
+        'commonDividendsPaid': div_paid,
     }
