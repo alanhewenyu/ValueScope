@@ -1402,13 +1402,36 @@ function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; on
               ))}
             </div>
           </div>
-          {/* Mini chart placeholder */}
-          <div className="h-12 flex items-end gap-[2px]">
-            {[30,35,28,40,38,45,42,50,48,55,52,60,58,65,62,70,68,72,65,75,78,74,80,85,82,88,84,90].map((h, i) => (
-              <div key={i} className="flex-1 bg-blue-400/40 dark:bg-blue-500/30 rounded-t-sm" style={{ height: `${h}%` }} />
-            ))}
-          </div>
-          <div className="text-[9px] text-gray-400 text-center">{zh ? "净值走势（含基准对比）" : "NAV trend (with benchmark)"}</div>
+          {/* Mini NAV chart with benchmark line */}
+          {(() => {
+            const nav = [50,48,52,55,53,58,56,60,57,62,64,61,66,68,65,70,72,69,74,76,73,78,80,77,82,85,83,88];
+            const bench = [50,49,51,53,52,54,53,55,54,56,57,56,58,59,58,60,61,60,62,63,62,64,65,64,66,67,66,68];
+            const h = 48, w = 280, pad = 2;
+            const toPath = (pts: number[]) => {
+              const min = Math.min(...nav, ...bench), max = Math.max(...nav, ...bench);
+              return pts.map((v, i) => {
+                const x = pad + (i / (pts.length - 1)) * (w - pad * 2);
+                const y = h - pad - ((v - min) / (max - min)) * (h - pad * 2);
+                return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+              }).join(" ");
+            };
+            return (
+              <div>
+                <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height: 48 }}>
+                  <path d={toPath(bench)} fill="none" stroke="#9ca3af" strokeWidth="1.2" strokeDasharray="3,2" opacity="0.6" />
+                  <path d={toPath(nav)} fill="none" stroke="#3b82f6" strokeWidth="1.5" />
+                </svg>
+                <div className="flex items-center justify-center gap-3 mt-1">
+                  <span className="flex items-center gap-1 text-[9px] text-gray-400">
+                    <span className="inline-block w-3 h-[2px] bg-blue-500 rounded" /> {zh ? "组合净值" : "Portfolio NAV"}
+                  </span>
+                  <span className="flex items-center gap-1 text-[9px] text-gray-400">
+                    <span className="inline-block w-3 h-[2px] bg-gray-400 rounded" style={{ borderTop: "1px dashed" }} /> {zh ? "基准指数" : "Benchmark"}
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
