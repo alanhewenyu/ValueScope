@@ -2797,6 +2797,7 @@ export default function PortfolioPage() {
 
   // ── Derived async state: snapshots + closed trades (single fetch on data change) ──
   const [weeklyPnl, setWeeklyPnl] = useState<number | null>(null);
+  const [weeklyPct, setWeeklyPct] = useState<number | null>(null);
   const [weeklyLabel, setWeeklyLabel] = useState<string>("");
   const [weeklyByMkt, setWeeklyByMkt] = useState<{ market: string; pnl: number; pct?: number }[]>([]);
   const [allClosedTrades, setAllClosedTrades] = useState<ClosedTrade[]>([]);
@@ -2834,7 +2835,11 @@ export default function PortfolioPage() {
         if (weekTarget.net_assets != null && weekTarget.capital != null) {
           const currentPnl = currentNetAssets - currentCapital;
           const basePnl = weekTarget.net_assets - weekTarget.capital;
-          setWeeklyPnl(currentPnl - basePnl);
+          const wPnl = currentPnl - basePnl;
+          setWeeklyPnl(wPnl);
+          // Weekly return % = weekly P&L / base net assets
+          const baseNA = weekTarget.net_assets;
+          setWeeklyPct(baseNA ? (wPnl / baseNA) * 100 : null);
           setWeeklyLabel(locale === "zh" ? "本周" : "This Week");
         }
       }
@@ -3089,12 +3094,14 @@ export default function PortfolioPage() {
                       sub={`${closedCount} trades`} subColor={pnlColor(realizedPnl)} />
                   )}
                   <KpiCard label={locale === "zh" ? "日盈亏" : "Daily P&L"} value={`¥${pnlSign(data.summary.daily_pnl_cny)}`}
+                    sub={pctStr((() => { const base = data.summary.equity_cny - data.summary.daily_pnl_cny; return base ? (data.summary.daily_pnl_cny / base) * 100 : null; })())}
                     subColor={pnlColor(data.summary.daily_pnl_cny)} />
                   {weeklyPnl != null && (
                     <KpiCard label={weeklyLabel || (locale === "zh" ? "本周" : "This Week")}
-                      value={`¥${pnlSign(weeklyPnl)}`} subColor={pnlColor(weeklyPnl)} />
+                      value={`¥${pnlSign(weeklyPnl)}`} sub={pctStr(weeklyPct)} subColor={pnlColor(weeklyPnl)} />
                   )}
                   <KpiCard label={locale === "zh" ? "年初至今" : "YTD Return"} value={`¥${pnlSign(data.summary.ytd_pnl_cny)}`}
+                    sub={pctStr((() => { const base = data.summary.net_assets - data.summary.ytd_pnl_cny; return base ? (data.summary.ytd_pnl_cny / base) * 100 : null; })())}
                     subColor={pnlColor(data.summary.ytd_pnl_cny)} />
                 </div>
 
