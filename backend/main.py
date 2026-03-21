@@ -39,10 +39,20 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 from backend.routers import stock, valuation, relative, portfolio, history, auth, admin
 
-# Pre-load data in background so first requests are faster
+# Pre-load data and modules in background so first requests are faster
 import threading, os
 threading.Thread(target=stock._get_a_share_list, daemon=True).start()
 threading.Thread(target=stock._get_ticker_list, daemon=True).start()
+
+# Pre-import heavy modules (akshare, pandas, numpy) to avoid first-request penalty (~2s)
+def _prewarm_imports():
+    try:
+        import akshare  # noqa: F401
+        import pandas  # noqa: F401
+        import openpyxl  # noqa: F401
+    except ImportError:
+        pass
+threading.Thread(target=_prewarm_imports, daemon=True).start()
 # Pre-warm forex and market risk premium caches (FMP API, ~3s total)
 _fmp_key = os.environ.get("FMP_API_KEY", "")
 if _fmp_key:

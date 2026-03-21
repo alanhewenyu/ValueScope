@@ -19,12 +19,9 @@ logger = logging.getLogger("valuescope.valuation")
 from modeling.data import (
     validate_ticker,
     _normalize_ticker,
-    fetch_company_profile,
     fetch_forex_data,
     get_company_share_float,
-    is_a_share,
     _fill_profile_from_financial_data,
-    _calculate_beta_akshare,
 )
 from backend.data_cache import get_historical_financials, get_company_profile as cached_get_profile
 from modeling.dcf import (
@@ -101,14 +98,15 @@ def get_wacc(
     if cached is not None:
         return cached
 
-    # Fetch data (both cached)
-    financial_data = get_historical_financials(
-        normalized, "annual", apikey, HISTORICAL_DATA_PERIODS_ANNUAL
-    )
+    # Fetch data in parallel (both independently cached)
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        fut_fin = ex.submit(get_historical_financials, normalized, "annual", apikey, HISTORICAL_DATA_PERIODS_ANNUAL)
+        fut_prof = ex.submit(cached_get_profile, normalized, apikey)
+        financial_data = fut_fin.result()
+        profile = fut_prof.result()
+
     if financial_data is None:
         raise HTTPException(status_code=404, detail=f"Financial data not found: {ticker}")
-
-    profile = cached_get_profile(normalized, apikey)
 
     summary_df = financial_data["summary"]
     base_year_data = summary_df.iloc[:, 0].copy()
@@ -141,14 +139,15 @@ def run_dcf(params: DCFParams):
 
     normalized = _normalize_ticker(params.ticker)
 
-    # Fetch all needed data (cached)
-    financial_data = get_historical_financials(
-        normalized, "annual", params.apikey, HISTORICAL_DATA_PERIODS_ANNUAL
-    )
+    # Fetch all needed data in parallel (both independently cached)
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        fut_fin = ex.submit(get_historical_financials, normalized, "annual", params.apikey, HISTORICAL_DATA_PERIODS_ANNUAL)
+        fut_prof = ex.submit(cached_get_profile, normalized, params.apikey)
+        financial_data = fut_fin.result()
+        profile = fut_prof.result()
+
     if financial_data is None:
         raise HTTPException(status_code=404, detail=f"Financial data not found: {params.ticker}")
-
-    profile = cached_get_profile(normalized, params.apikey)
 
     share_info = get_company_share_float(normalized, params.apikey, company_profile=profile)
     summary_df = financial_data["summary"]
@@ -354,13 +353,16 @@ def get_buffett_valuation(
     if cached is not None:
         return cached
 
-    financial_data = get_historical_financials(
-        normalized, "annual", apikey, HISTORICAL_DATA_PERIODS_ANNUAL
-    )
+    # Parallel fetch
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        fut_fin = ex.submit(get_historical_financials, normalized, "annual", apikey, HISTORICAL_DATA_PERIODS_ANNUAL)
+        fut_prof = ex.submit(cached_get_profile, normalized, apikey)
+        financial_data = fut_fin.result()
+        profile = fut_prof.result()
+
     if financial_data is None:
         raise HTTPException(status_code=404, detail=f"Financial data not found: {ticker}")
 
-    profile = cached_get_profile(normalized, apikey)
     share_info = get_company_share_float(normalized, apikey, company_profile=profile)
     summary_df = financial_data["summary"]
     outstanding_shares = share_info.get("outstandingShares", 0) or 0
@@ -646,10 +648,8 @@ def ai_analyze(params: AIAnalyzeParams, request: Request):
     if financial_data is None:
         raise HTTPException(status_code=404, detail=f"Financial data not found: {params.ticker}")
 
-    profile = fetch_company_profile(normalized, params.apikey)
+    profile = cached_get_profile(normalized, params.apikey)
     profile = _fill_profile_from_financial_data(profile, financial_data)
-    if is_a_share(normalized):
-        profile["beta"] = _calculate_beta_akshare(normalized)
 
     summary_df = financial_data["summary"]
     base_year_col = summary_df.columns[0]
@@ -810,15 +810,12 @@ def ai_analyze_stream(params: AIAnalyzeParams, request: Request):
     def generate():
         yield _sse("progress", {"phase": "fetching", "message": "Fetching data & profile..."})
 
-        # Parallel fetch: financials, profile, and beta (if A-share)
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        # Parallel fetch: financials + profile (beta cached inside cached_get_profile)
+        with ThreadPoolExecutor(max_workers=2) as executor:
             fut_fin = executor.submit(
                 get_historical_financials, normalized, "annual", params.apikey, HISTORICAL_DATA_PERIODS_ANNUAL
             )
-            fut_prof = executor.submit(fetch_company_profile, normalized, params.apikey)
-            fut_beta = None
-            if is_a_share(normalized):
-                fut_beta = executor.submit(_calculate_beta_akshare, normalized)
+            fut_prof = executor.submit(cached_get_profile, normalized, params.apikey)
 
         try:
             financial_data = fut_fin.result()
@@ -831,8 +828,6 @@ def ai_analyze_stream(params: AIAnalyzeParams, request: Request):
 
         profile = fut_prof.result()
         profile = _fill_profile_from_financial_data(profile, financial_data)
-        if fut_beta is not None:
-            profile["beta"] = fut_beta.result()
 
         summary_df = financial_data["summary"]
         base_year_col = summary_df.columns[0]
@@ -1081,7 +1076,7 @@ def gap_analyze(params: GapAnalyzeParams, request: Request):
             fut_fin = executor.submit(
                 get_historical_financials, normalized, "annual", params.apikey, HISTORICAL_DATA_PERIODS_ANNUAL
             )
-            fut_prof = executor.submit(fetch_company_profile, normalized, params.apikey)
+            fut_prof = executor.submit(cached_get_profile, normalized, params.apikey)
 
         try:
             financial_data = fut_fin.result()

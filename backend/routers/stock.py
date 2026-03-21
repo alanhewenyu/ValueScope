@@ -17,17 +17,18 @@ from modeling.data import (
     _normalize_ticker,
     fetch_company_profile,
     get_company_share_float,
-    get_historical_financials,
     format_summary_df,
     is_a_share,
     is_hk_stock,
     _fill_profile_from_financial_data,
-    _calculate_beta_akshare,
     get_index_membership,
 )
 from modeling.constants import HISTORICAL_DATA_PERIODS_ANNUAL
 from backend.cache import get as cache_get, put as cache_put, make_key
-from backend.data_cache import get_company_profile as cached_get_profile
+from backend.data_cache import (
+    get_historical_financials,
+    get_company_profile as cached_get_profile,
+)
 
 router = APIRouter()
 
@@ -296,40 +297,27 @@ def get_financials(
     if cached is not None:
         return cached
 
-    # Fetch financial data + profile + beta in parallel
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    executor = ThreadPoolExecutor(max_workers=5)
-    fut_fin = executor.submit(
-        get_historical_financials, normalized, "annual", apikey, HISTORICAL_DATA_PERIODS_ANNUAL
-    )
-    fut_prof = executor.submit(cached_get_profile, normalized, apikey)
-    fut_beta = executor.submit(_calculate_beta_akshare, normalized) if is_a_share(normalized) else None
+    # Fetch financial data + profile in parallel
+    # Note: cached_get_profile already handles beta calculation internally
+    # (parallelized for A-shares). data_cache.get_historical_financials
+    # already runs freshness check inside the cache lock.
+    from concurrent.futures import ThreadPoolExecutor  # noqa: local import ok
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        fut_fin = executor.submit(
+            get_historical_financials, normalized, "annual", apikey, HISTORICAL_DATA_PERIODS_ANNUAL
+        )
+        fut_prof = executor.submit(cached_get_profile, normalized, apikey)
 
-    # Wait for financials first (critical path)
-    financial_data = fut_fin.result()
-    if financial_data is None:
-        executor.shutdown(wait=False)
-        raise HTTPException(status_code=404, detail=f"Financial data not found: {ticker}")
+        financial_data = fut_fin.result()
+        if financial_data is None:
+            raise HTTPException(status_code=404, detail=f"Financial data not found: {ticker}")
 
-    # Start freshness check immediately (depends only on financial_data)
-    def _freshness():
-        try:
-            from modeling.freshness import check_data_freshness
-            return check_data_freshness(normalized, financial_data, apikey)
-        except Exception as e:
-            logger.debug("Freshness check skipped: %s", e)
-            return financial_data, {"is_stale": False, "data_source": "api"}
-    fut_fresh = executor.submit(_freshness)
+        profile = fut_prof.result()
 
-    # Wait for profile + beta
-    profile = fut_prof.result()
     profile = _fill_profile_from_financial_data(profile, financial_data)
-    if fut_beta is not None:
-        profile["beta"] = fut_beta.result()
 
-    # Collect freshness result (share_float moved to DCF endpoint — not needed for overview)
-    financial_data, freshness_info = fut_fresh.result()
-    executor.shutdown(wait=False)
+    # Freshness info from data_cache (already checked inside get_historical_financials)
+    freshness_info = financial_data.get("_freshness_info", {"is_stale": False, "data_source": "api"})
 
     # Convert summary DataFrame to JSON-serializable format
     summary_df = financial_data["summary"]

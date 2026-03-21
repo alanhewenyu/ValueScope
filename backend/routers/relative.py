@@ -13,8 +13,6 @@ from modeling.data import (
     validate_ticker,
     _normalize_ticker,
     _fill_profile_from_financial_data,
-    _calculate_beta_akshare,
-    is_a_share,
 )
 from backend.data_cache import get_historical_financials, get_company_profile as cached_get_profile
 from modeling.relative_valuation import (
@@ -159,10 +157,9 @@ def get_scores(
     if financial_data is None:
         raise HTTPException(status_code=404, detail=f"Financial data not found: {ticker}")
 
-    # Post-processing (profile already enriched by cached_get_profile)
+    # Post-processing (profile already enriched by cached_get_profile,
+    # including beta for A-shares via get_beta cache)
     profile = _fill_profile_from_financial_data(profile, financial_data)
-    if is_a_share(normalized):
-        profile["beta"] = _calculate_beta_akshare(normalized)
 
     # ── Scoring computation (~0.5s) ──────────────────────────────────
     scores = compute_scores(financial_data, profile, valuation_data, historical)

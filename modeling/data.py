@@ -463,9 +463,8 @@ def _calculate_beta_akshare(ticker, years=3):
             if attempt == 0:
                 print()  # newline after tqdm progress bars
                 print(S.info(f"Calculating beta for {bare_code} vs CSI 300 ({years}Y daily)..."), end="")
-                time.sleep(0.5)
             else:
-                delay = attempt * 2
+                delay = 0.5 * (2 ** (attempt - 1))  # 0.5s, 1s
                 print(S.info(f"  Retrying beta (attempt {attempt + 1}/{max_retries}, wait {delay}s)..."), end="")
                 time.sleep(delay)
 
