@@ -93,11 +93,11 @@ export default function StockPage() {
       catchWithDetect(getFinancials(decodedTicker, apikey)),
     ]);
 
-    // Fire all secondary requests in parallel with Phase 1 (no dependency)
+    // Fire ALL secondary requests in parallel with Phase 1 (backend has
+    // per-ticker cache locks — only one thread fetches, rest wait for cache)
     getIndexMembership(decodedTicker, apikey)
       .then((res) => { if (!cancelled) setIndexes(res.indexes || []); })
       .catch(() => { if (!cancelled) setIndexes([]); });
-    // Phase 2a: visible on overview tab — start immediately, don't wait for Phase 1
     getScores(decodedTicker, apikey)
       .then((d) => { if (!cancelled) setScores(d); })
       .catch(() => {});
@@ -106,6 +106,13 @@ export default function StockPage() {
       .catch(() => {});
     getEstimates(decodedTicker, apikey)
       .then((d) => { if (!cancelled) setEstimates(d); })
+      .catch(() => {});
+    // DCF tab data — fire immediately (backend caches financials for all endpoints)
+    getDCFDefaults(decodedTicker, apikey)
+      .then((d) => { if (!cancelled) setPrefetchedDefaults(d); })
+      .catch(() => {});
+    getWACC(decodedTicker, apikey)
+      .then((d) => { if (!cancelled) setWacc(d); })
       .catch(() => {});
 
     corePromise
@@ -119,13 +126,6 @@ export default function StockPage() {
           document.title = `${p.company_name} (${decodedTicker}) | ValueScope`;
         }
         setFinancials(f);
-        // Phase 2b: DCF tab data — start after financials (backend needs cached data)
-        getDCFDefaults(decodedTicker, apikey)
-          .then((d) => { if (!cancelled) setPrefetchedDefaults(d); })
-          .catch(() => {});
-        getWACC(decodedTicker, apikey)
-          .then((d) => { if (!cancelled) setWacc(d); })
-          .catch(() => {});
       })
       .finally(() => { if (!cancelled) setLoading(false); });
 
