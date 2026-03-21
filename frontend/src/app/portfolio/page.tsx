@@ -310,7 +310,6 @@ function HoldingsTable({ holdings, summary, locale, onEdit, compact, onShowAll }
         <div className="overflow-auto max-h-[70vh]">
           <table className="w-full text-xs font-mono border-collapse">
             <thead className="sticky top-0 z-10">
-              {/* Header Row 1 */}
               <tr className="border-b-2 border-gray-300 dark:border-gray-600 text-[11px] font-semibold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800">
                 <th className="text-left px-2 py-2.5 sticky left-0 bg-gray-100 dark:bg-gray-800 z-20 min-w-[110px]">
                   {locale === "zh" ? "名称" : "Name"}
@@ -319,7 +318,6 @@ function HoldingsTable({ holdings, summary, locale, onEdit, compact, onShowAll }
                 <th className="text-left px-2 py-2.5 whitespace-nowrap">{locale === "zh" ? "市场" : "Market"}</th>
                 <th className="text-left px-2 py-2.5">{locale === "zh" ? "账户" : "Broker"}</th>
                 <th className="text-left px-2 py-2.5">{locale === "zh" ? "币种" : "Ccy"}</th>
-                {hasIndustry && <th className="text-left px-2 py-2.5">{locale === "zh" ? "行业" : "Industry"}</th>}
                 <th className="text-right px-2 py-2.5 cursor-pointer select-none" onClick={() => toggleSort("quantity")}>
                   {locale === "zh" ? "持仓" : "Qty"}<SI col="quantity" />
                 </th>
@@ -363,23 +361,7 @@ function HoldingsTable({ holdings, summary, locale, onEdit, compact, onShowAll }
                   <th className="text-right px-2 py-2.5" title="Margin of Safety = (DCF - Price) / DCF">MoS%</th>
                 </>}
                 {onEdit && <th className="px-2 py-2.5" />}
-              </tr>
-              {/* Header Row 2 — sub-labels */}
-              <tr className="border-b border-gray-200 dark:border-gray-700 text-[9px] text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800/60">
-                <th className="sticky left-0 bg-gray-50 dark:bg-gray-800/60 z-20" />
-                <th /><th /><th /><th />
-                {hasIndustry && <th />}
-                <th />
-                <th className="text-right px-2 font-normal italic">{locale === "zh" ? "原币" : "orig"}</th>
-                <th className="text-right px-2 font-normal italic">{locale === "zh" ? "原币" : "orig"}</th>
-                <th className="text-right px-2 font-normal italic">{locale === "zh" ? "原币" : "orig"}</th>
-                <th />
-                <th />
-                {showDaily && <><th className="text-right px-2 font-normal italic">CNY</th><th /></>}
-                {showYtd && <><th className="text-right px-2 font-normal italic">CNY</th><th /></>}
-                {showTotal && <><th className="text-right px-2 font-normal italic">CNY</th><th /></>}
-                {showDcf && <><th className="text-right px-2 font-normal italic">{locale === "zh" ? "原币" : "orig"}</th><th /></>}
-                {onEdit && <th />}
+                {hasIndustry && <th className="text-left px-2 py-2.5">{locale === "zh" ? "行业" : "Industry"}</th>}
               </tr>
             </thead>
             <tbody>
@@ -396,7 +378,6 @@ function HoldingsTable({ holdings, summary, locale, onEdit, compact, onShowAll }
                   </td>
                   <td className="px-2 py-1.5 text-gray-500 truncate max-w-[70px]">{h.broker}</td>
                   <td className="px-2 py-1.5 text-gray-400">{h.currency}</td>
-                  {hasIndustry && <td className="px-2 py-1.5 text-gray-400 truncate max-w-[90px]" title={h.industry}>{h.industry || "—"}</td>}
                   <td className="text-right px-2 py-1.5">{fmtNum(h.quantity, h.quantity % 1 === 0 ? 0 : 2)}</td>
                   <td className="text-right px-2 py-1.5 text-gray-500">{fmtNum(h.cost_price)}</td>
                   <td className={`text-right px-2 py-1.5 ${h.price_stale ? "text-gray-400 italic" : ""}`}>{fmtNum(h.price)}</td>
@@ -426,6 +407,7 @@ function HoldingsTable({ holdings, summary, locale, onEdit, compact, onShowAll }
                     </td>
                   </>}
                   {onEdit && <td className="px-1 py-1.5 text-center"><button onClick={() => onEdit(h)} className="text-gray-400 hover:text-blue-500 text-[10px]">✎</button></td>}
+                  {hasIndustry && <td className="px-2 py-1.5 text-gray-400 truncate max-w-[90px]" title={h.industry}>{h.industry || "—"}</td>}
                 </tr>
               ))}
             </tbody>
@@ -442,7 +424,6 @@ function HoldingsTable({ holdings, summary, locale, onEdit, compact, onShowAll }
                   <tr className="border-t-2 border-gray-300 dark:border-gray-700 font-semibold text-xs">
                     <td className="px-2 py-2 sticky left-0 bg-white dark:bg-gray-900 z-20">{locale === "zh" ? "合计" : "Total"} ({filtered.length})</td>
                     <td /><td /><td /><td />
-                    {hasIndustry && <td />}
                     <td /><td /><td /><td />
                     <td className="text-right px-2 py-2">{formatNumber(fMvCny)}</td>
                     <td className="text-right px-2 py-2">{fWt.toFixed(1)}%</td>
@@ -459,6 +440,8 @@ function HoldingsTable({ holdings, summary, locale, onEdit, compact, onShowAll }
                       <td className={`text-right px-2 py-2 ${pnlColor(fTotalPct)}`}>{pctStr(fTotalPct)}</td>
                     </>}
                     {showDcf && <><td /><td /></>}
+                    {onEdit && <td />}
+                    {hasIndustry && <td />}
                   </tr>
                 </tfoot>
               );
