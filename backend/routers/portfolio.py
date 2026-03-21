@@ -818,6 +818,18 @@ async def import_csv(file: UploadFile = File(...), user_id: str = Depends(get_cu
 
         conn.commit()
 
+    # Detect similar broker names that might be duplicates
+    warnings: list[str] = []
+    all_brokers = list(existing_brokers)
+    for i, a in enumerate(all_brokers):
+        for b in all_brokers[i + 1:]:
+            if a == b:
+                continue
+            # Check if one contains the other (e.g. "中信" vs "中信证券")
+            if a in b or b in a:
+                warnings.append(f"账户名 \"{a}\" 和 \"{b}\" 相似，是否为同一账户？如有误请在「设置」中统一。"
+                                f" / Similar accounts \"{a}\" and \"{b}\" — same broker? Fix in Settings if needed.")
+
     imported = imported_positions + imported_cash
     result_type = "positions" if imported_cash == 0 else ("cash" if imported_positions == 0 else "mixed")
     return {
@@ -828,6 +840,7 @@ async def import_csv(file: UploadFile = File(...), user_id: str = Depends(get_cu
         "imported_cash": imported_cash,
         "accounts_created": accounts_created,
         "errors": errors,
+        "warnings": warnings,
     }
 
 

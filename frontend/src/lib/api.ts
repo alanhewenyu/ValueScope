@@ -1130,8 +1130,11 @@ export interface ImportResult {
   ok: boolean;
   type: string;
   imported: number;
+  imported_positions?: number;
+  imported_cash?: number;
   accounts_created: string[];
   errors: string[];
+  warnings?: string[];
 }
 
 export function getImportTemplateUrl(type: "positions" | "cash" | "portfolio"): string {

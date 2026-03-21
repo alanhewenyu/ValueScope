@@ -1328,7 +1328,11 @@ function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; on
   async function handleImport(file: File) {
     setImporting(true);
     try {
-      await importCSV(file);
+      const result = await importCSV(file);
+      // Store warnings in sessionStorage so SetupTipsBanner can display them
+      if (result.warnings && result.warnings.length > 0) {
+        sessionStorage.setItem("vs_import_warnings", JSON.stringify(result.warnings));
+      }
       onRefresh();
     } catch (e) {
       alert(zh ? "导入失败，请检查文件格式" : "Import failed. Check file format.");
@@ -1386,22 +1390,29 @@ function SetupTipsBanner({ locale, data, onOpenPanel }: {
   const zh = locale === "zh";
   const [dismissedCash, setDismissedCash] = useState(false);
   const [dismissedMode, setDismissedMode] = useState(false);
+  const [importWarnings, setImportWarnings] = useState<string[]>([]);
+  const [dismissedWarnings, setDismissedWarnings] = useState(false);
 
-  // Restore dismissed state from localStorage
+  // Restore dismissed state from localStorage + import warnings from sessionStorage
   useEffect(() => {
     setDismissedCash(localStorage.getItem("vs_tip_cash") === "1");
     setDismissedMode(localStorage.getItem("vs_tip_mode") === "1");
+    const w = sessionStorage.getItem("vs_import_warnings");
+    if (w) { try { setImportWarnings(JSON.parse(w)); } catch {} }
   }, []);
 
   function dismissCash() { setDismissedCash(true); localStorage.setItem("vs_tip_cash", "1"); }
   function dismissMode() { setDismissedMode(true); localStorage.setItem("vs_tip_mode", "1"); }
+  function dismissWarning() { setDismissedWarnings(true); sessionStorage.removeItem("vs_import_warnings"); }
 
   // Show cash tip if total cash is 0
   const showCash = !dismissedCash && data.summary.cash_cny === 0;
   // Show mode tip if not dismissed
   const showMode = !dismissedMode;
+  // Show import warnings (similar account names)
+  const showWarnings = !dismissedWarnings && importWarnings.length > 0;
 
-  if (!showCash && !showMode) return null;
+  if (!showCash && !showMode && !showWarnings) return null;
 
   return (
     <div className="space-y-2 mb-4">
@@ -1420,6 +1431,22 @@ function SetupTipsBanner({ locale, data, onOpenPanel }: {
             </button>
           </div>
           <button onClick={dismissCash} className="text-amber-400 hover:text-amber-600 text-lg leading-none shrink-0" title="Dismiss">×</button>
+        </div>
+      )}
+
+      {showWarnings && (
+        <div className="flex items-start gap-3 p-3 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
+          <span className="text-lg shrink-0">⚠️</span>
+          <div className="flex-1 min-w-0">
+            {importWarnings.map((w, i) => (
+              <p key={i} className="text-sm text-orange-800 dark:text-orange-200">{w}</p>
+            ))}
+            <button onClick={() => onOpenPanel("settings")}
+              className="text-xs text-orange-700 dark:text-orange-300 hover:underline font-medium mt-1">
+              {zh ? "去「设置」检查 →" : "Check in Settings →"}
+            </button>
+          </div>
+          <button onClick={dismissWarning} className="text-orange-400 hover:text-orange-600 text-lg leading-none shrink-0" title="Dismiss">×</button>
         </div>
       )}
 
