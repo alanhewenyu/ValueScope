@@ -61,12 +61,12 @@ export default function Navbar() {
             <span className="text-gray-900 dark:text-white hidden sm:inline">ValueScope</span>
           </Link>
 
-          <div className="flex-1 max-w-xl min-w-0">
+          <div className="flex-1 max-w-md min-w-0">
             <SearchBar size="md" />
           </div>
 
-          {/* Desktop nav items */}
-          <div className="hidden md:flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
+          {/* Desktop nav items — right-aligned */}
+          <div className="hidden md:flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400 ml-auto shrink-0">
             <Link href="/" className="hover:text-gray-900 dark:hover:text-white transition-colors">
               {t.home}
             </Link>
