@@ -1,5 +1,5 @@
 # Copyright (c) 2025-2026 Alan He. Licensed under AGPL-3.0. See LICENSE.
-"""Cached wrapper for get_historical_financials with freshness check.
+"""Cached wrappers for expensive data fetches (financials, company profile).
 
 Uses per-ticker locks so concurrent requests for the same ticker wait for
 the first fetch to complete, then all share the cached result.
@@ -13,6 +13,7 @@ _cache: dict[str, tuple[float, dict]] = {}
 _locks: dict[str, threading.Lock] = {}
 _global_lock = threading.Lock()
 _TTL = 300  # 5 minutes
+_PROFILE_TTL = 600  # 10 minutes
 
 
 def _get_lock(key: str) -> threading.Lock:
@@ -57,3 +58,43 @@ def get_historical_financials(ticker, period, apikey, historical_periods):
             _cache[cache_key] = (time.monotonic(), copy.deepcopy(data))
 
         return data
+
+
+def get_company_profile(ticker, apikey=''):
+    """Cached wrapper for fetch_company_profile + _fill_profile_from_financial_data.
+
+    Multiple endpoints (wacc, buffett, scores, dcf) all need the same profile.
+    This ensures only one network request per ticker.
+    """
+    cache_key = f"profile:{ticker}"
+
+    cached = _cache.get(cache_key)
+    if cached and (time.monotonic() - cached[0]) < _PROFILE_TTL:
+        return copy.deepcopy(cached[1])
+
+    lock = _get_lock(cache_key)
+    with lock:
+        cached = _cache.get(cache_key)
+        if cached and (time.monotonic() - cached[0]) < _PROFILE_TTL:
+            return copy.deepcopy(cached[1])
+
+        from modeling.data import (
+            fetch_company_profile as _raw_profile,
+            _fill_profile_from_financial_data,
+            is_a_share,
+            _calculate_beta_akshare,
+        )
+
+        profile = _raw_profile(ticker, apikey)
+
+        # Enrich profile with financial data if available
+        fin_key = f"{ticker}:annual"
+        fin_cached = _cache.get(fin_key)
+        if fin_cached and (time.monotonic() - fin_cached[0]) < _TTL:
+            profile = _fill_profile_from_financial_data(profile, fin_cached[1])
+
+        if is_a_share(ticker):
+            profile["beta"] = _calculate_beta_akshare(ticker)
+
+        _cache[cache_key] = (time.monotonic(), copy.deepcopy(profile))
+        return profile

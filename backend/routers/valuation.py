@@ -26,7 +26,7 @@ from modeling.data import (
     _fill_profile_from_financial_data,
     _calculate_beta_akshare,
 )
-from backend.data_cache import get_historical_financials
+from backend.data_cache import get_historical_financials, get_company_profile as cached_get_profile
 from modeling.dcf import (
     calculate_dcf,
     calculate_wacc,
@@ -101,17 +101,14 @@ def get_wacc(
     if cached is not None:
         return cached
 
-    # Fetch data
+    # Fetch data (both cached)
     financial_data = get_historical_financials(
         normalized, "annual", apikey, HISTORICAL_DATA_PERIODS_ANNUAL
     )
     if financial_data is None:
         raise HTTPException(status_code=404, detail=f"Financial data not found: {ticker}")
 
-    profile = fetch_company_profile(normalized, apikey)
-    profile = _fill_profile_from_financial_data(profile, financial_data)
-    if is_a_share(normalized):
-        profile["beta"] = _calculate_beta_akshare(normalized)
+    profile = cached_get_profile(normalized, apikey)
 
     summary_df = financial_data["summary"]
     base_year_data = summary_df.iloc[:, 0].copy()
@@ -144,17 +141,14 @@ def run_dcf(params: DCFParams):
 
     normalized = _normalize_ticker(params.ticker)
 
-    # Fetch all needed data
+    # Fetch all needed data (cached)
     financial_data = get_historical_financials(
         normalized, "annual", params.apikey, HISTORICAL_DATA_PERIODS_ANNUAL
     )
     if financial_data is None:
         raise HTTPException(status_code=404, detail=f"Financial data not found: {params.ticker}")
 
-    profile = fetch_company_profile(normalized, params.apikey)
-    profile = _fill_profile_from_financial_data(profile, financial_data)
-    if is_a_share(normalized):
-        profile["beta"] = _calculate_beta_akshare(normalized)
+    profile = cached_get_profile(normalized, params.apikey)
 
     share_info = get_company_share_float(normalized, params.apikey, company_profile=profile)
     summary_df = financial_data["summary"]
@@ -366,8 +360,7 @@ def get_buffett_valuation(
     if financial_data is None:
         raise HTTPException(status_code=404, detail=f"Financial data not found: {ticker}")
 
-    profile = fetch_company_profile(normalized, apikey)
-    profile = _fill_profile_from_financial_data(profile, financial_data)
+    profile = cached_get_profile(normalized, apikey)
     share_info = get_company_share_float(normalized, apikey, company_profile=profile)
     summary_df = financial_data["summary"]
     outstanding_shares = share_info.get("outstandingShares", 0) or 0
@@ -1467,10 +1460,7 @@ def export_dcf_excel(params: DCFParams):
     if financial_data is None:
         raise HTTPException(status_code=404, detail=f"Financial data not found: {params.ticker}")
 
-    profile = fetch_company_profile(normalized, params.apikey)
-    profile = _fill_profile_from_financial_data(profile, financial_data)
-    if is_a_share(normalized):
-        profile["beta"] = _calculate_beta_akshare(normalized)
+    profile = cached_get_profile(normalized, params.apikey)
 
     share_info = get_company_share_float(normalized, params.apikey, company_profile=profile)
     summary_df = financial_data["summary"]

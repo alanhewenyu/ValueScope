@@ -27,6 +27,7 @@ from modeling.data import (
 )
 from modeling.constants import HISTORICAL_DATA_PERIODS_ANNUAL
 from backend.cache import get as cache_get, put as cache_put, make_key
+from backend.data_cache import get_company_profile as cached_get_profile
 
 router = APIRouter()
 
@@ -229,7 +230,7 @@ def get_profile(
     if cached is not None:
         return cached
 
-    profile = fetch_company_profile(normalized, apikey)
+    profile = cached_get_profile(normalized, apikey)
 
     # For A-shares and HK stocks, enrich with yfinance data if akshare returned minimal info
     company_name = profile.get("companyName", "")
@@ -301,7 +302,7 @@ def get_financials(
     fut_fin = executor.submit(
         get_historical_financials, normalized, "annual", apikey, HISTORICAL_DATA_PERIODS_ANNUAL
     )
-    fut_prof = executor.submit(fetch_company_profile, normalized, apikey)
+    fut_prof = executor.submit(cached_get_profile, normalized, apikey)
     fut_beta = executor.submit(_calculate_beta_akshare, normalized) if is_a_share(normalized) else None
 
     # Wait for financials first (critical path)

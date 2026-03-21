@@ -12,12 +12,11 @@ logger = logging.getLogger("valuescope.analysis")
 from modeling.data import (
     validate_ticker,
     _normalize_ticker,
-    fetch_company_profile,
     _fill_profile_from_financial_data,
     _calculate_beta_akshare,
     is_a_share,
 )
-from backend.data_cache import get_historical_financials
+from backend.data_cache import get_historical_financials, get_company_profile as cached_get_profile
 from modeling.relative_valuation import (
     get_current_valuation,
     get_historical_valuations,
@@ -133,7 +132,7 @@ def get_scores(
         )
 
     def _fetch_profile():
-        return fetch_company_profile(normalized, apikey)
+        return cached_get_profile(normalized, apikey)
 
     def _fetch_valuation():
         v = get_current_valuation(normalized, apikey)
@@ -160,7 +159,7 @@ def get_scores(
     if financial_data is None:
         raise HTTPException(status_code=404, detail=f"Financial data not found: {ticker}")
 
-    # Post-processing that depends on financial_data
+    # Post-processing (profile already enriched by cached_get_profile)
     profile = _fill_profile_from_financial_data(profile, financial_data)
     if is_a_share(normalized):
         profile["beta"] = _calculate_beta_akshare(normalized)
