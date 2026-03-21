@@ -1361,7 +1361,7 @@ function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; on
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
           Portfolio Tracker
         </h2>
-        <p className="text-sm text-gray-500 max-w-md mx-auto">
+        <p className="text-sm text-gray-500 whitespace-nowrap">
           {zh
             ? "跨市场投资组合追踪工具 — 一站式管理你在 A股、港股、美股、日股的所有持仓"
             : "Cross-market portfolio tracker — manage A-shares, HK, US & JP stocks in one place"}

@@ -61,7 +61,7 @@ export default function Navbar() {
             <span className="text-gray-900 dark:text-white hidden sm:inline">ValueScope</span>
           </Link>
 
-          <div className="w-full max-w-md min-w-0">
+          <div className="min-w-0" style={{ width: 360 }}>
             <SearchBar size="md" />
           </div>
 
