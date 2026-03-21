@@ -1353,19 +1353,14 @@ function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; on
           onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImport(f); }} />
         <button onClick={() => fileRef.current?.click()} disabled={importing}
           className="w-full px-6 py-3 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 font-medium transition-colors">
-          {importing ? (zh ? "导入中..." : "Importing...") : (zh ? "上传 CSV 导入持仓" : "Upload CSV to Import")}
+          {importing ? (zh ? "导入中..." : "Importing...") : (zh ? "上传 CSV 导入" : "Upload CSV to Import")}
         </button>
 
-        {/* Template download */}
-        <div className="flex justify-center gap-3 text-xs text-gray-400">
-          <a href={getImportTemplateUrl("positions")} download className="hover:text-blue-500 underline underline-offset-2">
-            {zh ? "下载持仓模板" : "Positions template"}
-          </a>
-          <span>·</span>
-          <a href={getImportTemplateUrl("cash")} download className="hover:text-blue-500 underline underline-offset-2">
-            {zh ? "下载现金模板" : "Cash template"}
-          </a>
-        </div>
+        {/* Template download — single combined template */}
+        <a href={getImportTemplateUrl("portfolio")} download
+          className="block text-center text-xs text-gray-400 hover:text-blue-500 underline underline-offset-2">
+          {zh ? "下载 CSV 模板（含持仓 + 现金示例）" : "Download CSV template (positions + cash)"}
+        </a>
 
         {/* Secondary: manual entry */}
         <div className="pt-2 border-t border-gray-100 dark:border-gray-800">

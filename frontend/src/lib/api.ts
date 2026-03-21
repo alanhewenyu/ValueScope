@@ -1134,7 +1134,7 @@ export interface ImportResult {
   errors: string[];
 }
 
-export function getImportTemplateUrl(type: "positions" | "cash"): string {
+export function getImportTemplateUrl(type: "positions" | "cash" | "portfolio"): string {
   return `${API_BASE}/api/portfolio/import-template/${type}`;
 }
 

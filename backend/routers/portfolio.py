@@ -663,6 +663,16 @@ _TEMPLATES = {
         ],
         "filename": "cash_template.csv",
     },
+    "portfolio": {
+        "headers": ["ticker", "name", "market", "broker", "currency", "quantity", "cost_price", "cash_balance"],
+        "rows": [
+            ["600809.SS", "山西汾酒", "A股", "中信", "CNY", "200", "162.85", ""],
+            ["GOOGL", "谷歌", "美股", "富途", "USD", "15", "635.1", ""],
+            ["", "", "", "中信", "CNY", "", "", "8057"],
+            ["", "", "", "富途", "HKD", "", "", "35000"],
+        ],
+        "filename": "portfolio_template.csv",
+    },
 }
 
 
@@ -709,37 +719,55 @@ async def import_csv(file: UploadFile = File(...), user_id: str = Depends(get_cu
     # Normalize headers (strip whitespace)
     headers = [h.strip().lower() for h in reader.fieldnames]
 
-    # Detect type
-    if "ticker" in headers:
-        csv_type = "positions"
-    elif "account" in headers:
+    # Detect type: mixed (has both ticker and cash_balance), positions-only, or cash-only
+    has_ticker_col = "ticker" in headers
+    has_cash_balance_col = "cash_balance" in headers
+    has_account_col = "account" in headers
+
+    if has_ticker_col:
+        csv_type = "mixed" if has_cash_balance_col else "positions"
+    elif has_account_col:
         csv_type = "cash"
     else:
         raise HTTPException(
             status_code=400,
             detail=f"Cannot detect CSV type from headers: {reader.fieldnames}. "
-                   "Positions CSV must have 'ticker' column; cash CSV must have 'account' column.",
+                   "Must have 'ticker' column (positions/mixed) or 'account' column (cash).",
         )
 
-    imported = 0
+    imported_positions = 0
+    imported_cash = 0
     accounts_created: list[str] = []
     errors: list[str] = []
 
     with get_conn() as conn:
-        if csv_type == "positions":
-            # Collect existing brokers in account_settings
-            existing_brokers = {
-                r[0] for r in conn.execute("SELECT broker FROM account_settings WHERE user_id=?", (user_id,)).fetchall()
-            }
-            existing_cash_accounts = {
-                r[0] for r in conn.execute("SELECT DISTINCT account FROM cash_balances WHERE user_id=?", (user_id,)).fetchall()
-            }
+        # Collect existing brokers/accounts
+        existing_brokers = {
+            r[0] for r in conn.execute("SELECT broker FROM account_settings WHERE user_id=?", (user_id,)).fetchall()
+        }
+        existing_cash_accounts = {
+            r[0] for r in conn.execute("SELECT DISTINCT account FROM cash_balances WHERE user_id=?", (user_id,)).fetchall()
+        }
 
-            for i, raw_row in enumerate(reader, start=2):
-                # Normalize keys
-                row = {k.strip().lower(): (v.strip() if v else "") for k, v in raw_row.items()}
-                try:
-                    ticker = row["ticker"]
+        for i, raw_row in enumerate(reader, start=2):
+            row = {k.strip().lower(): (v.strip() if v else "") for k, v in raw_row.items()}
+            try:
+                ticker = row.get("ticker", "").strip()
+                cash_balance_str = row.get("cash_balance", "").strip()
+
+                if csv_type == "cash":
+                    # Pure cash CSV (account, currency, balance)
+                    account = row["account"]
+                    currency = row.get("currency", "CNY")
+                    balance = float(row.get("balance", 0))
+                    if not account:
+                        errors.append(f"Row {i}: account is required")
+                        continue
+                    upsert_cash(conn, account=account, currency=currency, balance=balance, user_id=user_id)
+                    imported_cash += 1
+
+                elif ticker:
+                    # Position row (has ticker)
                     name = row.get("name", "")
                     market = row.get("market", "")
                     broker = row.get("broker", "")
@@ -747,8 +775,8 @@ async def import_csv(file: UploadFile = File(...), user_id: str = Depends(get_cu
                     quantity = float(row.get("quantity", 0))
                     cost_price = float(row.get("cost_price", 0))
 
-                    if not ticker or not broker:
-                        errors.append(f"Row {i}: ticker and broker are required")
+                    if not broker:
+                        errors.append(f"Row {i}: broker is required for position rows")
                         continue
 
                     # Auto-create account_settings for new brokers
@@ -757,7 +785,7 @@ async def import_csv(file: UploadFile = File(...), user_id: str = Depends(get_cu
                         existing_brokers.add(broker)
                         accounts_created.append(broker)
 
-                    # Auto-create cash row for new broker
+                    # Auto-create cash row for new broker (balance 0)
                     if broker not in existing_cash_accounts:
                         upsert_cash(conn, account=broker, currency="CNY", balance=0, user_id=user_id)
                         existing_cash_accounts.add(broker)
@@ -767,33 +795,37 @@ async def import_csv(file: UploadFile = File(...), user_id: str = Depends(get_cu
                         broker=broker, currency=currency,
                         quantity=quantity, cost_price=cost_price, user_id=user_id,
                     )
-                    imported += 1
-                except (ValueError, KeyError) as exc:
-                    errors.append(f"Row {i}: {exc}")
+                    imported_positions += 1
 
-        else:  # cash
-            for i, raw_row in enumerate(reader, start=2):
-                row = {k.strip().lower(): (v.strip() if v else "") for k, v in raw_row.items()}
-                try:
-                    account = row["account"]
+                elif cash_balance_str and csv_type == "mixed":
+                    # Cash row in mixed CSV (ticker is empty, cash_balance has value)
+                    account = row.get("broker", "")
                     currency = row.get("currency", "CNY")
-                    balance = float(row.get("balance", 0))
-
+                    balance = float(cash_balance_str)
                     if not account:
-                        errors.append(f"Row {i}: account is required")
+                        errors.append(f"Row {i}: broker is required for cash rows")
                         continue
-
                     upsert_cash(conn, account=account, currency=currency, balance=balance, user_id=user_id)
-                    imported += 1
-                except (ValueError, KeyError) as exc:
-                    errors.append(f"Row {i}: {exc}")
+                    existing_cash_accounts.add(account)
+                    imported_cash += 1
+
+                else:
+                    # Skip empty rows silently
+                    pass
+
+            except (ValueError, KeyError) as exc:
+                errors.append(f"Row {i}: {exc}")
 
         conn.commit()
 
+    imported = imported_positions + imported_cash
+    result_type = "positions" if imported_cash == 0 else ("cash" if imported_positions == 0 else "mixed")
     return {
         "ok": True,
-        "type": csv_type,
+        "type": result_type,
         "imported": imported,
+        "imported_positions": imported_positions,
+        "imported_cash": imported_cash,
         "accounts_created": accounts_created,
         "errors": errors,
     }
