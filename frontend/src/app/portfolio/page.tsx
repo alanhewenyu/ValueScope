@@ -3013,7 +3013,7 @@ export default function PortfolioPage() {
             {([
               { key: "overview", zh: "概览", en: "Overview" },
               { key: "holdings", zh: "持仓", en: "Holdings" },
-              { key: "performance", zh: "分析", en: "Analysis" },
+              { key: "performance", zh: "表现", en: "Performance" },
               { key: "trades", zh: "日志", en: "Journals" },
               { key: "events", zh: "动态", en: "Events" },
             ] as const).map((tab) => (
@@ -3134,9 +3134,6 @@ export default function PortfolioPage() {
                   {allocBySector.length > 1 && <AllocationBar title={locale === "zh" ? "按行业" : "By Sector"} items={allocBySector} locale={locale} />}
                 </div>
 
-                {/* ── Performance Chart (no risk) ── */}
-                <PerformanceSection key={`perf-${refreshKey}`} locale={locale} hideRisk />
-
               </>
             )}
 
@@ -3149,10 +3146,10 @@ export default function PortfolioPage() {
               </>
             )}
 
-            {/* ════════ ANALYSIS TAB ════════ */}
+            {/* ════════ PERFORMANCE TAB ════════ */}
             {pageTab === "performance" && (
               <>
-                <PerformanceSection key={`risk-${refreshKey}`} locale={locale} hideChart />
+                <PerformanceSection key={`perf-${refreshKey}`} locale={locale} />
                 <ReturnAttribution holdings={data.holdings} closedTrades={allClosedTrades} locale={locale} />
               </>
             )}
