@@ -34,15 +34,6 @@ export default function Footer() {
                 {t.contactBlog}
               </a>
               <span className="text-gray-300 dark:text-gray-700">·</span>
-              <a
-                href="https://github.com/alanhe/valuescope"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-              >
-                {t.contactGitHub}
-              </a>
-              <span className="text-gray-300 dark:text-gray-700">·</span>
               <button
                 type="button"
                 onClick={() => setShowQR(true)}
