@@ -12,7 +12,6 @@ import csv
 import io
 import logging
 import os
-import re
 import sqlite3
 from typing import Optional
 
@@ -530,32 +529,15 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
         _created_today = pos.get('created_at', '')[:10] == _today_str
         _updated_today = pos.get('updated_at', '')[:10] == _today_str
 
-        # Check if this market is on a trading day (not weekend in market's local timezone).
-        # Eastmoney/yfinance return prev_close = last session's opening reference price,
-        # not the latest close. On weekends, price = Fri close but prev_close = Thu close,
-        # which would incorrectly show Fri's daily P&L. Zero it out on non-trading days.
-        def _is_trading_day(_ticker: str) -> bool:
-            import zoneinfo
-            _tz_map = {
-                '.SS': 'Asia/Shanghai', '.SZ': 'Asia/Shanghai',
-                '.HK': 'Asia/Hong_Kong', '.T': 'Asia/Tokyo',
-            }
-            tz_name = 'America/New_York'  # default for US stocks
-            for suffix, tz in _tz_map.items():
-                if _ticker.endswith(suffix):
-                    tz_name = tz
-                    break
-            if re.match(r'^\d{6}$', _ticker):
-                tz_name = 'Asia/Shanghai'
-            return _dt.datetime.now(zoneinfo.ZoneInfo(tz_name)).weekday() < 5
-
-        _trading_day = _is_trading_day(ticker)
+        # Non-trading day handling is done at the data source level:
+        # - Eastmoney: f86 timestamp check → prev_close = price when data is stale
+        # - yfinance (non-USD): bar date check → prev_close = last bar close when not today
+        # - yfinance (USD extended): prev_close = reg_price (same-day close)
+        # - Fund NAV: nav_date check → prev_nav = nav when stale
+        # When prev_close == price, daily_pnl naturally = 0.
 
         prev_close = get_previous_close(ticker)
-        if not _trading_day:
-            # Weekend in market's local timezone: no daily P&L
-            daily_pnl = daily_pnl_pct = daily_pnl_cny = 0
-        elif _created_today and not price_stale:
+        if _created_today and not price_stale:
             # New position today: daily P&L = current price vs cost
             daily_pnl = (price - cost) * qty
             daily_pnl_pct = (price / cost - 1) * 100 if cost > 0 else 0

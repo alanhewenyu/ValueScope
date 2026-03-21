@@ -68,7 +68,7 @@ def _fetch_ashare_domestic(ticker: str) -> tuple[float, str, float | None]:
     url = 'https://push2.eastmoney.com/api/qt/stock/get'
     resp = requests.get(url, params={
         'secid': secid,
-        'fields': 'f43,f44,f45,f46,f47,f60,f170',
+        'fields': 'f43,f44,f45,f46,f47,f60,f86,f170',
         'ut': 'fa5fd1943c7b386f172d6893dbfba10b',
     }, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
     resp.raise_for_status()
@@ -76,7 +76,8 @@ def _fetch_ashare_domestic(ticker: str) -> tuple[float, str, float | None]:
     if not data:
         raise ValueError(f"No data returned for {ticker}")
 
-    # f43=latest price, f60=prev close, prices in cents -> divide by 100
+    # f43=latest price, f60=prev close, f86=last update timestamp
+    # prices in cents -> divide by 100
     price_raw = data.get('f43')
     prev_raw = data.get('f60')
     if price_raw is None or price_raw == '-':
@@ -84,6 +85,18 @@ def _fetch_ashare_domestic(ticker: str) -> tuple[float, str, float | None]:
 
     price = float(price_raw) / 100
     prev_close = float(prev_raw) / 100 if prev_raw and prev_raw != '-' else None
+
+    # If data is not from today, market didn't trade today (weekend/holiday).
+    # Set prev_close = price so daily P&L = 0.
+    f86 = data.get('f86')
+    if f86 and prev_close is not None:
+        try:
+            data_date = datetime.date.fromtimestamp(int(f86))
+            if data_date < datetime.date.today():
+                prev_close = price
+        except (ValueError, OSError):
+            pass
+
     return (price, 'CNY', prev_close)
 
 
