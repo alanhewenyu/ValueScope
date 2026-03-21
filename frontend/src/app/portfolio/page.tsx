@@ -3094,7 +3094,7 @@ export default function PortfolioPage() {
                       sub={`${closedCount} trades`} subColor={pnlColor(realizedPnl)} />
                   )}
                   <KpiCard label={locale === "zh" ? "日盈亏" : "Daily P&L"} value={`¥${pnlSign(data.summary.daily_pnl_cny)}`}
-                    sub={pctStr((() => { const base = data.summary.equity_cny - data.summary.daily_pnl_cny; return base ? (data.summary.daily_pnl_cny / base) * 100 : null; })())}
+                    sub={pctStr((() => { const base = data.summary.net_assets - data.summary.daily_pnl_cny; return base ? (data.summary.daily_pnl_cny / base) * 100 : null; })())}
                     subColor={pnlColor(data.summary.daily_pnl_cny)} />
                   {weeklyPnl != null && (
                     <KpiCard label={weeklyLabel || (locale === "zh" ? "本周" : "This Week")}
