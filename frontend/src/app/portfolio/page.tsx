@@ -317,9 +317,9 @@ function HoldingsTable({ holdings, summary, locale, onEdit, compact, onShowAll }
                 <th className="text-left px-2 py-2.5">{locale === "zh" ? "代码" : "Ticker"}</th>
                 <th className="text-left px-2 py-2.5">{locale === "zh" ? "市场" : "Market"}</th>
                 <th className="text-left px-2 py-2.5">{locale === "zh" ? "账户" : "Broker"}</th>
-                <th className="text-left px-2 py-2.5">{locale === "zh" ? "币种" : "Ccy"}</th>
+                <th className="text-left px-2 py-2.5">{locale === "zh" ? "币种" : "Currency"}</th>
                 <th className="text-right px-2 py-2.5 cursor-pointer select-none" onClick={() => toggleSort("quantity")}>
-                  {locale === "zh" ? "持仓" : "Qty"}<SI col="quantity" />
+                  {locale === "zh" ? "持仓量" : "Qty"}<SI col="quantity" />
                 </th>
                 <th className="text-right px-2 py-2.5">{locale === "zh" ? "成本价" : "Cost"}</th>
                 <th className="text-right px-2 py-2.5">{locale === "zh" ? "现价" : "Price"}</th>
