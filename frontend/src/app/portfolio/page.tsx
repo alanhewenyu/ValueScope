@@ -309,64 +309,64 @@ function HoldingsTable({ holdings, summary, locale, onEdit, compact, onShowAll }
       <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden mb-2">
         <div className="overflow-auto max-h-[70vh]">
           <table className="w-full text-xs font-mono border-collapse">
-            <thead className="sticky top-0 z-10 bg-white dark:bg-gray-900">
+            <thead className="sticky top-0 z-10">
               {/* Header Row 1 */}
-              <tr className="border-b border-gray-200 dark:border-gray-700 text-[10px] text-gray-500 dark:text-gray-400 uppercase">
-                <th className="text-left px-2 py-2 sticky left-0 bg-white dark:bg-gray-900 z-20 min-w-[110px]">
+              <tr className="border-b-2 border-gray-300 dark:border-gray-600 text-[11px] font-semibold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800">
+                <th className="text-left px-2 py-2.5 sticky left-0 bg-gray-100 dark:bg-gray-800 z-20 min-w-[110px]">
                   {locale === "zh" ? "名称" : "Name"}
                 </th>
-                <th className="text-left px-2 py-2">{locale === "zh" ? "代码" : "Ticker"}</th>
-                <th className="text-left px-2 py-2 whitespace-nowrap">{locale === "zh" ? "市场" : "Market"}</th>
-                <th className="text-left px-2 py-2">{locale === "zh" ? "账户" : "Broker"}</th>
-                <th className="text-left px-2 py-2">{locale === "zh" ? "币种" : "Ccy"}</th>
-                {hasIndustry && <th className="text-left px-2 py-2">{locale === "zh" ? "行业" : "Industry"}</th>}
-                <th className="text-right px-2 py-2 cursor-pointer select-none" onClick={() => toggleSort("quantity")}>
+                <th className="text-left px-2 py-2.5">{locale === "zh" ? "代码" : "Ticker"}</th>
+                <th className="text-left px-2 py-2.5 whitespace-nowrap">{locale === "zh" ? "市场" : "Market"}</th>
+                <th className="text-left px-2 py-2.5">{locale === "zh" ? "账户" : "Broker"}</th>
+                <th className="text-left px-2 py-2.5">{locale === "zh" ? "币种" : "Ccy"}</th>
+                {hasIndustry && <th className="text-left px-2 py-2.5">{locale === "zh" ? "行业" : "Industry"}</th>}
+                <th className="text-right px-2 py-2.5 cursor-pointer select-none" onClick={() => toggleSort("quantity")}>
                   {locale === "zh" ? "持仓" : "Qty"}<SI col="quantity" />
                 </th>
-                <th className="text-right px-2 py-2">{locale === "zh" ? "成本" : "Cost"}</th>
-                <th className="text-right px-2 py-2">{locale === "zh" ? "现价" : "Price"}</th>
-                <th className="text-right px-2 py-2 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("market_value")}>
+                <th className="text-right px-2 py-2.5">{locale === "zh" ? "成本" : "Cost"}</th>
+                <th className="text-right px-2 py-2.5">{locale === "zh" ? "现价" : "Price"}</th>
+                <th className="text-right px-2 py-2.5 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("market_value")}>
                   MV<SI col="market_value" />
                 </th>
-                <th className="text-right px-2 py-2 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("market_value_cny")}>
+                <th className="text-right px-2 py-2.5 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("market_value_cny")}>
                   MV(CNY)<SI col="market_value_cny" />
                 </th>
-                <th className="text-right px-2 py-2 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("weight")}>
+                <th className="text-right px-2 py-2.5 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("weight")}>
                   Wt%<SI col="weight" />
                 </th>
                 {showDaily && <>
-                  <th className="text-right px-2 py-2 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("daily_pnl_cny")}>
+                  <th className="text-right px-2 py-2.5 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("daily_pnl_cny")}>
                     Daily P&L<SI col="daily_pnl_cny" />
                   </th>
-                  <th className="text-right px-2 py-2 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("daily_pnl_pct")}>
+                  <th className="text-right px-2 py-2.5 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("daily_pnl_pct")}>
                     Daily%<SI col="daily_pnl_pct" />
                   </th>
                 </>}
                 {showYtd && <>
-                  <th className="text-right px-2 py-2 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("ytd_pnl_cny")}>
+                  <th className="text-right px-2 py-2.5 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("ytd_pnl_cny")}>
                     YTD P&L<SI col="ytd_pnl_cny" />
                   </th>
-                  <th className="text-right px-2 py-2 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("ytd_pnl_pct")}>
+                  <th className="text-right px-2 py-2.5 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("ytd_pnl_pct")}>
                     YTD%<SI col="ytd_pnl_pct" />
                   </th>
                 </>}
                 {showTotal && <>
-                  <th className="text-right px-2 py-2 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("pnl_cny")}>
+                  <th className="text-right px-2 py-2.5 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("pnl_cny")}>
                     Total P&L<SI col="pnl_cny" />
                   </th>
-                  <th className="text-right px-2 py-2 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("pnl_pct")}>
+                  <th className="text-right px-2 py-2.5 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("pnl_pct")}>
                     Total%<SI col="pnl_pct" />
                   </th>
                 </>}
                 {showDcf && <>
-                  <th className="text-right px-2 py-2" title="DCF intrinsic value (ValuScope)">DCF</th>
-                  <th className="text-right px-2 py-2" title="Margin of Safety = (DCF - Price) / DCF">MoS%</th>
+                  <th className="text-right px-2 py-2.5" title="DCF intrinsic value (ValuScope)">DCF</th>
+                  <th className="text-right px-2 py-2.5" title="Margin of Safety = (DCF - Price) / DCF">MoS%</th>
                 </>}
-                {onEdit && <th className="px-2 py-2" />}
+                {onEdit && <th className="px-2 py-2.5" />}
               </tr>
               {/* Header Row 2 — sub-labels */}
-              <tr className="border-b border-gray-100 dark:border-gray-800 text-[9px] text-gray-400 dark:text-gray-500">
-                <th className="sticky left-0 bg-white dark:bg-gray-900 z-20" />
+              <tr className="border-b border-gray-200 dark:border-gray-700 text-[9px] text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800/60">
+                <th className="sticky left-0 bg-gray-50 dark:bg-gray-800/60 z-20" />
                 <th /><th /><th /><th />
                 {hasIndustry && <th />}
                 <th />
