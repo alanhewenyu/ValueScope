@@ -587,6 +587,8 @@ def calculate_buffett(summary_df, company_profile, outstanding_shares, forex_rat
     discount_rate = max(0.10, rf + 0.05)
 
     # ── Growth rate: avg_ROE × (1 - payout) ──
+    # Cap payout at 100%: payout > 100% means paying from reserves, retention floor = 0
+    payout = min(payout, 100.0)
     retention = 1 - (payout / 100) if payout > 0 else 0.7
     if avg_roe > 0:
         sustainable_growth = (avg_roe / 100) * retention
