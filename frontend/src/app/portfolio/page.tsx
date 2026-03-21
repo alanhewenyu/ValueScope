@@ -1317,22 +1317,18 @@ function ClosedTradesSection({ locale }: { locale: string }) {
 }
 
 // ══════════════════════════════════════════
-// Onboarding — Empty state for new users
+// Onboarding — Simplified empty state for new users (1-step)
 // ══════════════════════════════════════════
 
 function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; onRefresh: () => void; onOpenPanel: (tab?: "edit" | "close" | "cash" | "settings") => void }) {
   const zh = locale === "zh";
   const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<{
-    type: string; imported: number; accounts_created: string[]; errors: string[];
-  } | null>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
 
   async function handleImport(file: File) {
     setImporting(true);
     try {
-      const result = await importCSV(file);
-      setImportResult(result);
+      await importCSV(file);
       onRefresh();
     } catch (e) {
       alert(zh ? "导入失败，请检查文件格式" : "Import failed. Check file format.");
@@ -1341,138 +1337,122 @@ function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; on
     }
   }
 
-  if (importResult) {
-    return (
-      <div className="max-w-lg mx-auto mt-12 p-6 rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-sm">
-        <div className="text-2xl mb-3">✅</div>
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-          {zh ? "导入成功" : "Import Complete"}
-        </h3>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-          {zh
-            ? `已导入 ${importResult.imported} 条${importResult.type === "positions" ? "持仓" : "现金"}记录。`
-            : `Imported ${importResult.imported} ${importResult.type} records.`}
-          {importResult.accounts_created.length > 0 && (
-            <span className="block mt-1">
-              {zh
-                ? `自动创建账户：${importResult.accounts_created.join("、")}`
-                : `Auto-created accounts: ${importResult.accounts_created.join(", ")}`}
-            </span>
-          )}
-        </p>
-        {importResult.errors.length > 0 && (
-          <div className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-900/20 rounded p-2 mb-4">
-            {importResult.errors.map((e, i) => <div key={i}>{e}</div>)}
-          </div>
-        )}
-
-        <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 mb-4 text-sm text-gray-700 dark:text-gray-300 leading-relaxed space-y-2">
-          <p className="font-semibold text-gray-900 dark:text-white">
-            {zh ? "📋 账户模式设置" : "📋 Account Mode Setup"}
-          </p>
-          <p>{zh
-            ? "所有账户已默认设为「成本模式」，你可以按需调整："
-            : "All accounts default to Cost mode. Adjust as needed:"}</p>
-          <p>{zh
-            ? "💰 入金模式：用固定的人民币入金金额作为 Capital。适合封闭账户或外币账户，避免汇率波动影响收益计算。例如：往富途汇入 100 万人民币，无论港币汇率怎么变，Capital 始终是 100 万。"
-            : "💰 Deposit mode: Use a fixed CNY deposit amount as Capital. Ideal for closed or foreign-currency accounts to avoid FX fluctuation. E.g., ¥1M remitted to Futu stays ¥1M Capital regardless of HKD rate."}</p>
-          <p>{zh
-            ? "📊 成本模式：Capital = 持仓成本 + 现金 − 已平仓盈亏。Capital 始终等于原始投入金额。大多数账户无需修改。"
-            : "📊 Cost mode: Capital = position cost + cash − realized P&L. Capital always equals original invested amount. No change needed for most accounts."}</p>
-        </div>
-
-        <button onClick={() => onOpenPanel("settings")}
-          className="w-full px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-medium">
-          {zh ? "前往设置 →" : "Go to Settings →"}
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <div className="max-w-lg mx-auto mt-12 p-6 rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-sm">
-      <div className="text-3xl mb-3">📊</div>
+    <div className="max-w-md mx-auto mt-16 p-8 rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-sm text-center">
+      <div className="text-4xl mb-4">📊</div>
       <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
         {zh ? "欢迎使用 Portfolio Tracker" : "Welcome to Portfolio Tracker"}
       </h2>
-      <p className="text-sm text-gray-500 mb-6">
-        {zh ? "开始之前，请完成以下设置：" : "Get started by completing the setup below:"}
+      <p className="text-sm text-gray-500 mb-8">
+        {zh ? "导入你的持仓数据，即刻开始追踪投资组合。" : "Import your positions to start tracking your portfolio."}
       </p>
 
-      {/* Step 1: Setup accounts */}
-      <div className="mb-4 p-4 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-        <div className="flex items-start gap-3">
-          <span className="text-xs font-bold text-white bg-blue-600 rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5">1</span>
-          <div>
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-1">
-              {zh ? "设置证券账户" : "Set Up Accounts"}
-            </h3>
-            <p className="text-xs text-gray-500 leading-relaxed mb-2">
-              {zh ? "添加你的证券账户，选择入金模式或成本模式。所有后续操作的账户名都从这里获取。" : "Add your brokerage accounts and choose capital mode. All account names are sourced from here."}
-            </p>
-            <button onClick={() => onOpenPanel("settings")}
-              className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-              {zh ? "打开管理面板 → Settings" : "Open Panel → Settings"}
-            </button>
-          </div>
+      {/* Primary CTA: Upload CSV */}
+      <div className="space-y-3">
+        <input ref={fileRef} type="file" accept=".csv" className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImport(f); }} />
+        <button onClick={() => fileRef.current?.click()} disabled={importing}
+          className="w-full px-6 py-3 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 font-medium transition-colors">
+          {importing ? (zh ? "导入中..." : "Importing...") : (zh ? "上传 CSV 导入持仓" : "Upload CSV to Import")}
+        </button>
+
+        {/* Template download */}
+        <div className="flex justify-center gap-3 text-xs text-gray-400">
+          <a href={getImportTemplateUrl("positions")} download className="hover:text-blue-500 underline underline-offset-2">
+            {zh ? "下载持仓模板" : "Positions template"}
+          </a>
+          <span>·</span>
+          <a href={getImportTemplateUrl("cash")} download className="hover:text-blue-500 underline underline-offset-2">
+            {zh ? "下载现金模板" : "Cash template"}
+          </a>
+        </div>
+
+        {/* Secondary: manual entry */}
+        <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
+          <button onClick={() => onOpenPanel("edit")}
+            className="text-sm text-gray-500 hover:text-blue-600 transition-colors">
+            {zh ? "或 手动添加持仓 →" : "or add positions manually →"}
+          </button>
         </div>
       </div>
+    </div>
+  );
+}
 
-      {/* Step 2: Import or manual */}
-      <div className="mb-4 p-4 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-        <div className="flex items-start gap-3">
-          <span className="text-xs font-bold text-white bg-blue-600 rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5">2</span>
-          <div className="flex-1">
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-1">
-              {zh ? "录入持仓数据" : "Add Portfolio Data"}
-            </h3>
-            <p className="text-xs text-gray-500 leading-relaxed mb-3">
-              {zh ? "可以手动逐条添加，或下载 CSV 模板批量导入。" : "Add positions manually, or download a CSV template for bulk import."}
-            </p>
-            <div className="flex gap-2 flex-wrap">
-              <button onClick={() => onOpenPanel("edit")}
-                className="px-3 py-1.5 text-xs rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700">
-                {zh ? "手动录入" : "Manual Entry"}
-              </button>
-              <a href={getImportTemplateUrl("positions")} download
-                className="px-3 py-1.5 text-xs rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 inline-block">
-                {zh ? "下载持仓模板" : "Positions Template"}
-              </a>
-              <a href={getImportTemplateUrl("cash")} download
-                className="px-3 py-1.5 text-xs rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 inline-block">
-                {zh ? "下载现金模板" : "Cash Template"}
-              </a>
-            </div>
-            <div className="mt-3 flex items-center gap-2">
-              <input ref={fileRef} type="file" accept=".csv" className="hidden"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImport(f); }} />
-              <button onClick={() => fileRef.current?.click()} disabled={importing}
-                className="px-3 py-1.5 text-xs rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
-                {importing ? "..." : (zh ? "上传 CSV 导入" : "Upload CSV")}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
 
-      {/* Step 3: Cash */}
-      <div className="p-4 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-        <div className="flex items-start gap-3">
-          <span className="text-xs font-bold text-white bg-blue-600 rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5">3</span>
-          <div>
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-1">
-              {zh ? "设置现金余额" : "Set Cash Balances"}
-            </h3>
-            <p className="text-xs text-gray-500 leading-relaxed mb-2">
-              {zh ? "录入各账户的现金余额和杠杆。完成第 2 步导入持仓后，系统会自动创建对应的现金账户（余额为 0），你只需更新金额。" : "Enter cash balances and leverage for each account. After completing Step 2 (import positions), cash accounts are auto-created (balance 0) — just update the amounts."}
+// ══════════════════════════════════════════
+// Setup Tips Banner — shown after import, dismissible
+// ══════════════════════════════════════════
+
+function SetupTipsBanner({ locale, data, onOpenPanel }: {
+  locale: string; data: PortfolioData;
+  onOpenPanel: (tab: "cash" | "settings") => void;
+}) {
+  const zh = locale === "zh";
+  const [dismissedCash, setDismissedCash] = useState(false);
+  const [dismissedMode, setDismissedMode] = useState(false);
+
+  // Restore dismissed state from localStorage
+  useEffect(() => {
+    setDismissedCash(localStorage.getItem("vs_tip_cash") === "1");
+    setDismissedMode(localStorage.getItem("vs_tip_mode") === "1");
+  }, []);
+
+  function dismissCash() { setDismissedCash(true); localStorage.setItem("vs_tip_cash", "1"); }
+  function dismissMode() { setDismissedMode(true); localStorage.setItem("vs_tip_mode", "1"); }
+
+  // Show cash tip if total cash is 0
+  const showCash = !dismissedCash && data.summary.cash_cny === 0;
+  // Show mode tip if not dismissed
+  const showMode = !dismissedMode;
+
+  if (!showCash && !showMode) return null;
+
+  return (
+    <div className="space-y-2 mb-4">
+      {showCash && (
+        <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+          <span className="text-lg shrink-0">💰</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-amber-800 dark:text-amber-200">
+              {zh
+                ? "还没有设置现金余额。添加各账户的现金，让资产总值和收益率计算更准确。"
+                : "Cash balances not set. Add cash for each account for accurate total assets and returns."}
             </p>
             <button onClick={() => onOpenPanel("cash")}
-              className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-              {zh ? "打开管理面板 → Cash/Margin" : "Open Panel → Cash/Margin"}
+              className="text-xs text-amber-700 dark:text-amber-300 hover:underline font-medium mt-1">
+              {zh ? "去设置 →" : "Set up →"}
             </button>
           </div>
+          <button onClick={dismissCash} className="text-amber-400 hover:text-amber-600 text-lg leading-none shrink-0" title="Dismiss">×</button>
         </div>
-      </div>
+      )}
+
+      {showMode && (
+        <div className="flex items-start gap-3 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+          <span className="text-lg shrink-0">📋</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-blue-800 dark:text-blue-200 mb-1">
+              {zh
+                ? "所有账户默认使用「成本模式」。如有外币或封闭账户，建议切换为「入金模式」。"
+                : "All accounts default to Cost mode. Switch to Deposit mode for foreign-currency or closed accounts."}
+            </p>
+            <div className="text-xs text-blue-700/80 dark:text-blue-300/80 space-y-1 mb-2">
+              <p>{zh
+                ? "📊 成本模式：Capital = 持仓成本 + 现金 − 已实现盈亏。适合大部分账户，Capital 始终等于原始投入。"
+                : "📊 Cost mode: Capital = cost + cash − realized P&L. Suits most accounts — Capital always equals original investment."}</p>
+              <p>{zh
+                ? "💰 入金模式：用固定入金金额作为 Capital，忽略汇率波动。例如：汇入 100 万人民币到港股账户，无论汇率变化 Capital 始终 100 万。"
+                : "💰 Deposit mode: Use fixed deposit amount as Capital, ignoring FX changes. E.g., ¥1M remitted to HK account stays ¥1M Capital regardless of exchange rate."}</p>
+            </div>
+            <button onClick={() => onOpenPanel("settings")}
+              className="text-xs text-blue-700 dark:text-blue-300 hover:underline font-medium">
+              {zh ? "去设置 →" : "Set up →"}
+            </button>
+          </div>
+          <button onClick={dismissMode} className="text-blue-400 hover:text-blue-600 text-lg leading-none shrink-0" title="Dismiss">×</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -2879,6 +2859,9 @@ export default function PortfolioPage() {
 
         {data && data.holdings.length > 0 && (
           <>
+            {/* Setup tips banner — shown after import until dismissed */}
+            <SetupTipsBanner locale={locale} data={data} onOpenPanel={(tab) => { setPanelInitialTab(tab); setPanelOpen(true); }} />
+
             {/* ════════ OVERVIEW TAB ════════ */}
             {pageTab === "overview" && (
               <>
