@@ -36,6 +36,7 @@ import {
   type GapAnalysisResult,
   type BuffettResult,
   getBuffettValuation,
+  downloadDCFExcel,
 } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
 import { formatCurrency, formatLargeNumber, formatNumber } from "@/lib/format";
@@ -356,6 +357,7 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
 
   // Save state
   const [saveStatus, setSaveStatus] = useState<"" | "saving" | "saved" | "error">("");
+  const [excelExporting, setExcelExporting] = useState(false);
   const [savedId, setSavedId] = useState<number | null>(null); // Current session's IndexedDB id
   const [savedDate, setSavedDate] = useState<string>(""); // original save date
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -681,7 +683,7 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
   const periodLabel = defaults?.ttm_label || "";
 
   return (
-    <div ref={resultRef} className={`scroll-mt-20 ${!result && (buffett?.available || buffettLoading) && !paramsCollapsed ? "xl:flex xl:flex-row-reverse xl:gap-6 xl:items-start" : result && !paramsCollapsed ? "xl:flex xl:gap-6 xl:items-start" : "space-y-6"}`}>
+    <div ref={resultRef} className={`scroll-mt-20 ${!result && (buffett != null || buffettLoading) && !paramsCollapsed ? "xl:flex xl:flex-row-reverse xl:gap-6 xl:items-start" : result && !paramsCollapsed ? "xl:flex xl:gap-6 xl:items-start" : "space-y-6"}`}>
       {/* Buffett Quick Estimate — right sidebar before DCF run */}
       {!result && !paramsCollapsed && buffettLoading && (
         <div className="mb-6 xl:mb-0 xl:w-[420px] xl:flex-shrink-0 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 p-5 animate-pulse">
@@ -695,6 +697,21 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
             <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded" />
             <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded" />
           </div>
+        </div>
+      )}
+      {!result && !buffettLoading && buffett && !buffett.available && !paramsCollapsed && (
+        <div className="mb-6 xl:mb-0 xl:w-[420px] xl:flex-shrink-0 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 p-5">
+          <h4 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-2">
+            {t.buffettTitle}
+          </h4>
+          <p className="text-xs text-gray-400 dark:text-gray-500">
+            {t.buffettUnavailable}
+          </p>
+          {buffett.owner_earnings != null && (
+            <p className="text-[11px] text-gray-400 mt-2 font-mono">
+              Owner Earnings: {buffett.owner_earnings.toLocaleString(undefined, { maximumFractionDigits: 0 })}M
+            </p>
+          )}
         </div>
       )}
       {!result && !buffettLoading && buffett?.available && !paramsCollapsed && (() => {
@@ -1219,6 +1236,34 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
                   }`}
                 >
                   {saveStatus === "saving" ? "..." : saveStatus === "saved" ? `✓ ${t.valuationSaved}` : `💾 ${t.saveValuation}`}
+                </button>
+                <button
+                  type="button"
+                  disabled={excelExporting}
+                  onClick={async () => {
+                    setExcelExporting(true);
+                    try {
+                      await downloadDCFExcel({
+                        ticker,
+                        apikey: fmpApiKey,
+                        revenue_growth_1: revenueGrowth1,
+                        revenue_growth_2: revenueGrowth2,
+                        ebit_margin: ebitMargin,
+                        convergence,
+                        revenue_invested_capital_ratio_1: revIC1,
+                        revenue_invested_capital_ratio_2: revIC2,
+                        revenue_invested_capital_ratio_3: revIC3,
+                        tax_rate: taxRate,
+                        wacc: waccRate,
+                        ronic_match_wacc: ronicMatchWacc,
+                      });
+                    } catch { alert("Export failed"); }
+                    setExcelExporting(false);
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                  title="Export to Excel"
+                >
+                  {excelExporting ? "⏳..." : "📥 Excel"}
                 </button>
                 <div className="relative" data-history-panel>
                   <button

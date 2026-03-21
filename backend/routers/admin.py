@@ -189,7 +189,9 @@ def admin_delete_user(user_id: str, admin_id: str = Depends(require_admin)):
     if os.path.exists(port_db):
         with sqlite3.connect(port_db) as conn:
             for table in ("positions", "cash_balances", "closed_trades",
-                          "margin_balances", "account_settings", "deposit_history"):
+                          "margin_balances", "account_settings", "deposit_history",
+                          "nav_history", "daily_snapshots", "snapshot_stock_pnl",
+                          "snapshot_market_detail", "ytd_baseline_prices"):
                 try:
                     conn.execute(f"DELETE FROM {table} WHERE user_id=?", (user_id,))
                 except Exception:

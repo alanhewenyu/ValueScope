@@ -402,7 +402,7 @@ def get_fx_rates(db_path: str | None = None) -> dict[str, float]:
 def refresh_all_prices(db_path: str | None = None, timeout: float = 25.0) -> dict[str, tuple[float, str]]:
     """Fetch prices for all open positions with overall timeout.
     Returns {ticker: (price, currency)}. Partial results if timeout hit."""
-    from concurrent.futures import as_completed
+    from concurrent.futures import as_completed, TimeoutError as FuturesTimeoutError
     path = db_path or DB_PATH
     with sqlite3.connect(path) as conn:
         tickers = [r[0] for r in conn.execute(
@@ -423,7 +423,7 @@ def refresh_all_prices(db_path: str | None = None, timeout: float = 25.0) -> dic
                     results[t] = (p, c)
             except Exception:
                 pass
-    except TimeoutError:
+    except (FuturesTimeoutError, TimeoutError):
         logger.warning("refresh_all_prices timed out after %.0fs, got %d/%d prices",
                        timeout, len(results), len(tickers))
 

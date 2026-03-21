@@ -19,11 +19,13 @@ async function fetchAPI<T>(path: string, options?: RequestInit & { timeoutMs?: n
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
+      const isFormData = options?.body instanceof FormData;
       const res = await fetch(`${API_BASE}${path}`, {
         ...options,
         signal: controller.signal,
         headers: {
-          "Content-Type": "application/json",
+          // Don't set Content-Type for FormData — browser sets it with boundary
+          ...(isFormData ? {} : { "Content-Type": "application/json" }),
           ...getAuthHeader(),
           ...options?.headers,
         },
@@ -1172,6 +1174,55 @@ export async function importCSV(file: File): Promise<ImportResult> {
 
 export async function exportPortfolio(): Promise<Record<string, unknown[]>> {
   return fetchAPI<Record<string, unknown[]>>("/api/portfolio/export");
+}
+
+export function getPortfolioExcelUrl(): string {
+  return `${API_BASE}/api/portfolio/export-excel`;
+}
+
+/** Download portfolio as Excel file (handles auth headers). */
+export async function downloadPortfolioExcel(): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/portfolio/export-excel`, {
+    headers: { ...getAuthHeader() },
+  });
+  if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = res.headers.get("Content-Disposition")?.match(/filename="(.+)"/)?.[1] || "Portfolio.xlsx";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/** Download DCF valuation as Excel file. */
+export async function downloadDCFExcel(params: {
+  ticker: string;
+  apikey?: string;
+  revenue_growth_1: number;
+  revenue_growth_2: number;
+  ebit_margin: number;
+  convergence: number;
+  revenue_invested_capital_ratio_1: number;
+  revenue_invested_capital_ratio_2: number;
+  revenue_invested_capital_ratio_3: number;
+  tax_rate?: number | null;
+  wacc?: number | null;
+  ronic_match_wacc?: boolean;
+}): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/valuation/export-excel`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeader() },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = res.headers.get("Content-Disposition")?.match(/filename="(.+)"/)?.[1] || "DCF.xlsx";
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export async function mergeAccounts(source: string, target: string): Promise<{ ok: boolean; merged: Record<string, number>; message: string }> {

@@ -312,7 +312,7 @@ def merge_accounts(req: MergeAccountRequest, user_id: str = Depends(get_current_
         # Count affected records
         counts = {}
         for table, col in [("positions", "broker"), ("cash_balances", "account"),
-                           ("closed_trades", "broker"), ("deposit_records", "broker")]:
+                           ("closed_trades", "broker"), ("deposit_history", "broker")]:
             try:
                 cur = conn.execute(f"SELECT COUNT(*) FROM {table} WHERE {col}=? AND user_id=?",
                                    (req.source, user_id))
@@ -329,7 +329,7 @@ def merge_accounts(req: MergeAccountRequest, user_id: str = Depends(get_current_
 
         # Rename all records from source to target
         for table, col in [("positions", "broker"), ("closed_trades", "broker"),
-                           ("deposit_records", "broker")]:
+                           ("deposit_history", "broker")]:
             try:
                 conn.execute(f"UPDATE {table} SET {col}=? WHERE {col}=? AND user_id=?",
                              (req.target, req.source, user_id))
@@ -527,7 +527,6 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
         import datetime as _dt
         _today_str = _dt.date.today().isoformat()
         _created_today = pos.get('created_at', '')[:10] == _today_str
-        _updated_today = pos.get('updated_at', '')[:10] == _today_str
 
         # Non-trading day handling is done at the data source level:
         # - Eastmoney: f86 timestamp check → prev_close = price when data is stale
@@ -945,6 +944,87 @@ def export_all(user_id: str = Depends(get_current_user)):
         "account_settings": _query(path, "SELECT * FROM account_settings WHERE user_id=? ORDER BY broker", (user_id,)),
         "closed_trades": _query(path, "SELECT * FROM closed_trades WHERE user_id=? ORDER BY market, name", (user_id,)),
     }
+
+
+@router.get("/export-excel")
+def export_excel(user_id: str = Depends(get_current_user)):
+    """Export portfolio data as a formatted Excel workbook."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, PatternFill, numbers
+
+    path = _require_db()
+
+    positions = _query(path, """
+        SELECT ticker, name, market, broker, currency, quantity, cost_price, status
+        FROM positions WHERE user_id=? ORDER BY market, broker, name
+    """, (user_id,))
+    cash = _query(path, """
+        SELECT account, currency, balance
+        FROM cash_balances WHERE user_id=? ORDER BY account
+    """, (user_id,))
+    closed = _query(path, """
+        SELECT ticker, name, market, broker, currency, quantity, cost_price,
+               close_price, realized_pnl, realized_pnl_cny, close_date, notes
+        FROM closed_trades WHERE user_id=? ORDER BY close_date DESC
+    """, (user_id,))
+    acct = _query(path, """
+        SELECT broker, capital_mode, deposit_cny, deposit_fx, notes
+        FROM account_settings WHERE user_id=? ORDER BY broker
+    """, (user_id,))
+
+    wb = Workbook()
+    header_font = Font(bold=True, size=11)
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_text = Font(bold=True, color="FFFFFF", size=11)
+    wrap = Alignment(wrap_text=True, vertical="top")
+
+    def _write_sheet(ws, title, headers, rows):
+        ws.title = title
+        ws.append(headers)
+        for cell in ws[1]:
+            cell.font = header_text
+            cell.fill = header_fill
+        for row in rows:
+            ws.append([row.get(h) for h in headers])
+        # Auto-fit columns
+        for col_cells in ws.columns:
+            col_letter = col_cells[0].column_letter
+            max_len = max((len(str(c.value or "")) for c in col_cells), default=8)
+            ws.column_dimensions[col_letter].width = min(max_len + 3, 30)
+        # Format numbers
+        for row in ws.iter_rows(min_row=2):
+            for cell in row:
+                if isinstance(cell.value, float):
+                    cell.number_format = '#,##0.00'
+
+    # Sheet 1: Holdings
+    h_headers = ["ticker", "name", "market", "broker", "currency", "quantity", "cost_price", "status"]
+    _write_sheet(wb.active, "Holdings", h_headers, positions)
+
+    # Sheet 2: Cash
+    ws_cash = wb.create_sheet()
+    _write_sheet(ws_cash, "Cash", ["account", "currency", "balance"], cash)
+
+    # Sheet 3: Closed Trades
+    ws_closed = wb.create_sheet()
+    ct_headers = ["ticker", "name", "market", "broker", "currency", "quantity",
+                  "cost_price", "close_price", "realized_pnl", "realized_pnl_cny", "close_date", "notes"]
+    _write_sheet(ws_closed, "Closed Trades", ct_headers, closed)
+
+    # Sheet 4: Account Settings
+    ws_acct = wb.create_sheet()
+    _write_sheet(ws_acct, "Accounts", ["broker", "capital_mode", "deposit_cny", "deposit_fx", "notes"], acct)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    today = __import__("datetime").date.today().isoformat()
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="Portfolio_{today}.xlsx"'},
+    )
 
 
 # ── Portfolio Event Feeds ──────────────────────────────────

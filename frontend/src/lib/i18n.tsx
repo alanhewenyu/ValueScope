@@ -224,6 +224,7 @@ const en = {
   buffettMos: "Margin of Safety (20% discount)",
   buffettTitle: "Buffett Quick Valuation",
   buffettSubtitle: "Automated estimate based on Buffett's Owner Earnings method — no parameters needed",
+  buffettUnavailable: "Owner Earnings ≤ 0 — Buffett valuation not applicable for this company",
   buffettNotes: [
     "Owner Earnings = Net Income − ΔWorking Capital (historical average)",
     "Growth rate = avg ROE × (1 − payout ratio), capped at risk-free rate + 8%",
@@ -639,6 +640,7 @@ const zh: Translations = {
   buffettMos: "安全边际价 (8折)",
   buffettTitle: "巴菲特快速估值",
   buffettSubtitle: "基于巴菲特股东盈余法的自动估值 — 无需手动输入参数",
+  buffettUnavailable: "股东盈余 ≤ 0，不适用巴菲特估值法",
   buffettNotes: [
     "股东盈余 = 归母净利润 − ΔWC（历史均值）",
     "增长率 = 平均 ROE ×（1 − 派息率），上限为无风险利率 + 8%",

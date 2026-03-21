@@ -1441,3 +1441,328 @@ def save_valuation(params: SaveValuationParams, request: Request):
         return {"saved": True, "id": row_id}
     except Exception as e:
         return {"saved": False, "reason": str(e)}
+
+
+# ── Export DCF to Excel ──────────────────────────────────────────────
+
+@router.post("/export-excel")
+def export_dcf_excel(params: DCFParams):
+    """Generate DCF valuation Excel workbook and return as download.
+
+    Re-runs the DCF calculation server-side and writes results to an
+    Excel file using the existing template, returned as a streaming download.
+    """
+    import io as _io
+
+    is_valid, err = validate_ticker(params.ticker)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=err)
+
+    normalized = _normalize_ticker(params.ticker)
+
+    # Fetch all needed data (same as run_dcf)
+    financial_data = get_historical_financials(
+        normalized, "annual", params.apikey, HISTORICAL_DATA_PERIODS_ANNUAL
+    )
+    if financial_data is None:
+        raise HTTPException(status_code=404, detail=f"Financial data not found: {params.ticker}")
+
+    profile = fetch_company_profile(normalized, params.apikey)
+    profile = _fill_profile_from_financial_data(profile, financial_data)
+    if is_a_share(normalized):
+        profile["beta"] = _calculate_beta_akshare(normalized)
+
+    share_info = get_company_share_float(normalized, params.apikey, company_profile=profile)
+    summary_df = financial_data["summary"]
+
+    base_year_col = summary_df.columns[0]
+    base_year_data = summary_df.iloc[:, 0].copy()
+    base_year_data.name = base_year_col
+    base_year_data["Outstanding Shares"] = share_info.get("outstandingShares", 0) or 0
+    base_year_data["Average Tax Rate"] = financial_data["average_tax_rate"]
+    base_year_data["Revenue Growth (%)"] = summary_df.iloc[
+        summary_df.index.get_loc("Revenue Growth (%)"), 0
+    ]
+    base_year_data["Total Reinvestment"] = summary_df.iloc[
+        summary_df.index.get_loc("Total Reinvestment"), 0
+    ]
+
+    # TTM detection
+    ttm_quarter = financial_data.get("ttm_latest_quarter", "")
+    ttm_end_date = financial_data.get("ttm_end_date", "")
+    is_ttm = bool(ttm_quarter and ttm_end_date)
+    fy_end_month = financial_data.get("fy_end_month", 12)
+    base_year = int(str(base_year_col).replace('FY', ''))
+    if is_ttm:
+        _em = int(ttm_end_date[5:7])
+        _ey = int(ttm_end_date[:4])
+        forecast_year_1 = _ey if _em <= 6 else _ey + 1
+    else:
+        forecast_year_1 = base_year if fy_end_month <= 6 else base_year + 1
+    ttm_label = f"{base_year_col}{ttm_quarter} TTM" if is_ttm else ""
+
+    risk_free_rate = get_risk_free_rate(profile.get("country", "United States"))
+    wacc_calc, total_erp, wacc_details = calculate_wacc(
+        base_year_data, profile, params.apikey, verbose=False
+    )
+    tax_rate = params.tax_rate if params.tax_rate is not None else financial_data["average_tax_rate"] * 100
+    wacc_val = params.wacc if params.wacc is not None else wacc_calc * 100
+    if params.ronic_match_wacc:
+        ronic = risk_free_rate + TERMINAL_RISK_PREMIUM
+    else:
+        ronic = risk_free_rate + TERMINAL_RISK_PREMIUM + TERMINAL_RONIC_PREMIUM
+
+    raw_params = {
+        "revenue_growth_1": params.revenue_growth_1,
+        "revenue_growth_2": params.revenue_growth_2,
+        "ebit_margin": params.ebit_margin,
+        "convergence": params.convergence,
+        "revenue_invested_capital_ratio_1": params.revenue_invested_capital_ratio_1,
+        "revenue_invested_capital_ratio_2": params.revenue_invested_capital_ratio_2,
+        "revenue_invested_capital_ratio_3": params.revenue_invested_capital_ratio_3,
+        "tax_rate": tax_rate,
+        "wacc": wacc_val,
+        "ronic": ronic,
+    }
+    valuation_params = _build_valuation_params(
+        raw_params, base_year, risk_free_rate, is_ttm, ttm_quarter, ttm_label,
+        forecast_year_1=forecast_year_1, fy_end_month=fy_end_month
+    )
+
+    results = calculate_dcf(
+        base_year_data, valuation_params, financial_data, share_info, profile
+    )
+
+    # WACC sensitivity
+    wacc_results, wacc_base = wacc_sensitivity_analysis(
+        base_year_data, valuation_params, financial_data, share_info, profile
+    )
+
+    # Sensitivity (growth × margin)
+    sens_table = sensitivity_analysis(
+        base_year_data, valuation_params, financial_data, share_info, profile
+    )
+
+    # Write to Excel in memory (self-contained, no template dependency)
+    buf = _io.BytesIO()
+    _build_dcf_excel(
+        buf, base_year_data, financial_data, valuation_params,
+        profile, results, total_erp, sens_table,
+        (wacc_results, wacc_base),
+    )
+    buf.seek(0)
+
+    company_name = profile.get("companyName", normalized).replace("/", "_")
+    filename = f"{company_name} DCF {base_year}.xlsx"
+
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _build_dcf_excel(buf, base_year_data, financial_data, valuation_params,
+                     profile, results, total_erp, sens_table, wacc_sensitivity):
+    """Build DCF Excel workbook: 3 sheets mirroring the DB record layout.
+
+    Sheet 1 — DCF Valuation: forecast table + bridge + input parameters
+    Sheet 2 — Sensitivity: growth×margin matrix + WACC sensitivity
+    Sheet 3 — Historical Data: financial summary
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    from openpyxl.utils.dataframe import dataframe_to_rows
+    import pandas as pd
+
+    wb = Workbook()
+    hdr_font = Font(bold=True, size=11)
+    hdr_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    hdr_text = Font(bold=True, color="FFFFFF", size=11)
+    section_font = Font(bold=True, size=11, color="2F5496")
+    pct_fmt = '0.0%'
+    amt_fmt = '#,##0'
+    company_name = profile.get('companyName', 'N/A')
+    reported_ccy = results.get('reported_currency', '')
+
+    # ════════════════════════════════════════════════════════════
+    # Sheet 1: DCF Valuation  (forecast + bridge + params)
+    # ════════════════════════════════════════════════════════════
+    ws = wb.active
+    ws.title = "DCF Valuation"
+    row_n = 1
+    ws.cell(row=row_n, column=1,
+            value=f"{company_name} — DCF Valuation (in {reported_ccy}, millions)").font = hdr_font
+    row_n += 2
+
+    # ── Forecast Table ──
+    dcf_table = results.get('dcf_table')
+    if dcf_table is not None and isinstance(dcf_table, pd.DataFrame) and not dcf_table.empty:
+        ws.cell(row=row_n, column=1, value="Forecast Table").font = section_font
+        row_n += 1
+        cols = list(dcf_table.columns)
+        for ci, col_name in enumerate(cols, 1):
+            c = ws.cell(row=row_n, column=ci, value=col_name)
+            c.font = hdr_text
+            c.fill = hdr_fill
+        row_n += 1
+        pct_rows_set = {'Revenue Growth Rate', 'EBIT Margin', 'Tax to EBIT', 'WACC', 'Discount Factor'}
+        for _, frow in dcf_table.iterrows():
+            for ci, col_name in enumerate(cols, 1):
+                v = frow[col_name]
+                if isinstance(v, (np.integer, np.floating)):
+                    v = float(v)
+                cell = ws.cell(row=row_n, column=ci, value=v)
+                if isinstance(v, (int, float)) and col_name != 'Year':
+                    cell.number_format = pct_fmt if col_name in pct_rows_set else amt_fmt
+            row_n += 1
+        # Auto-fit forecast columns
+        for ci in range(1, len(cols) + 1):
+            ws.column_dimensions[ws.cell(row=1, column=ci).column_letter].width = 16
+
+    # ── Valuation Bridge ──
+    row_n += 2
+    ws.cell(row=row_n, column=1, value="Valuation Bridge").font = section_font
+    row_n += 1
+    bridge_items = [
+        ("PV (FCFF next 10 years)", results.get('pv_cf_next_10_years', 0)),
+        ("PV (Terminal Value)", results.get('pv_terminal_value', 0)),
+        ("Operating Value", (results.get('pv_cf_next_10_years', 0) or 0) + (results.get('pv_terminal_value', 0) or 0)),
+        None,
+        ("(+) Cash & Equivalents", results.get('cash', 0)),
+        ("(+) Total Investments", results.get('total_investments', 0)),
+        ("(-) Total Debt", results.get('total_debt', 0)),
+        ("(-) Minority Interest", results.get('minority_interest', 0)),
+        None,
+        ("Equity Value", results.get('equity_value', 0)),
+        ("Outstanding Shares (M)", results.get('outstanding_shares', 0)),
+        ("Price per Share", results.get('price_per_share', 0)),
+    ]
+    for item in bridge_items:
+        if item is None:
+            row_n += 1
+            continue
+        label, val = item
+        ws.cell(row=row_n, column=1, value=label)
+        c = ws.cell(row=row_n, column=2, value=val)
+        c.number_format = amt_fmt
+        if label in ("Operating Value", "Equity Value", "Price per Share"):
+            ws.cell(row=row_n, column=1).font = Font(bold=True)
+            c.font = Font(bold=True)
+        row_n += 1
+
+    # ── Input Parameters ──
+    row_n += 2
+    ws.cell(row=row_n, column=1, value="Valuation Parameters").font = section_font
+    row_n += 1
+    param_items = [
+        ("Base year", valuation_params['base_year'], None),
+        ("Revenue growth Y1", valuation_params['revenue_growth_1'] / 100, pct_fmt),
+        ("Revenue growth Y2-5 (CAGR)", valuation_params['revenue_growth_2'] / 100, pct_fmt),
+        ("Risk-free rate (terminal growth)", valuation_params['risk_free_rate'], pct_fmt),
+        ("Target EBIT margin", valuation_params['ebit_margin'] / 100, pct_fmt),
+        ("Years to target margin", valuation_params['convergence'], None),
+        ("Revenue/IC ratio (Y1-2)", valuation_params['revenue_invested_capital_ratio_1'], None),
+        ("Revenue/IC ratio (Y3-5)", valuation_params['revenue_invested_capital_ratio_2'], None),
+        ("Revenue/IC ratio (Y6-10)", valuation_params['revenue_invested_capital_ratio_3'], None),
+        ("WACC (Y1-5)", valuation_params['wacc'] / 100, pct_fmt),
+        ("Terminal WACC", valuation_params['risk_free_rate'] + TERMINAL_RISK_PREMIUM, pct_fmt),
+        ("RONIC", valuation_params['ronic'], pct_fmt),
+        ("Effective tax rate", valuation_params['tax_rate'] / 100, pct_fmt),
+        None,
+        ("Risk-free rate", valuation_params['risk_free_rate'], pct_fmt),
+        ("Cost of debt", base_year_data.get('Cost of Debt (%)', 0) / 100, pct_fmt),
+        ("Total equity risk premium", total_erp, pct_fmt),
+        ("Beta", profile.get('beta', 1.0), None),
+    ]
+    for item in param_items:
+        if item is None:
+            row_n += 1
+            continue
+        label, val, fmt = item
+        ws.cell(row=row_n, column=1, value=label)
+        c = ws.cell(row=row_n, column=2, value=val)
+        if fmt:
+            c.number_format = fmt
+        row_n += 1
+    ws.column_dimensions['A'].width = 38
+    ws.column_dimensions['B'].width = 16
+
+    # ════════════════════════════════════════════════════════════
+    # Sheet 2: Sensitivity Analysis
+    # ════════════════════════════════════════════════════════════
+    ws2 = wb.create_sheet("Sensitivity")
+    r2 = 1
+    ws2.cell(row=r2, column=1, value="Sensitivity: Revenue Growth × EBIT Margin").font = hdr_font
+    r2 += 2
+
+    if hasattr(sens_table, 'values'):
+        margins = list(sens_table.index) if hasattr(sens_table, 'index') else []
+        growths = list(sens_table.columns) if hasattr(sens_table, 'columns') else []
+        ws2.cell(row=r2, column=1, value="Growth \\ Margin").font = Font(bold=True, size=10)
+        for j, m in enumerate(margins):
+            c = ws2.cell(row=r2, column=2 + j,
+                         value=m / 100 if isinstance(m, (int, float)) and abs(m) > 1 else m)
+            c.number_format = pct_fmt
+            c.font = Font(bold=True, size=10)
+        for gi, g in enumerate(growths):
+            row = r2 + 1 + gi
+            c = ws2.cell(row=row, column=1,
+                         value=g / 100 if isinstance(g, (int, float)) and abs(g) > 1 else g)
+            c.number_format = pct_fmt
+            c.font = Font(bold=True, size=10)
+            for mi in range(len(margins)):
+                val = sens_table.values[mi][gi] if hasattr(sens_table, 'values') else 0
+                ws2.cell(row=row, column=2 + mi, value=val).number_format = amt_fmt
+        r2 += len(growths) + 3
+
+    if wacc_sensitivity:
+        wacc_results, wacc_base = wacc_sensitivity
+        ws2.cell(row=r2, column=1, value="WACC Sensitivity Analysis").font = hdr_font
+        r2 += 1
+        ws2.cell(row=r2, column=1, value="WACC")
+        ws2.cell(row=r2 + 1, column=1, value="Price / Share")
+        for j, (wv, price) in enumerate(wacc_results.items()):
+            col = 2 + j
+            c1 = ws2.cell(row=r2, column=col, value=wv / 100)
+            c1.number_format = pct_fmt
+            c2 = ws2.cell(row=r2 + 1, column=col, value=price)
+            c2.number_format = amt_fmt
+            if wv == wacc_base:
+                c1.font = Font(bold=True)
+                c2.font = Font(bold=True)
+
+    ws2.column_dimensions['A'].width = 18
+    for ci in range(2, 15):
+        ws2.column_dimensions[chr(64 + ci)].width = 12
+
+    # ════════════════════════════════════════════════════════════
+    # Sheet 3: Historical Financial Data
+    # ════════════════════════════════════════════════════════════
+    ws3 = wb.create_sheet("Historical Data")
+    summary_df = financial_data['summary']
+    for r in dataframe_to_rows(summary_df, index=True, header=True):
+        ws3.append(r)
+    AMOUNT_ROWS = {'Revenue', 'EBIT', '(+) Capital Expenditure', '(-) D&A',
+                   '(+) ΔWorking Capital', 'Total Reinvestment',
+                   '(+) Total Debt', '(+) Total Equity', 'Minority Interest',
+                   '(-) Cash & Equivalents', '(-) Total Investments', 'Invested Capital'}
+    RATIO_ROWS = {'Revenue Growth (%)', 'EBIT Growth (%)', 'EBIT Margin (%)', 'Tax Rate (%)',
+                  'Revenue / IC', 'Debt to Assets (%)', 'Cost of Debt (%)',
+                  'ROIC (%)', 'ROE (%)', 'Dividend Yield (%)', 'Payout Ratio (%)'}
+    for row in ws3.iter_rows(min_row=2):
+        label = row[0].value
+        if label in AMOUNT_ROWS:
+            for cell in row[1:]:
+                if isinstance(cell.value, (int, float)):
+                    cell.number_format = '#,##0'
+        elif label in RATIO_ROWS:
+            for cell in row[1:]:
+                if isinstance(cell.value, (int, float)):
+                    cell.number_format = '0.0'
+    for col_cells in ws3.columns:
+        col_letter = col_cells[0].column_letter
+        max_len = max((len(str(c.value or "")) for c in col_cells), default=8)
+        ws3.column_dimensions[col_letter].width = min(max_len + 3, 30)
+
+    wb.save(buf)

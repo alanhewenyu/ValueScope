@@ -39,6 +39,7 @@ import {
   importCSV,
   getImportTemplateUrl,
   mergeAccounts,
+  downloadPortfolioExcel,
   listPortfolios,
   switchPortfolio,
   getPortfolioNews,
@@ -3002,6 +3003,13 @@ export default function PortfolioPage() {
             <button onClick={() => { setPanelEditHolding(null); setPanelOpen(true); }} className="px-3 py-1 text-xs border border-gray-300 dark:border-gray-700 rounded hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
               {locale === "zh" ? "管理" : "Manage"}
             </button>
+            {data && data.holdings.length > 0 && (
+              <button onClick={async () => { try { await downloadPortfolioExcel(); } catch { alert("Export failed"); } }}
+                className="px-3 py-1 text-xs border border-gray-300 dark:border-gray-700 rounded hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                title={locale === "zh" ? "导出Excel" : "Export Excel"}>
+                📥 Excel
+              </button>
+            )}
             <button onClick={load} disabled={loading} className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 transition-colors">
               {loading ? "..." : (locale === "zh" ? "刷新" : "Refresh")}
             </button>
