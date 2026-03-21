@@ -34,8 +34,8 @@ _FUND_CODE_RE = re.compile(r'^\d{6}$')  # 6-digit Chinese fund codes
 
 # ── Retry config ─────────────────────────────────────────
 
-_MAX_RETRIES = 2
-_RETRY_DELAY = 1.0  # seconds
+_MAX_RETRIES = 1    # 1 retry (2 attempts total) — keep fast for 45+ positions
+_RETRY_DELAY = 0.5  # seconds
 
 
 def _retry(fn: Callable, retries: int = _MAX_RETRIES, delay: float = _RETRY_DELAY):
@@ -399,8 +399,10 @@ def get_fx_rates(db_path: str | None = None) -> dict[str, float]:
     return rates
 
 
-def refresh_all_prices(db_path: str | None = None) -> dict[str, tuple[float, str]]:
-    """Fetch prices for all open positions. Returns {ticker: (price, currency)}."""
+def refresh_all_prices(db_path: str | None = None, timeout: float = 25.0) -> dict[str, tuple[float, str]]:
+    """Fetch prices for all open positions with overall timeout.
+    Returns {ticker: (price, currency)}. Partial results if timeout hit."""
+    from concurrent.futures import as_completed
     path = db_path or DB_PATH
     with sqlite3.connect(path) as conn:
         tickers = [r[0] for r in conn.execute(
@@ -411,12 +413,19 @@ def refresh_all_prices(db_path: str | None = None) -> dict[str, tuple[float, str
     if not tickers:
         return results
 
-    def _fetch(t):
-        p, c = fetch_price(t)
-        if p:
-            results[t] = (p, c)
-
-    list(_pool.map(_fetch, tickers))  # consume iterator to propagate exceptions
+    futures = {_pool.submit(fetch_price, t): t for t in tickers}
+    try:
+        for f in as_completed(futures, timeout=timeout):
+            t = futures[f]
+            try:
+                p, c = f.result()
+                if p:
+                    results[t] = (p, c)
+            except Exception:
+                pass
+    except TimeoutError:
+        logger.warning("refresh_all_prices timed out after %.0fs, got %d/%d prices",
+                       timeout, len(results), len(tickers))
 
     return results
 

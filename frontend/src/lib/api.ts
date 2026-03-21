@@ -11,20 +11,40 @@ function getAuthHeader(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeader(),
-      ...options?.headers,
-    },
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || `API error: ${res.status}`);
+async function fetchAPI<T>(path: string, options?: RequestInit & { timeoutMs?: number; retries?: number }): Promise<T> {
+  const timeoutMs = options?.timeoutMs ?? 30000;
+  const retries = options?.retries ?? 1;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(`${API_BASE}${path}`, {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeader(),
+          ...options?.headers,
+        },
+      });
+      clearTimeout(timer);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || `API error: ${res.status}`);
+      }
+      return res.json();
+    } catch (e) {
+      clearTimeout(timer);
+      if (attempt < retries && (e instanceof DOMException || (e instanceof TypeError && String(e).includes("fetch")))) {
+        // Timeout or network error — retry after brief delay
+        await new Promise(r => setTimeout(r, 1000));
+        continue;
+      }
+      throw e;
+    }
   }
-  return res.json();
+  throw new Error("Request failed after retries");
 }
 
 // ── Types ──
@@ -850,7 +870,7 @@ export async function switchPortfolio(name: string): Promise<void> {
 }
 
 export async function getPortfolioHoldings(): Promise<PortfolioData> {
-  return fetchAPI<PortfolioData>("/api/portfolio/holdings");
+  return fetchAPI<PortfolioData>("/api/portfolio/holdings", { timeoutMs: 45000, retries: 2 });
 }
 
 export async function getPortfolioFxRates(): Promise<Record<string, number>> {
