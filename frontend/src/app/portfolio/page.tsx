@@ -1415,14 +1415,14 @@ function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; on
       {/* Feature highlights */}
       <div className="grid grid-cols-2 gap-x-6 gap-y-3 mb-8 px-4">
         {(zh ? [
-          { icon: "🌏", text: "A股 / 港股 / 美股 / 日股 / B股，多市场实时行情" },
+          { icon: "🌏", text: "跨市场、跨账户，统一追踪所有持仓与实时行情" },
           { icon: "📈", text: "未实现 & 已实现盈亏、日 / 周 / YTD 收益追踪" },
           { icon: "🎯", text: "资产配置分析（按市场 / 币种 / 行业）" },
           { icon: "📊", text: "净值曲线 + 沪深300 / 恒指 / 标普 基准对比" },
           { icon: "⚡", text: "风险分析 & 收益归因，量化投资表现" },
           { icon: "📰", text: "持仓相关新闻、财报日历、评级变动推送" },
         ] : [
-          { icon: "🌏", text: "A-share / HK / US / JP / B-share, real-time quotes" },
+          { icon: "🌏", text: "Cross-market, cross-account — track all positions with live quotes" },
           { icon: "📈", text: "Unrealized & realized P&L, daily / weekly / YTD" },
           { icon: "🎯", text: "Allocation analysis by market / currency / sector" },
           { icon: "📊", text: "NAV chart + CSI300 / HSI / S&P500 benchmarks" },
