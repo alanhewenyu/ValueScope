@@ -1548,7 +1548,7 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
 
   async function handleSave() {
     if (!editTicker || !editName) return;
-    if (!editBroker) { setMsg(zh ? "⚠️ 请先选择账户，如需新账户请到 Settings 添加" : "⚠️ Select an account first. Add new accounts in Settings tab"); return; }
+    if (!editBroker) { setMsg(zh ? "⚠️ 请先选择账户，如需新账户请到「设置」添加" : "⚠️ Select an account first. Add new accounts in Settings tab"); return; }
     setSaving(true); setMsg(null);
     try {
       await upsertPosition({ ticker: editTicker, name: editName, market: editMarket, broker: editBroker,
@@ -1788,7 +1788,7 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                         <option value="">{zh ? "— 选择账户 —" : "— Select account —"}</option>
                         {acctSettings.map((s) => <option key={s.broker} value={s.broker}>{s.broker}</option>)}
                       </select>
-                      {acctSettings.length === 0 && <div className="text-[9px] text-amber-500 mt-0.5">{zh ? "请先到 Settings 添加账户" : "Add accounts in Settings first"}</div>}
+                      {acctSettings.length === 0 && <div className="text-[9px] text-amber-500 mt-0.5">{zh ? "请先到「设置」添加账户" : "Add accounts in Settings first"}</div>}
                     </div>
                   )}
                   <input className={inputCls} placeholder={zh ? "数量" : "Quantity"} inputMode="decimal" value={editQty} onChange={(e) => setEditQty(e.target.value)} />
