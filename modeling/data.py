@@ -903,6 +903,47 @@ def fetch_akshare_key_metrics(ticker, balance_sheets, income_statements, period=
     return result
 
 
+def fetch_akshare_dividend_payout(ticker):
+    """Fetch per-share dividend data from stock_fhps_detail_em for accurate payout ratio.
+
+    Returns a dict mapping report_date (YYYY-12-31 str) to payout_ratio (%).
+    Uses 每10股派息 / 每股收益 to compute pure dividend payout, excluding interest payments.
+    For companies with mid-year + year-end dividends, sums all dividends for the same fiscal year.
+    """
+    ak_code = _ticker_to_bare_code(ticker)
+    try:
+        df = _get_ak().stock_fhps_detail_em(symbol=ak_code)
+    except Exception as e:
+        print(S.muted(f"  ⓘ 分红数据获取失败: {e}"))
+        return {}
+
+    result = {}
+    # Group by fiscal year: 报告期 is the reporting period end date
+    # A company may have multiple dividend entries per year (mid-year + year-end)
+    df['_report_date'] = pd.to_datetime(df['报告期'])
+    df['_fy_year'] = df['_report_date'].dt.year
+
+    for fy_year, group in df.groupby('_fy_year'):
+        total_div_per10 = 0
+        eps = None
+        for _, row in group.iterrows():
+            div_ratio = _safe_numeric(row.get('现金分红-现金分红比例', 0))
+            total_div_per10 += div_ratio
+            # Use EPS from the annual report (largest report period in the year)
+            row_eps = _safe_numeric(row.get('每股收益', 0))
+            row_date = row['_report_date']
+            if row_date.month == 12:  # annual report EPS takes priority
+                eps = row_eps
+            elif eps is None:
+                eps = row_eps
+
+        if eps and eps > 0 and total_div_per10 > 0:
+            payout = (total_div_per10 / 10) / eps * 100
+            result[f"{fy_year}-12-31"] = payout
+
+    return result
+
+
 def _compute_akshare_ttm_income(ticker, df=None):
     """Compute TTM income values for A-shares using the YTD cumulative method.
 
@@ -1191,17 +1232,20 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
         period_str = f"{historical_periods} quarters"
     print(f"\n{S.info(f'Fetching financial data for {ticker} ({period_str})...')}")
 
+    _a_share_dividend_payout = {}  # A-share only: {report_date -> payout%}
     try:
         if is_a_share(ticker):
             # --- A-share path: all data from akshare (parallel fetching) ---
             print(S.info("检测到A股，使用 akshare 数据源..."))
-            with ThreadPoolExecutor(max_workers=3) as executor:
+            with ThreadPoolExecutor(max_workers=4) as executor:
                 _f_inc = executor.submit(fetch_akshare_income_statement, ticker, period, historical_periods)
                 _f_bs  = executor.submit(fetch_akshare_balance_sheet, ticker, period, historical_periods)
                 _f_cf  = executor.submit(fetch_akshare_cashflow, ticker, period, historical_periods)
+                _f_div = executor.submit(fetch_akshare_dividend_payout, ticker)
             income_statement, raw_income_df, _full_income_df = _f_inc.result()
             balance_sheet, raw_balance_df, _full_bs_df = _f_bs.result()
             cashflow_statement, raw_cashflow_df, _full_cf_df = _f_cf.result()
+            _a_share_dividend_payout = _f_div.result()  # {report_date -> payout%}
             # Key metrics computed from already-fetched data (no API call)
             key_metrics = fetch_akshare_key_metrics(ticker, balance_sheet, income_statement, period, historical_periods)
         elif is_hk_stock(ticker):
@@ -1455,10 +1499,17 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                     _payout = (_div_paid / _net_inc * 100) if _net_inc > 0 else 0
                 data['Payout Ratio (%)'] = _payout
             else:
-                # A-share: compute payout ratio from cashflow ASSIGN_DIVIDEND_PORFIT
-                _div_paid = abs(cf.get('commonDividendsPaid', 0) or 0)
-                _net_inc = abs(inc.get('netIncome', 0) or 0)
-                _payout = (_div_paid / _net_inc * 100) if _net_inc > 0 else 0
+                # A-share: use stock_fhps_detail_em for pure dividend payout (excludes interest)
+                _payout = 0
+                _report_date = inc.get('date', '')[:10]  # e.g. '2024-12-31'
+                if _a_share_dividend_payout:
+                    # Use accurate per-share dividend data; 0 if no dividend for that year
+                    _payout = _a_share_dividend_payout.get(_report_date, 0)
+                else:
+                    # Fallback only when fhps API failed entirely: use cashflow data
+                    _div_paid = abs(cf.get('commonDividendsPaid', 0) or 0)
+                    _net_inc = abs(inc.get('netIncome', 0) or 0)
+                    _payout = (_div_paid / _net_inc * 100) if _net_inc > 0 else 0
                 data['Payout Ratio (%)'] = _payout
             summary_data.append(data)
 
@@ -2076,13 +2127,8 @@ def get_historical_financials(ticker, period='annual', apikey='', historical_per
                     for ratio in ['Dividend Yield (%)', 'Payout Ratio (%)']:
                         ttm_data[ratio] = summary_data[0].get(ratio, 0)
                 else:
-                    # A-share TTM: compute payout ratio from TTM cashflow dividends / TTM net income
-                    if ttm_cf and ttm_cf.get('commonDividendsPaid') is not None:
-                        _ttm_div = abs(ttm_cf.get('commonDividendsPaid', 0))
-                        _ttm_ni = abs(ttm_data.get('Net Income', 0) * 1_000_000) if ttm_data.get('Net Income') else 0
-                        ttm_data['Payout Ratio (%)'] = (_ttm_div / _ttm_ni * 100) if _ttm_ni > 0 else 0
-                    else:
-                        ttm_data['Payout Ratio (%)'] = summary_data[0].get('Payout Ratio (%)', 0)
+                    # A-share TTM: use most recent annual payout from stock_fhps_detail_em
+                    ttm_data['Payout Ratio (%)'] = summary_data[0].get('Payout Ratio (%)', 0)
 
                 # Add note about reinvestment data sources (if any)
                 if ttm_note:
