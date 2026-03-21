@@ -2764,6 +2764,14 @@ export default function PortfolioPage() {
     finally { setLoading(false); }
   }, []);
 
+  // Silent refresh — only re-fetch holdings without full loading state (used by DataPanel after edits)
+  const silentRefresh = useCallback(async () => {
+    try {
+      setData(await getPortfolioHoldings());
+      setRefreshKey((k) => k + 1);
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => { load(); }, [load]);
 
   const handleSwitchPortfolio = useCallback(async (name: string) => {
@@ -3043,7 +3051,7 @@ export default function PortfolioPage() {
         {error && <div className="bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl p-4 mb-4">{error}</div>}
 
         {data && data.holdings.length === 0 && (
-          <OnboardingCard locale={locale} onRefresh={load} onOpenPanel={(tab) => { setPanelInitialTab(tab || "edit"); setPanelOpen(true); }} />
+          <OnboardingCard locale={locale} onRefresh={silentRefresh} onOpenPanel={(tab) => { setPanelInitialTab(tab || "edit"); setPanelOpen(true); }} />
         )}
 
         {data && data.holdings.length > 0 && (
@@ -3168,7 +3176,7 @@ export default function PortfolioPage() {
         )}
 
         {/* ── Data Management Panel (sidebar) — always available when data loaded ── */}
-        {data && <DataPanel holdings={data.holdings} data={data} locale={locale} onRefresh={load} open={panelOpen} onClose={() => { setPanelOpen(false); setPanelEditHolding(null); }} editHolding={panelEditHolding} initialTab={panelInitialTab} />}
+        {data && <DataPanel holdings={data.holdings} data={data} locale={locale} onRefresh={silentRefresh} open={panelOpen} onClose={() => { setPanelOpen(false); setPanelEditHolding(null); }} editHolding={panelEditHolding} initialTab={panelInitialTab} />}
       </main>
     </>
   );
