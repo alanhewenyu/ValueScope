@@ -34,7 +34,7 @@ const en = {
   featureScoringTitle: "4-Dimension Scoring",
   featureScoringDesc: "Valuation, Quality, Growth, and Momentum condensed into a single radar chart with transparent sub-factor breakdown.",
   featurePortfolioTitle: "Portfolio Tracker",
-  featurePortfolioDesc: "Cross-market portfolio tracking — real-time P&L, asset allocation, NAV benchmarking, risk analysis & return attribution across A/HK/US/JP markets.",
+  featurePortfolioDesc: "Cross-market, cross-account portfolio tracking — real-time P&L, asset allocation, NAV benchmarking, risk analysis & return attribution.",
 
   // Search
   searchPlaceholder: "600519.SS, 0700.HK, AAPL ...",
@@ -460,7 +460,7 @@ const zh: Translations = {
   featureScoringTitle: "四维评分",
   featureScoringDesc: "估值、质量、成长、动量浓缩为一张雷达图，子因子透明可查。",
   featurePortfolioTitle: "投资组合",
-  featurePortfolioDesc: "跨市场组合追踪 — 实时盈亏、资产配置、净值基准对比、风险分析与收益归因，覆盖 A股/港股/美股/日股。",
+  featurePortfolioDesc: "跨市场、跨账户组合追踪 — 实时盈亏、资产配置、净值基准对比、风险分析与收益归因。",
 
   searchPlaceholder: "600519.SS, 0700.HK, AAPL ...",
 

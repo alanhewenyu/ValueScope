@@ -95,7 +95,7 @@ export default function Home() {
         </div>
 
         {/* Feature cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-3xl mx-auto mt-8 sm:mt-16">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 max-w-4xl mx-auto mt-8 sm:mt-16">
           <FeatureCard
             icon="📊"
             title={t.featureDCFTitle}
@@ -115,8 +115,6 @@ export default function Home() {
             icon="💼"
             title={t.featurePortfolioTitle}
             description={t.featurePortfolioDesc}
-            href={showPrivate ? "/portfolio" : undefined}
-            actionLabel={showPrivate ? (locale === "zh" ? "进入 →" : "Open →") : undefined}
           />
         </div>
       </main>
