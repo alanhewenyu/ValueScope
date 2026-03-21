@@ -1406,7 +1406,7 @@ function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; on
           {(() => {
             const nav = [50,48,52,55,53,58,56,60,57,62,64,61,66,68,65,70,72,69,74,76,73,78,80,77,82,85,83,88];
             const bench = [50,49,51,53,52,54,53,55,54,56,57,56,58,59,58,60,61,60,62,63,62,64,65,64,66,67,66,68];
-            const h = 48, w = 280, pad = 2;
+            const h = 64, w = 400, pad = 2;
             const toPath = (pts: number[]) => {
               const min = Math.min(...nav, ...bench), max = Math.max(...nav, ...bench);
               return pts.map((v, i) => {
@@ -1417,7 +1417,7 @@ function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; on
             };
             return (
               <div>
-                <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height: 48 }}>
+                <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height: 64 }}>
                   <path d={toPath(bench)} fill="none" stroke="#9ca3af" strokeWidth="1.2" strokeDasharray="3,2" opacity="0.6" />
                   <path d={toPath(nav)} fill="none" stroke="#3b82f6" strokeWidth="1.5" />
                 </svg>
