@@ -310,55 +310,55 @@ function HoldingsTable({ holdings, summary, locale, onEdit, compact, onShowAll }
         <div className="overflow-auto max-h-[70vh]">
           <table className="w-full text-xs font-mono border-collapse">
             <thead className="sticky top-0 z-10">
-              <tr className="border-b-2 border-gray-300 dark:border-gray-600 text-[11px] font-semibold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800">
+              <tr className="border-b-2 border-gray-300 dark:border-gray-600 text-[11px] font-semibold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 whitespace-nowrap">
                 <th className="text-left px-2 py-2.5 sticky left-0 bg-gray-100 dark:bg-gray-800 z-20 min-w-[110px]">
                   {locale === "zh" ? "名称" : "Name"}
                 </th>
                 <th className="text-left px-2 py-2.5">{locale === "zh" ? "代码" : "Ticker"}</th>
-                <th className="text-left px-2 py-2.5 whitespace-nowrap">{locale === "zh" ? "市场" : "Market"}</th>
+                <th className="text-left px-2 py-2.5">{locale === "zh" ? "市场" : "Market"}</th>
                 <th className="text-left px-2 py-2.5">{locale === "zh" ? "账户" : "Broker"}</th>
                 <th className="text-left px-2 py-2.5">{locale === "zh" ? "币种" : "Ccy"}</th>
                 <th className="text-right px-2 py-2.5 cursor-pointer select-none" onClick={() => toggleSort("quantity")}>
                   {locale === "zh" ? "持仓" : "Qty"}<SI col="quantity" />
                 </th>
-                <th className="text-right px-2 py-2.5">{locale === "zh" ? "成本" : "Cost"}</th>
+                <th className="text-right px-2 py-2.5">{locale === "zh" ? "成本价" : "Cost"}</th>
                 <th className="text-right px-2 py-2.5">{locale === "zh" ? "现价" : "Price"}</th>
-                <th className="text-right px-2 py-2.5 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("market_value")}>
-                  MV<SI col="market_value" />
+                <th className="text-right px-2 py-2.5 cursor-pointer select-none" onClick={() => toggleSort("market_value")}>
+                  {locale === "zh" ? "市值" : "Market Value"}<SI col="market_value" />
                 </th>
-                <th className="text-right px-2 py-2.5 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("market_value_cny")}>
-                  MV(CNY)<SI col="market_value_cny" />
+                <th className="text-right px-2 py-2.5 cursor-pointer select-none" onClick={() => toggleSort("market_value_cny")}>
+                  {locale === "zh" ? "市值(CNY)" : "MV(CNY)"}<SI col="market_value_cny" />
                 </th>
-                <th className="text-right px-2 py-2.5 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("weight")}>
-                  Wt%<SI col="weight" />
+                <th className="text-right px-2 py-2.5 cursor-pointer select-none" onClick={() => toggleSort("weight")}>
+                  {locale === "zh" ? "占比" : "Weight"}<SI col="weight" />
                 </th>
                 {showDaily && <>
-                  <th className="text-right px-2 py-2.5 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("daily_pnl_cny")}>
-                    Daily P&L<SI col="daily_pnl_cny" />
+                  <th className="text-right px-2 py-2.5 cursor-pointer select-none" onClick={() => toggleSort("daily_pnl_cny")}>
+                    {locale === "zh" ? "日盈亏" : "Daily P&L"}<SI col="daily_pnl_cny" />
                   </th>
-                  <th className="text-right px-2 py-2.5 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("daily_pnl_pct")}>
-                    Daily%<SI col="daily_pnl_pct" />
+                  <th className="text-right px-2 py-2.5 cursor-pointer select-none" onClick={() => toggleSort("daily_pnl_pct")}>
+                    {locale === "zh" ? "日涨幅" : "Daily%"}<SI col="daily_pnl_pct" />
                   </th>
                 </>}
                 {showYtd && <>
-                  <th className="text-right px-2 py-2.5 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("ytd_pnl_cny")}>
-                    YTD P&L<SI col="ytd_pnl_cny" />
+                  <th className="text-right px-2 py-2.5 cursor-pointer select-none" onClick={() => toggleSort("ytd_pnl_cny")}>
+                    {locale === "zh" ? "年初至今" : "YTD P&L"}<SI col="ytd_pnl_cny" />
                   </th>
-                  <th className="text-right px-2 py-2.5 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("ytd_pnl_pct")}>
-                    YTD%<SI col="ytd_pnl_pct" />
+                  <th className="text-right px-2 py-2.5 cursor-pointer select-none" onClick={() => toggleSort("ytd_pnl_pct")}>
+                    {locale === "zh" ? "YTD%" : "YTD%"}<SI col="ytd_pnl_pct" />
                   </th>
                 </>}
                 {showTotal && <>
-                  <th className="text-right px-2 py-2.5 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("pnl_cny")}>
-                    Total P&L<SI col="pnl_cny" />
+                  <th className="text-right px-2 py-2.5 cursor-pointer select-none" onClick={() => toggleSort("pnl_cny")}>
+                    {locale === "zh" ? "总盈亏" : "Total P&L"}<SI col="pnl_cny" />
                   </th>
-                  <th className="text-right px-2 py-2.5 cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort("pnl_pct")}>
-                    Total%<SI col="pnl_pct" />
+                  <th className="text-right px-2 py-2.5 cursor-pointer select-none" onClick={() => toggleSort("pnl_pct")}>
+                    {locale === "zh" ? "总收益%" : "Total%"}<SI col="pnl_pct" />
                   </th>
                 </>}
                 {showDcf && <>
                   <th className="text-right px-2 py-2.5" title="DCF intrinsic value (ValuScope)">DCF</th>
-                  <th className="text-right px-2 py-2.5" title="Margin of Safety = (DCF - Price) / DCF">MoS%</th>
+                  <th className="text-right px-2 py-2.5" title="Margin of Safety = (DCF - Price) / DCF">{locale === "zh" ? "安全边际" : "MoS%"}</th>
                 </>}
                 {onEdit && <th className="px-2 py-2.5" />}
                 {hasIndustry && <th className="text-left px-2 py-2.5">{locale === "zh" ? "行业" : "Industry"}</th>}
