@@ -768,14 +768,42 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
                 <div className="font-mono font-medium">{(b.avg_roe ?? 0).toFixed(0)}% / {(b.payout ?? 0).toFixed(0)}%</div>
               </div>
             </div>
-            <ul className="mt-4 pt-3 border-t border-amber-200/50 dark:border-amber-800/50 space-y-1.5">
-              {t.buffettNotes.map((note, i) => (
-                <li key={i} className="text-[10px] text-gray-400 dark:text-gray-500 leading-relaxed flex gap-1.5">
-                  <span className="text-amber-400 dark:text-amber-600 mt-px shrink-0">•</span>
-                  <span>{note}</span>
-                </li>
-              ))}
-            </ul>
+            {(() => {
+              const dr = ((b.discount_rate ?? 0) * 100).toFixed(1);
+              const g1 = ((b.growth_phase1 ?? 0) * 100).toFixed(1);
+              const tg = ((b.terminal_growth ?? 0) * 100).toFixed(1);
+              const oe = (b.owner_earnings ?? 0).toLocaleString(undefined, {maximumFractionDigits: 0});
+              const ni = (b.net_income ?? 0).toLocaleString(undefined, {maximumFractionDigits: 0});
+              const wc = (b.avg_wc ?? 0).toLocaleString(undefined, {maximumFractionDigits: 0});
+              const roe = (b.avg_roe ?? 0).toFixed(0);
+              const po = (b.payout ?? 0).toFixed(0);
+              const rc = b.reported_currency ?? "USD";
+              const notes = locale === "zh" ? [
+                `股东盈余 = ${ni}M − ΔWC ${wc}M = ${oe}M (${rc})`,
+                `增长率 = ROE ${roe}% ×（1 − 派息率 ${po}%）= ${g1}%`,
+                `折现率 = max(10%, 无风险利率 + 5%) = ${dr}%`,
+                `终端增长率：${tg}%`,
+                `安全边际：内在价值打 7 折`,
+                b.ni_label?.includes("扣非") ? "A 股使用扣非归母净利润" : null,
+              ] : [
+                `Owner Earnings = ${ni}M − ΔWC ${wc}M = ${oe}M (${rc})`,
+                `Growth = ROE ${roe}% × (1 − payout ${po}%) = ${g1}%`,
+                `Discount rate = max(10%, risk-free + 5%) = ${dr}%`,
+                `Terminal growth: ${tg}%`,
+                `Margin of Safety: 30% discount to intrinsic value`,
+                b.ni_label?.includes("扣非") ? "A-shares use deducted non-recurring NI (扣非归母净利润)" : null,
+              ];
+              return (
+                <ul className="mt-4 pt-3 border-t border-amber-200/50 dark:border-amber-800/50 space-y-1.5">
+                  {notes.filter(Boolean).map((note, i) => (
+                    <li key={i} className="text-[10px] text-gray-400 dark:text-gray-500 leading-relaxed flex gap-1.5">
+                      <span className="text-amber-400 dark:text-amber-600 mt-px shrink-0">•</span>
+                      <span>{note}</span>
+                    </li>
+                  ))}
+                </ul>
+              );
+            })()}
           </div>
         );
       })()}
@@ -1780,14 +1808,42 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
                         </div>
                       </div>
                     </div>
-                    <ul className="space-y-1.5">
-                      {t.buffettNotes.map((note, i) => (
-                        <li key={i} className="text-[11px] text-gray-400 dark:text-gray-500 leading-relaxed flex gap-2">
-                          <span className="text-amber-400 dark:text-amber-600 mt-px shrink-0">•</span>
-                          <span>{note}</span>
-                        </li>
-                      ))}
-                    </ul>
+                    {(() => {
+                      const dr = ((b.discount_rate ?? 0) * 100).toFixed(1);
+                      const g1 = ((b.growth_phase1 ?? 0) * 100).toFixed(1);
+                      const tg = ((b.terminal_growth ?? 0) * 100).toFixed(1);
+                      const oe = (b.owner_earnings ?? 0).toLocaleString(undefined, {maximumFractionDigits: 0});
+                      const ni = (b.net_income ?? 0).toLocaleString(undefined, {maximumFractionDigits: 0});
+                      const wc = (b.avg_wc ?? 0).toLocaleString(undefined, {maximumFractionDigits: 0});
+                      const roe = (b.avg_roe ?? 0).toFixed(0);
+                      const po = (b.payout ?? 0).toFixed(0);
+                      const rc = b.reported_currency ?? "USD";
+                      const notes = locale === "zh" ? [
+                        `股东盈余 = ${ni}M − ΔWC ${wc}M = ${oe}M (${rc})`,
+                        `增长率 = ROE ${roe}% ×（1 − 派息率 ${po}%）= ${g1}%`,
+                        `折现率 = max(10%, 无风险利率 + 5%) = ${dr}%`,
+                        `终端增长率：${tg}%`,
+                        `安全边际：内在价值打 7 折`,
+                        b.ni_label?.includes("扣非") ? "A 股使用扣非归母净利润" : null,
+                      ] : [
+                        `Owner Earnings = ${ni}M − ΔWC ${wc}M = ${oe}M (${rc})`,
+                        `Growth = ROE ${roe}% × (1 − payout ${po}%) = ${g1}%`,
+                        `Discount rate = max(10%, risk-free + 5%) = ${dr}%`,
+                        `Terminal growth: ${tg}%`,
+                        `Margin of Safety: 30% discount to intrinsic value`,
+                        b.ni_label?.includes("扣非") ? "A-shares use deducted non-recurring NI (扣非归母净利润)" : null,
+                      ];
+                      return (
+                        <ul className="space-y-1.5">
+                          {notes.filter(Boolean).map((note, i) => (
+                            <li key={i} className="text-[11px] text-gray-400 dark:text-gray-500 leading-relaxed flex gap-2">
+                              <span className="text-amber-400 dark:text-amber-600 mt-px shrink-0">•</span>
+                              <span>{note}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      );
+                    })()}
                   </div>
                 );
               })()}
