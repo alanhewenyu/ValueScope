@@ -185,7 +185,7 @@ _seo_components.html("""
     m('description', 'ValueScope — 免费 AI 驱动的 DCF 股票估值工具。支持 A 股、港股、美股，一键 AI 估值，实时参数调节，敏感性分析，Excel 导出。Free AI-powered DCF stock valuation for A-shares, HK & US stocks.');
     m('keywords', 'DCF估值,股票估值,内在价值,现金流折现,AI估值,一键估值,A股估值,港股估值,美股估值,WACC,免费估值工具,DCF计算器,stock valuation,intrinsic value,free cash flow,AI valuation');
     // Open Graph
-    p('og:title', 'ValueScope — AI 智能 DCF 股票估值工具');
+    p('og:title', 'ValueScope — AI 驱动的股票估值与分析');
     p('og:description', '免费 AI 驱动的 DCF 估值工具。支持 A 股、港股、美股，一键 AI 估值 + 实时参数调节 + 敏感性分析 + Excel 导出。');
     p('og:type', 'website');
     p('og:url', 'https://valuescope.app');
@@ -195,7 +195,7 @@ _seo_components.html("""
     p('og:locale', 'zh_CN');
     // Twitter Card
     m('twitter:card', 'summary_large_image');
-    m('twitter:title', 'ValueScope — AI 智能 DCF 股票估值工具');
+    m('twitter:title', 'ValueScope — AI 驱动的股票估值与分析');
     m('twitter:description', '免费 AI 驱动的 DCF 估值工具。支持 A 股、港股、美股，一键估值 + 敏感性分析 + Excel 导出。');
     m('twitter:image', 'https://valuescope.app/og-image.png');
     // Canonical URL

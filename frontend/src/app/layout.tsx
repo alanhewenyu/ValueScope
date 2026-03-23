@@ -19,9 +19,9 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://valuescope.app"),
-  title: "ValueScope — AI 智能 DCF 股票估值工具 | Free AI-Powered Valuation",
+  title: "ValueScope — AI 驱动的股票估值与分析 | AI-Powered Stock Valuation & Analysis",
   description:
-    "免费 AI 驱动的 DCF 股票估值工具。支持 A 股、港股、美股，一键 AI 估值，实时参数调节，敏感性分析。Free AI-powered DCF stock valuation for A-shares, HK & US stocks.",
+    "AI 驱动的股票估值与分析工具。支持 A 股、港股、美股，DCF 估值、AI 分析、敏感性分析、组合管理。AI-powered stock valuation & analysis for A-shares, HK & US stocks.",
   keywords: [
     "DCF估值", "股票估值", "内在价值", "现金流折现", "AI估值",
     "A股估值", "港股估值", "美股估值", "WACC", "免费估值工具",
@@ -31,7 +31,7 @@ export const metadata: Metadata = {
     google: "4mcNP75rC_oaDhSwvwS-vVV9mSylXl1CGLl45Y_CSoM",
   },
   openGraph: {
-    title: "ValueScope — AI 智能 DCF 股票估值工具",
+    title: "ValueScope — AI 驱动的股票估值与分析",
     description:
       "免费 AI 驱动的 DCF 股票估值工具。支持 A 股、港股、美股，一键 AI 估值，实时参数调节，敏感性分析。",
     type: "website",
@@ -50,7 +50,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "ValueScope — AI 智能 DCF 股票估值工具",
+    title: "ValueScope — AI 驱动的股票估值与分析",
     description:
       "免费 AI 驱动的 DCF 估值工具。支持 A 股、港股、美股，一键估值 + 敏感性分析。",
     images: ["/og-image.png"],
