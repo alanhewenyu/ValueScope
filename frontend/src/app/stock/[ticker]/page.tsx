@@ -731,7 +731,8 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
             <h4 className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-1">
               {t.buffettTitle}
             </h4>
-            <p className="text-[11px] text-gray-400 dark:text-gray-500 mb-4">{t.buffettSubtitle}</p>
+            <p className="text-[11px] text-gray-400 dark:text-gray-500 mb-1">{t.buffettSubtitle}</p>
+            <p className="text-[10px] text-amber-600/70 dark:text-amber-400/60 mb-4">{t.buffettHint}</p>
             <div className="space-y-3">
               <div className="flex items-baseline gap-3">
                 <div className="flex-1">
@@ -1772,7 +1773,8 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
                       <h4 className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-1">
                         {t.buffettTitle}
                       </h4>
-                      <p className="text-[11px] text-gray-400 dark:text-gray-500 mb-4">{t.buffettSubtitle}</p>
+                      <p className="text-[11px] text-gray-400 dark:text-gray-500 mb-1">{t.buffettSubtitle}</p>
+            <p className="text-[10px] text-amber-600/70 dark:text-amber-400/60 mb-4">{t.buffettHint}</p>
                       <div className="flex flex-wrap items-center gap-6 mb-4">
                         <div>
                           <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-0.5">{t.buffettIntrinsic}</div>

@@ -224,6 +224,7 @@ const en = {
   buffettMos: "Margin of Safety (30% discount)",
   buffettTitle: "Buffett Quick Valuation",
   buffettSubtitle: "Automated estimate based on Buffett's Owner Earnings method — no parameters needed",
+  buffettHint: "This is a quick reference only. For a full analysis, enable custom DCF valuation in the left panel.",
   buffettUnavailable: "Owner Earnings ≤ 0 — Buffett valuation not applicable for this company",
   buffettNotes: [
     "Owner Earnings = Net Income − ΔWorking Capital (historical average)",
@@ -232,7 +233,6 @@ const en = {
     "Terminal growth rate: 3%",
     "Margin of Safety: 30% discount to intrinsic value",
     "A-shares use deducted non-recurring NI (扣非归母净利润)",
-    "This is a simplified model for quick reference — run DCF for a full analysis",
   ],
   forecastTableCurrency: (currency: string) => `Projected cash flows from the DCF model (${currency}, in millions)`,
 
@@ -640,6 +640,7 @@ const zh: Translations = {
   buffettMos: "安全边际价 (7折)",
   buffettTitle: "巴菲特快速估值",
   buffettSubtitle: "基于巴菲特股东盈余法的自动估值 — 无需手动输入参数",
+  buffettHint: "仅供快速参考，建议在左侧面板开启自定义 DCF 估值进行完整分析。",
   buffettUnavailable: "股东盈余 ≤ 0，不适用巴菲特估值法",
   buffettNotes: [
     "股东盈余 = 归母净利润 − ΔWC（历史均值）",
@@ -648,7 +649,6 @@ const zh: Translations = {
     "终端增长率：3%",
     "安全边际：内在价值打 7 折",
     "A 股使用扣非归母净利润",
-    "本模型用于快速参考 — 完整分析请运行 DCF 估值",
   ],
   forecastTableCurrency: (currency: string) => `DCF 模型预测的现金流（${currency}，百万）`,
 
