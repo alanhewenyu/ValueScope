@@ -639,7 +639,7 @@ def calculate_buffett(summary_df, company_profile, outstanding_shares, forex_rat
     else:
         intrinsic_per_share = 0
 
-    margin_of_safety_price = intrinsic_per_share * 0.80  # 20% margin of safety
+    margin_of_safety_price = intrinsic_per_share * 0.70  # 30% margin of safety
 
     return {
         'available': True,
@@ -729,6 +729,6 @@ def print_buffett_valuation(result, forex_rate=None, stock_currency=None):
         converted_intrinsic = intrinsic * forex_rate
         converted_mos = mos * forex_rate
         print(f"  {S.BOLD}{S.BRIGHT_GREEN}Intrinsic Value / Share ({stock_currency}) : {converted_intrinsic:>12,.2f}{S.RESET}  {S.DIM}(× {forex_rate:.4f}){S.RESET}")
-        print(f"  {S.BOLD}Margin of Safety Price ({stock_currency})  : {converted_mos:>12,.2f}{S.RESET}  {S.DIM}(20% discount){S.RESET}")
+        print(f"  {S.BOLD}Margin of Safety Price ({stock_currency})  : {converted_mos:>12,.2f}{S.RESET}  {S.DIM}(30% discount){S.RESET}")
     else:
-        print(f"  {S.BOLD}Margin of Safety Price         : {mos:>12,.2f}{S.RESET}  {S.DIM}(20% discount){S.RESET}")
+        print(f"  {S.BOLD}Margin of Safety Price         : {mos:>12,.2f}{S.RESET}  {S.DIM}(30% discount){S.RESET}")
