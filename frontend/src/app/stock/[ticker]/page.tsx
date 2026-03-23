@@ -781,16 +781,14 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
               const rc = b.reported_currency ?? "USD";
               const notes = locale === "zh" ? [
                 `股东盈余 = ${ni}M − ΔWC ${wc}M = ${oe}M (${rc})`,
-                `增长率 = ROE ${roe}% ×（1 − 派息率 ${po}%）= ${g1}%`,
+                `增长率 = ROE ${roe}% ×（1 − 派息率 ${po}%）= ${g1}%，前5年使用，后5年线性过渡至永续增长率 ${tg}%`,
                 `折现率 = max(10%, 无风险利率 + 5%) = ${dr}%`,
-                `永续增长率：${tg}%`,
                 `安全边际：内在价值打 7 折`,
                 b.ni_label?.includes("扣非") ? "A 股使用扣非归母净利润" : null,
               ] : [
                 `Owner Earnings = ${ni}M − ΔWC ${wc}M = ${oe}M (${rc})`,
-                `Growth = ROE ${roe}% × (1 − payout ${po}%) = ${g1}%`,
+                `Growth = ROE ${roe}% × (1 − payout ${po}%) = ${g1}% for yr 1-5, fading to ${tg}% terminal growth over yr 6-10`,
                 `Discount rate = max(10%, risk-free + 5%) = ${dr}%`,
-                `Terminal growth: ${tg}%`,
                 `Margin of Safety: 30% discount to intrinsic value`,
                 b.ni_label?.includes("扣非") ? "A-shares use deducted non-recurring NI (扣非归母净利润)" : null,
               ];
@@ -1822,16 +1820,14 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
                       const rc = b.reported_currency ?? "USD";
                       const notes = locale === "zh" ? [
                         `股东盈余 = ${ni}M − ΔWC ${wc}M = ${oe}M (${rc})`,
-                        `增长率 = ROE ${roe}% ×（1 − 派息率 ${po}%）= ${g1}%`,
+                        `增长率 = ROE ${roe}% ×（1 − 派息率 ${po}%）= ${g1}%，前5年使用，后5年线性过渡至永续增长率 ${tg}%`,
                         `折现率 = max(10%, 无风险利率 + 5%) = ${dr}%`,
-                        `永续增长率：${tg}%`,
                         `安全边际：内在价值打 7 折`,
                         b.ni_label?.includes("扣非") ? "A 股使用扣非归母净利润" : null,
                       ] : [
                         `Owner Earnings = ${ni}M − ΔWC ${wc}M = ${oe}M (${rc})`,
-                        `Growth = ROE ${roe}% × (1 − payout ${po}%) = ${g1}%`,
+                        `Growth = ROE ${roe}% × (1 − payout ${po}%) = ${g1}% for yr 1-5, fading to ${tg}% terminal growth over yr 6-10`,
                         `Discount rate = max(10%, risk-free + 5%) = ${dr}%`,
-                        `Terminal growth: ${tg}%`,
                         `Margin of Safety: 30% discount to intrinsic value`,
                         b.ni_label?.includes("扣非") ? "A-shares use deducted non-recurring NI (扣非归母净利润)" : null,
                       ];
