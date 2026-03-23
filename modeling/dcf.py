@@ -687,11 +687,18 @@ def print_buffett_valuation(result, forex_rate=None, stock_currency=None):
     # Owner Earnings breakdown
     ni_label = result.get('ni_label', '归母净利润')
     print(f"\n  {S.label('Owner Earnings Breakdown')} ({reported_currency}, millions):")
-    print(f"    Net Income ({ni_label}): {result['net_income']:>12,.0f}")
-    print(f"    (+) D&A                   : {result['da']:>12,.0f}")
-    print(f"    (-) Maintenance CapEx ≈D&A: {result['maintenance_capex']:>12,.0f}")
-    print(f"    (-) ΔWC (historical avg)  : {result['avg_wc']:>12,.0f}")
-    print(f"    {S.BOLD}= Owner Earnings          : {result['owner_earnings']:>12,.0f}{S.RESET}")
+    # Pad labels to align ':' — account for East Asian wide chars
+    import unicodedata
+    def _display_width(s):
+        return sum(2 if unicodedata.east_asian_width(c) in ('F', 'W') else 1 for c in s)
+    COL = 30  # target display width for label column
+    ni_text = f"Net Income ({ni_label})"
+    pad = COL - _display_width(ni_text)
+    print(f"    {ni_text}{' ' * max(pad, 1)}: {result['net_income']:>12,.0f}")
+    print(f"    {'(+) D&A':<{COL}}: {result['da']:>12,.0f}")
+    print(f"    {'(-) Maintenance CapEx ≈D&A':<{COL}}: {result['maintenance_capex']:>12,.0f}")
+    print(f"    {'(-) ΔWC (historical avg)':<{COL}}: {result['avg_wc']:>12,.0f}")
+    print(f"    {S.BOLD}{'= Owner Earnings':<{COL}}: {result['owner_earnings']:>12,.0f}{S.RESET}")
 
     # Key assumptions
     print(f"\n  {S.label('Assumptions')}:")
