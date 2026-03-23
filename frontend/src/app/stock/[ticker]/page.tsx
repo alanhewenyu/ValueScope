@@ -331,7 +331,7 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
   profile: CompanyProfile | null;
   prefetchedDefaults?: DCFDefaults | null;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { fmpApiKey, serperApiKey, deepseekApiKey, hasAiKeys } = useSettings();
   const [defaults, setDefaults] = useState<DCFDefaults | null>(prefetchedDefaults || null);
   const [defaultsLoading, setDefaultsLoading] = useState(!prefetchedDefaults);
