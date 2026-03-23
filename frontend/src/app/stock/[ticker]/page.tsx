@@ -783,7 +783,7 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
                 `股东盈余 = ${ni}M − ΔWC ${wc}M = ${oe}M (${rc})`,
                 `增长率 = ROE ${roe}% ×（1 − 派息率 ${po}%）= ${g1}%`,
                 `折现率 = max(10%, 无风险利率 + 5%) = ${dr}%`,
-                `终端增长率：${tg}%`,
+                `永续增长率：${tg}%`,
                 `安全边际：内在价值打 7 折`,
                 b.ni_label?.includes("扣非") ? "A 股使用扣非归母净利润" : null,
               ] : [
@@ -1824,7 +1824,7 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
                         `股东盈余 = ${ni}M − ΔWC ${wc}M = ${oe}M (${rc})`,
                         `增长率 = ROE ${roe}% ×（1 − 派息率 ${po}%）= ${g1}%`,
                         `折现率 = max(10%, 无风险利率 + 5%) = ${dr}%`,
-                        `终端增长率：${tg}%`,
+                        `永续增长率：${tg}%`,
                         `安全边际：内在价值打 7 折`,
                         b.ni_label?.includes("扣非") ? "A 股使用扣非归母净利润" : null,
                       ] : [
