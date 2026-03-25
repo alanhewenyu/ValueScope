@@ -475,9 +475,16 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
     if not positions:
         return {"holdings": [], "fx": {"CNY": 1.0}, "summary": {}}
 
-    # Load industry cache
+    # Load industry cache — backfill any tickers missing from cache
     industry_rows = _query(path, "SELECT ticker, sector, industry FROM industry_cache")
     industry_map = {r['ticker']: {'sector': r['sector'] or '', 'industry': r['industry'] or ''} for r in industry_rows}
+    all_tickers = [p['ticker'] for p in positions]
+    missing_tickers = [t for t in all_tickers if t not in industry_map or (not industry_map[t].get('sector') and not industry_map[t].get('industry'))]
+    if missing_tickers:
+        from backend.services.portfolio_fmp import fetch_all_industries
+        fetched = fetch_all_industries(missing_tickers, db_path=path)
+        for t, (sector, industry) in fetched.items():
+            industry_map[t] = {'sector': sector or '', 'industry': industry or ''}
 
     # Load DCF valuations from ValueScope DB
     dcf_map = get_dcf_valuations()
@@ -488,11 +495,30 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
     # Prefetch all prices in parallel
     refresh_all_prices(db_path=path)
 
-    # Load YTD baselines
+    # Load YTD baselines — auto-create for new positions missing a baseline
     import datetime
     current_year = datetime.date.today().year
     with get_conn() as conn:
         ytd_baselines = get_ytd_baselines(conn, current_year)
+
+        # Backfill baselines for positions added after the yearly snapshot
+        missing_baseline = [
+            p for p in positions
+            if p['ticker'] not in ytd_baselines
+        ]
+        if missing_baseline:
+            from backend.services.portfolio_db import record_ytd_baselines
+            ticker_data = {}
+            for p in missing_baseline:
+                # Use cost_price as baseline: new mid-year positions start YTD from cost
+                ticker_data[p['ticker']] = (
+                    p['cost_price'], p['currency'], p['quantity'], p['cost_price']
+                )
+            today_str = datetime.date.today().isoformat()
+            record_ytd_baselines(conn, current_year, ticker_data, today_str)
+            conn.commit()
+            # Reload after backfill
+            ytd_baselines = get_ytd_baselines(conn, current_year)
 
     # Enrich each position
     holdings = []

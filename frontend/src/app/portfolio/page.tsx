@@ -1596,6 +1596,7 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
   const [editName, setEditName] = useState("");
   const [editMarket, setEditMarket] = useState("A股");
   const [editBroker, setEditBroker] = useState("");
+  const [editOrigBroker, setEditOrigBroker] = useState("");
   const [editQty, setEditQty] = useState("");
   const [editCost, setEditCost] = useState("");
   const [editCurrency, setEditCurrency] = useState("CNY");
@@ -1650,12 +1651,12 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
   // ── Edit handlers ──
   function fillForm(h: PortfolioHolding) {
     setEditTicker(h.ticker); setEditName(h.name); setEditMarket(h.market);
-    setEditBroker(h.broker); setEditQty(String(h.quantity)); setEditCost(String(h.cost_price)); setEditCurrency(h.currency);
+    setEditBroker(h.broker); setEditOrigBroker(h.broker); setEditQty(String(h.quantity)); setEditCost(String(h.cost_price)); setEditCurrency(h.currency);
     setIsEditing(true);
   }
 
   function clearForm() {
-    setEditTicker(""); setEditName(""); setEditMarket("A股"); setEditBroker("");
+    setEditTicker(""); setEditName(""); setEditMarket("A股"); setEditBroker(""); setEditOrigBroker("");
     setEditQty(""); setEditCost(""); setEditCurrency("CNY"); setIsEditing(false);
   }
 
@@ -1664,6 +1665,9 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
     if (!editBroker) { setMsg(zh ? "⚠️ 请先选择账户，如需新账户请到「设置」添加" : "⚠️ Select an account first. Add new accounts in Settings tab"); return; }
     setSaving(true); setMsg(null);
     try {
+      if (isEditing && editOrigBroker && editOrigBroker !== editBroker) {
+        await deletePosition(editTicker, editOrigBroker);
+      }
       await upsertPosition({ ticker: editTicker, name: editName, market: editMarket, broker: editBroker,
         quantity: parseFloat(editQty) || 0, cost_price: parseFloat(editCost) || 0, currency: editCurrency });
       setMsg("✅ Saved"); clearForm(); onRefresh();
@@ -1927,17 +1931,13 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                   <select className={inputCls} value={editMarket} onChange={(e) => setEditMarket(e.target.value)}>
                     {["A股", "港股", "美股", "日股", "B股", "基金"].map((m) => <option key={m} value={m}>{mktLabel(m, locale)}</option>)}
                   </select>
-                  {isEditing ? (
-                    <input className={inputCls} value={editBroker} disabled />
-                  ) : (
-                    <div>
-                      <select className={inputCls} value={editBroker} onChange={(e) => setEditBroker(e.target.value)}>
-                        <option value="">{zh ? "— 选择账户 —" : "— Select account —"}</option>
-                        {acctSettings.map((s) => <option key={s.broker} value={s.broker}>{s.broker}</option>)}
-                      </select>
-                      {acctSettings.length === 0 && <div className="text-[9px] text-amber-500 mt-0.5">{zh ? "请先到「设置」添加账户" : "Add accounts in Settings first"}</div>}
-                    </div>
-                  )}
+                  <div>
+                    <select className={inputCls} value={editBroker} onChange={(e) => setEditBroker(e.target.value)}>
+                      <option value="">{zh ? "— 选择账户 —" : "— Select account —"}</option>
+                      {acctSettings.map((s) => <option key={s.broker} value={s.broker}>{s.broker}</option>)}
+                    </select>
+                    {acctSettings.length === 0 && <div className="text-[9px] text-amber-500 mt-0.5">{zh ? "请先到「设置」添加账户" : "Add accounts in Settings first"}</div>}
+                  </div>
                   <input className={inputCls} placeholder={zh ? "数量" : "Quantity"} inputMode="decimal" value={editQty} onChange={(e) => setEditQty(e.target.value)} />
                   <input className={inputCls} placeholder={zh ? "成本价" : "Cost price"} inputMode="decimal" value={editCost} onChange={(e) => setEditCost(e.target.value)} />
                   <select className={inputCls} value={editCurrency} onChange={(e) => setEditCurrency(e.target.value)}>
