@@ -872,7 +872,7 @@ export async function switchPortfolio(name: string): Promise<void> {
 }
 
 export async function getPortfolioHoldings(): Promise<PortfolioData> {
-  return fetchAPI<PortfolioData>("/api/portfolio/holdings", { timeoutMs: 45000, retries: 2 });
+  return fetchAPI<PortfolioData>("/api/portfolio/holdings", { timeoutMs: 90000, retries: 1 });
 }
 
 export async function getPortfolioFxRates(): Promise<Record<string, number>> {

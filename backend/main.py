@@ -33,9 +33,10 @@ try:
 except Exception:
     pass
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+import time as _time
 
 from backend.routers import stock, valuation, relative, portfolio, history, auth, admin
 
@@ -84,6 +85,20 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log every request with timing — helps diagnose connectivity issues in Railway logs."""
+    start = _time.time()
+    response = await call_next(request)
+    elapsed = (_time.time() - start) * 1000
+    # Log slow requests (>5s) at WARNING level for visibility
+    path = request.url.path
+    level = logging.WARNING if elapsed > 5000 else logging.INFO
+    logger.log(level, "%s %s %d %.0fms client=%s",
+               request.method, path, response.status_code, elapsed,
+               request.headers.get("x-forwarded-for", request.client.host if request.client else "-"))
+    return response
+
 app.include_router(stock.router, prefix="/api/stock", tags=["Stock"])
 app.include_router(valuation.router, prefix="/api/valuation", tags=["Valuation"])
 app.include_router(relative.router, prefix="/api/analysis", tags=["Analysis"])
@@ -93,7 +108,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 
 
-@app.get("/api/health")
+@app.api_route("/api/health", methods=["GET", "HEAD"])
 def health_check():
     """Basic liveness check for uptime monitors (UptimeRobot etc.)."""
     return {"status": "ok", "version": "2.0.0"}

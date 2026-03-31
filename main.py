@@ -284,7 +284,7 @@ def _compute_forex_rate(results, company_profile, apikey):
     reported_currency = results.get('reported_currency', '')
     stock_currency = company_profile.get('currency', 'USD')
     if not (reported_currency and stock_currency and reported_currency != stock_currency):
-        return None
+        return None, reported_currency, stock_currency
 
     forex_rate = None
     try:
