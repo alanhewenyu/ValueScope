@@ -14,10 +14,16 @@ function getAuthHeader(): Record<string, string> {
 async function fetchAPI<T>(path: string, options?: RequestInit & { timeoutMs?: number; retries?: number }): Promise<T> {
   const timeoutMs = options?.timeoutMs ?? 30000;
   const retries = options?.retries ?? 1;
+  const externalSignal = options?.signal;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    // If caller provided a signal (e.g. from useEffect cleanup), link it
+    if (externalSignal) {
+      if (externalSignal.aborted) { clearTimeout(timer); throw new DOMException("Aborted", "AbortError"); }
+      externalSignal.addEventListener("abort", () => controller.abort(), { once: true });
+    }
     try {
       const isFormData = options?.body instanceof FormData;
       const res = await fetch(`${API_BASE}${path}`, {
@@ -38,6 +44,8 @@ async function fetchAPI<T>(path: string, options?: RequestInit & { timeoutMs?: n
       return res.json();
     } catch (e) {
       clearTimeout(timer);
+      // If aborted by external signal (component unmount), don't retry — just throw
+      if (externalSignal?.aborted) throw e;
       if (attempt < retries && (e instanceof DOMException || (e instanceof TypeError && String(e).includes("fetch")))) {
         // Timeout or network error — retry after brief delay
         await new Promise(r => setTimeout(r, 1000));
@@ -859,20 +867,20 @@ export interface ClosedTradeInput {
   currency: string;
 }
 
-export async function getPortfolioStatus(): Promise<PortfolioStatus> {
-  return fetchAPI<PortfolioStatus>("/api/portfolio/status");
+export async function getPortfolioStatus(signal?: AbortSignal): Promise<PortfolioStatus> {
+  return fetchAPI<PortfolioStatus>("/api/portfolio/status", { signal });
 }
 
 export interface PortfolioInfo { name: string; active: boolean; }
-export async function listPortfolios(): Promise<PortfolioInfo[]> {
-  return fetchAPI<PortfolioInfo[]>("/api/portfolio/portfolios");
+export async function listPortfolios(signal?: AbortSignal): Promise<PortfolioInfo[]> {
+  return fetchAPI<PortfolioInfo[]>("/api/portfolio/portfolios", { signal });
 }
 export async function switchPortfolio(name: string): Promise<void> {
   await fetchAPI<unknown>(`/api/portfolio/portfolios/switch?name=${encodeURIComponent(name)}`, { method: "POST" });
 }
 
-export async function getPortfolioHoldings(): Promise<PortfolioData> {
-  return fetchAPI<PortfolioData>("/api/portfolio/holdings", { timeoutMs: 90000, retries: 1 });
+export async function getPortfolioHoldings(signal?: AbortSignal): Promise<PortfolioData> {
+  return fetchAPI<PortfolioData>("/api/portfolio/holdings", { timeoutMs: 90000, retries: 1, signal });
 }
 
 export async function getPortfolioFxRates(): Promise<Record<string, number>> {
@@ -883,12 +891,12 @@ export async function getNavHistory(): Promise<NavHistoryPoint[]> {
   return fetchAPI<NavHistoryPoint[]>("/api/portfolio/nav-history");
 }
 
-export async function getClosedTrades(): Promise<ClosedTrade[]> {
-  return fetchAPI<ClosedTrade[]>("/api/portfolio/closed-trades");
+export async function getClosedTrades(signal?: AbortSignal): Promise<ClosedTrade[]> {
+  return fetchAPI<ClosedTrade[]>("/api/portfolio/closed-trades", { signal });
 }
 
-export async function getSnapshots(limit = 90): Promise<Snapshot[]> {
-  return fetchAPI<Snapshot[]>(`/api/portfolio/snapshots?limit=${limit}`);
+export async function getSnapshots(limit = 90, signal?: AbortSignal): Promise<Snapshot[]> {
+  return fetchAPI<Snapshot[]>(`/api/portfolio/snapshots?limit=${limit}`, { signal });
 }
 
 export async function getMarginBalances(): Promise<MarginBalance[]> {

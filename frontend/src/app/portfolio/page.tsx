@@ -2753,14 +2753,18 @@ export default function PortfolioPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [pageTab, setPageTab] = useState<"overview" | "holdings" | "performance" | "trades" | "events">("overview");
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     try { setLoading(true); setError(null);
-      const [status, pList] = await Promise.all([getPortfolioStatus(), listPortfolios()]);
+      const [status, pList] = await Promise.all([getPortfolioStatus(signal), listPortfolios(signal)]);
+      if (signal?.aborted) return;
       setAvailable(status.available);
       setPortfolios(pList);
       if (!status.available) { setLoading(false); return; }
-      setData(await getPortfolioHoldings());
-    } catch (e: unknown) { setError(e instanceof Error ? e.message : "Failed to load"); }
+      setData(await getPortfolioHoldings(signal));
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") return; // unmount — ignore
+      setError(e instanceof Error ? e.message : "Failed to load");
+    }
     finally { setLoading(false); }
   }, []);
 
@@ -2772,7 +2776,11 @@ export default function PortfolioPage() {
     } catch { /* ignore */ }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const ac = new AbortController();
+    load(ac.signal);
+    return () => ac.abort();
+  }, [load]);
 
   const handleSwitchPortfolio = useCallback(async (name: string) => {
     if (name === activePortfolio) return;
@@ -2797,12 +2805,13 @@ export default function PortfolioPage() {
 
   useEffect(() => {
     if (!data) return;
-    let cancelled = false;
+    const ac = new AbortController();
+    const cancelled = () => ac.signal.aborted;
 
     // Single consolidated fetch: snapshots(20) covers both weekly(14) and weeklyByMkt(20)
     const fetchDerived = async () => {
-      const [snaps, trades] = await Promise.all([getSnapshots(20), getClosedTrades()]);
-      if (cancelled) return;
+      const [snaps, trades] = await Promise.all([getSnapshots(20, ac.signal), getClosedTrades(ac.signal)]);
+      if (cancelled()) return;
 
       // ── Closed trades ──
       setAllClosedTrades(trades);
@@ -2856,12 +2865,12 @@ export default function PortfolioPage() {
           for (const m of sortMarkets([...allMkts])) {
             items.push({ market: m, pnl: (currentMp[m] || 0) - (baseMp[m] || 0) });
           }
-          if (!cancelled) setWeeklyByMkt(items);
+          if (!cancelled()) setWeeklyByMkt(items);
         }
       }
     };
     fetchDerived().catch(() => {});
-    return () => { cancelled = true; };
+    return () => ac.abort();
   }, [data, locale]);
 
   // YTD per-market — unrealized P&L from holdings + realized P&L from closed trades
@@ -3006,7 +3015,7 @@ export default function PortfolioPage() {
                 📥 Excel
               </button>
             )}
-            <button onClick={load} disabled={loading} className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 transition-colors">
+            <button onClick={() => load()} disabled={loading} className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 transition-colors">
               {loading ? "..." : (locale === "zh" ? "刷新" : "Refresh")}
             </button>
           </div>
