@@ -2765,7 +2765,7 @@ export default function PortfolioPage() {
       if (e instanceof DOMException && e.name === "AbortError") return; // unmount — ignore
       setError(e instanceof Error ? e.message : "Failed to load");
     }
-    finally { setLoading(false); }
+    finally { if (!signal?.aborted) setLoading(false); }
   }, []);
 
   // Silent refresh — only re-fetch holdings without full loading state (used by DataPanel after edits)

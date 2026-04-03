@@ -225,17 +225,27 @@ def _fetch_yfinance(ticker, currency, regular_only=False):
     else:
         fi = t.fast_info
         price = float(fi.last_price) if fi.last_price and fi.last_price > 0 else None
+        # fast_info.previous_close is lightweight (no extra API call) and directly
+        # gives the previous session's close — more reliable than parsing history
         prev_close = None
-        hist = t.history(period='5d')
-        if hist is not None and not hist.empty:
-            if price is None:
-                price = float(hist['Close'].iloc[-1])
-            if len(hist) >= 2:
-                _bar_date = hist.index[-1].date() if hasattr(hist.index[-1], 'date') else None
-                if _bar_date and _bar_date < datetime.date.today():
-                    prev_close = float(hist['Close'].iloc[-1])
-                else:
-                    prev_close = float(hist['Close'].iloc[-2])
+        try:
+            pc = fi.previous_close
+            if pc and pc > 0:
+                prev_close = float(pc)
+        except Exception:
+            pass
+        # Fall back to history if fast_info.previous_close unavailable
+        if prev_close is None:
+            hist = t.history(period='5d')
+            if hist is not None and not hist.empty:
+                if price is None:
+                    price = float(hist['Close'].iloc[-1])
+                if len(hist) >= 2:
+                    _bar_date = hist.index[-1].date() if hasattr(hist.index[-1], 'date') else None
+                    if _bar_date and _bar_date < datetime.date.today():
+                        prev_close = float(hist['Close'].iloc[-1])
+                    else:
+                        prev_close = float(hist['Close'].iloc[-2])
         return (price, currency, prev_close)
 
 
