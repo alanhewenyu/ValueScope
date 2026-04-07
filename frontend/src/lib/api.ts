@@ -11,7 +11,33 @@ function getAuthHeader(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-async function fetchAPI<T>(path: string, options?: RequestInit & { timeoutMs?: number; retries?: number }): Promise<T> {
+// ── Client-side response cache (in-memory, 5-min TTL) ──
+const _responseCache = new Map<string, { data: unknown; ts: number }>();
+const _CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function getCached<T>(key: string): T | undefined {
+  const entry = _responseCache.get(key);
+  if (!entry) return undefined;
+  if (Date.now() - entry.ts > _CACHE_TTL) { _responseCache.delete(key); return undefined; }
+  return entry.data as T;
+}
+
+function setCache(key: string, data: unknown) {
+  // Cap at 100 entries
+  if (_responseCache.size > 100) {
+    const oldest = _responseCache.keys().next().value;
+    if (oldest) _responseCache.delete(oldest);
+  }
+  _responseCache.set(key, { data, ts: Date.now() });
+}
+
+async function fetchAPI<T>(path: string, options?: RequestInit & { timeoutMs?: number; retries?: number; cacheKey?: string }): Promise<T> {
+  // Return cached response for GET requests if available
+  const cacheKey = options?.cacheKey;
+  if (cacheKey) {
+    const cached = getCached<T>(cacheKey);
+    if (cached !== undefined) return cached;
+  }
   const timeoutMs = options?.timeoutMs ?? 30000;
   const retries = options?.retries ?? 1;
   const externalSignal = options?.signal;
@@ -41,7 +67,9 @@ async function fetchAPI<T>(path: string, options?: RequestInit & { timeoutMs?: n
         const err = await res.json().catch(() => ({ detail: res.statusText }));
         throw new Error(err.detail || `API error: ${res.status}`);
       }
-      return res.json();
+      const data = await res.json();
+      if (cacheKey) setCache(cacheKey, data);
+      return data;
     } catch (e) {
       clearTimeout(timer);
       // If aborted by external signal (component unmount), don't retry — just throw
@@ -406,7 +434,7 @@ export async function getProfile(
   apikey = ""
 ): Promise<CompanyProfile> {
   const params = apikey ? `?apikey=${apikey}` : "";
-  return fetchAPI<CompanyProfile>(`/api/stock/profile/${ticker}${params}`);
+  return fetchAPI<CompanyProfile>(`/api/stock/profile/${ticker}${params}`, { cacheKey: `profile:${ticker}` });
 }
 
 export async function getFinancials(
@@ -414,7 +442,7 @@ export async function getFinancials(
   apikey = ""
 ): Promise<FinancialData> {
   const params = apikey ? `?apikey=${apikey}` : "";
-  return fetchAPI<FinancialData>(`/api/stock/financials/${ticker}${params}`);
+  return fetchAPI<FinancialData>(`/api/stock/financials/${ticker}${params}`, { cacheKey: `financials:${ticker}` });
 }
 
 export async function getWACC(
@@ -422,7 +450,7 @@ export async function getWACC(
   apikey = ""
 ): Promise<{ wacc: number; risk_free_rate: number; details: Record<string, unknown> }> {
   const params = apikey ? `?apikey=${apikey}` : "";
-  return fetchAPI(`/api/valuation/wacc/${ticker}${params}`);
+  return fetchAPI(`/api/valuation/wacc/${ticker}${params}`, { cacheKey: `wacc:${ticker}` });
 }
 
 export async function runDCF(params: {
@@ -450,7 +478,7 @@ export async function getDCFDefaults(
   apikey = ""
 ): Promise<DCFDefaults> {
   const params = apikey ? `?apikey=${apikey}` : "";
-  return fetchAPI<DCFDefaults>(`/api/valuation/dcf-defaults/${ticker}${params}`);
+  return fetchAPI<DCFDefaults>(`/api/valuation/dcf-defaults/${ticker}${params}`, { cacheKey: `dcf-defaults:${ticker}` });
 }
 
 export async function getBuffettValuation(
@@ -470,7 +498,8 @@ export async function getRelativeValuation(
   if (apikey) params.set("apikey", apikey);
   params.set("years", String(years));
   return fetchAPI<RelativeValuationData>(
-    `/api/analysis/valuation/${ticker}?${params}`
+    `/api/analysis/valuation/${ticker}?${params}`,
+    { cacheKey: `relval:${ticker}:${years}` },
   );
 }
 
@@ -479,7 +508,7 @@ export async function getScores(
   apikey = ""
 ): Promise<ScoresData> {
   const params = apikey ? `?apikey=${apikey}` : "";
-  return fetchAPI<ScoresData>(`/api/analysis/scores/${ticker}${params}`);
+  return fetchAPI<ScoresData>(`/api/analysis/scores/${ticker}${params}`, { cacheKey: `scores:${ticker}` });
 }
 
 export async function getEstimates(
@@ -487,7 +516,7 @@ export async function getEstimates(
   apikey = ""
 ): Promise<EstimatesData> {
   const params = apikey ? `?apikey=${apikey}` : "";
-  return fetchAPI<EstimatesData>(`/api/stock/estimates/${ticker}${params}`);
+  return fetchAPI<EstimatesData>(`/api/stock/estimates/${ticker}${params}`, { cacheKey: `estimates:${ticker}` });
 }
 
 export async function runTranscriptAnalysis(

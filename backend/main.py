@@ -85,9 +85,21 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 
+# Cache-Control rules for GET endpoints (path prefix → max-age in seconds)
+_CACHE_RULES: list[tuple[str, int]] = [
+    ("/api/stock/profile/", 300),        # 5 min — price changes
+    ("/api/stock/financials/", 600),      # 10 min — quarterly data
+    ("/api/stock/estimates/", 3600),      # 1 hour
+    ("/api/analysis/scores/", 3600),      # 1 hour
+    ("/api/analysis/valuation/", 3600),   # 1 hour
+    ("/api/valuation/wacc/", 1800),       # 30 min
+    ("/api/valuation/dcf-defaults/", 1800),  # 30 min
+    ("/api/valuation/buffett/", 1800),    # 30 min
+]
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """Log every request with timing — helps diagnose connectivity issues in Railway logs."""
+    """Log every request with timing. Add Cache-Control headers for cacheable GET endpoints."""
     start = _time.time()
     response = await call_next(request)
     elapsed = (_time.time() - start) * 1000
@@ -97,6 +109,12 @@ async def log_requests(request: Request, call_next):
     logger.log(level, "%s %s %d %.0fms client=%s",
                request.method, path, response.status_code, elapsed,
                request.headers.get("x-forwarded-for", request.client.host if request.client else "-"))
+    # Add Cache-Control for successful GET requests
+    if request.method == "GET" and response.status_code == 200:
+        for prefix, max_age in _CACHE_RULES:
+            if path.startswith(prefix):
+                response.headers["Cache-Control"] = f"public, max-age={max_age}"
+                break
     return response
 
 app.include_router(stock.router, prefix="/api/stock", tags=["Stock"])

@@ -61,7 +61,7 @@ export default function StockPage() {
     risk_free_rate: number;
     details: Record<string, unknown>;
   } | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true); // true until at least one core request finishes
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [indexes, setIndexes] = useState<string[]>([]);
@@ -78,25 +78,51 @@ export default function StockPage() {
     const apikey = fmpApiKey;
     let cancelled = false;
 
-    setLoading(true);
+    setInitialLoading(true);
     setError("");
+    setProfile(null);
+    setFinancials(null);
 
-    // Phase 1: Critical data (profile, financials) — blocks page render
     // Track whether failures are network errors (backend down) vs data not found
     let backendDown = false;
-    function catchWithDetect<T>(p: Promise<T>): Promise<T | null> {
-      return p.catch((e) => {
-        if (e instanceof TypeError && /fetch|network/i.test(e.message)) backendDown = true;
-        return null;
-      });
+    let profileDone = false;
+    let financialsDone = false;
+    let profileResult: CompanyProfile | null = null;
+    let financialsResult: FinancialData | null = null;
+
+    function checkDone() {
+      if (!profileDone || !financialsDone) return;
+      if (cancelled) return;
+      if (!profileResult && !financialsResult) {
+        setError(backendDown ? "__backend_down__" : decodedTicker);
+      }
+      setInitialLoading(false);
     }
 
-    const corePromise = Promise.all([
-      catchWithDetect(getProfile(decodedTicker, apikey)),
-      catchWithDetect(getFinancials(decodedTicker, apikey)),
-    ]);
+    // Profile — renders CompanyHeader as soon as it arrives
+    getProfile(decodedTicker, apikey)
+      .then((p) => {
+        if (cancelled) return;
+        profileResult = p;
+        setProfile(p);
+        if (p?.company_name) {
+          document.title = `${p.company_name} (${decodedTicker}) | ValueScope`;
+        }
+      })
+      .catch((e) => {
+        if (e instanceof TypeError && /fetch|network/i.test(e.message)) backendDown = true;
+      })
+      .finally(() => { profileDone = true; checkDone(); });
 
-    // Fire ALL secondary requests in parallel with Phase 1 (backend has
+    // Financials — fills in Overview tab content when ready
+    getFinancials(decodedTicker, apikey)
+      .then((f) => { if (!cancelled) { financialsResult = f; setFinancials(f); } })
+      .catch((e) => {
+        if (e instanceof TypeError && /fetch|network/i.test(e.message)) backendDown = true;
+      })
+      .finally(() => { financialsDone = true; checkDone(); });
+
+    // Fire ALL secondary requests in parallel (backend has
     // per-ticker cache locks — only one thread fetches, rest wait for cache)
     getIndexMembership(decodedTicker, apikey)
       .then((res) => { if (!cancelled) setIndexes(res.indexes || []); })
@@ -110,7 +136,6 @@ export default function StockPage() {
     getEstimates(decodedTicker, apikey)
       .then((d) => { if (!cancelled) setEstimates(d); })
       .catch(() => {});
-    // DCF tab data — fire immediately (backend caches financials for all endpoints)
     getDCFDefaults(decodedTicker, apikey)
       .then((d) => { if (!cancelled) setPrefetchedDefaults(d); })
       .catch(() => {});
@@ -118,36 +143,11 @@ export default function StockPage() {
       .then((d) => { if (!cancelled) setWacc(d); })
       .catch(() => {});
 
-    corePromise
-      .then(([p, f]) => {
-        if (cancelled) return;
-        if (!p && !f) {
-          setError(backendDown ? "__backend_down__" : decodedTicker);
-        }
-        setProfile(p);
-        if (p?.company_name) {
-          document.title = `${p.company_name} (${decodedTicker}) | ValueScope`;
-        }
-        setFinancials(f);
-      })
-      .finally(() => { if (!cancelled) setLoading(false); });
-
     return () => { cancelled = true; };
   }, [ticker, ready, fmpApiKey]);
 
-  if (loading) {
-    return (
-      <>
-        <Navbar />
-        <div className="flex items-center justify-center min-h-[60vh]">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-          <span className="ml-3 text-gray-500">
-            {t.loadingTicker(decodeURIComponent(ticker))}
-          </span>
-        </div>
-      </>
-    );
-  }
+  // Skeleton placeholder while data loads
+  const showSkeleton = !profile && !error && initialLoading;
 
   if (error) {
     const isBackendDown = error === "__backend_down__";
@@ -213,12 +213,30 @@ export default function StockPage() {
     { id: "insights", label: t.tabInsights },
   ];
 
+  // Financials still loading (profile may already be showing)
+  const financialsLoading = !financials && initialLoading;
+
   return (
     <>
       <Navbar />
       <div className="max-w-7xl mx-auto px-4 py-6">
-        {/* Company header */}
-        {profile && (
+        {/* Company header — skeleton or real */}
+        {showSkeleton ? (
+          <div className="mb-6 animate-pulse">
+            <div className="flex items-center gap-4 mb-3">
+              <div className="w-12 h-12 rounded-xl bg-gray-200 dark:bg-gray-800" />
+              <div>
+                <div className="h-6 w-48 bg-gray-200 dark:bg-gray-800 rounded mb-2" />
+                <div className="h-4 w-32 bg-gray-200 dark:bg-gray-800 rounded" />
+              </div>
+            </div>
+            <div className="flex gap-6 mt-3">
+              <div className="h-8 w-24 bg-gray-200 dark:bg-gray-800 rounded" />
+              <div className="h-8 w-20 bg-gray-200 dark:bg-gray-800 rounded" />
+              <div className="h-8 w-28 bg-gray-200 dark:bg-gray-800 rounded" />
+            </div>
+          </div>
+        ) : profile ? (
           <CompanyHeader
             companyName={profile.company_name}
             ticker={profile.symbol}
@@ -232,7 +250,7 @@ export default function StockPage() {
             image={profile.image}
             indexes={indexes}
           />
-        )}
+        ) : null}
 
         {/* FMP API key warning for US/JP stocks */}
         {showFmpWarning && (
@@ -246,7 +264,7 @@ export default function StockPage() {
           </div>
         )}
 
-        {/* Tab navigation */}
+        {/* Tab navigation — always visible */}
         <div className="border-b border-gray-200 dark:border-gray-800 mb-6">
           <div className="flex gap-1 -mb-px overflow-x-auto">
             {tabs.map((tab) => (
@@ -267,33 +285,63 @@ export default function StockPage() {
           </div>
         </div>
 
-        {/* Tab content */}
-        {activeTab === "overview" && (
-          <OverviewTab
-            profile={profile}
-            financials={financials}
-            wacc={wacc}
-            ticker={decodedTicker}
-            scores={scores}
-            relVal={relVal}
-            freshness={financials?.freshness}
-            estimates={estimates}
-            apikey={fmpApiKey}
-            deepseekKey={deepseekApiKey}
-          />
-        )}
-        {activeTab === "dcf" && <DCFTab ticker={decodedTicker} waccData={wacc} financials={financials} profile={profile} prefetchedDefaults={prefetchedDefaults} />}
-        {activeTab === "relative" && (
-          <RelativeValuationTab ticker={decodedTicker} initialData={relVal} />
-        )}
-        {activeTab === "scoring" && <ScoringTab ticker={decodedTicker} initialScores={scores} />}
-        {activeTab === "insights" && (
-          <InsightsTab
-            ticker={decodedTicker}
-            estimates={estimates}
-            apikey={fmpApiKey}
-            deepseekKey={deepseekApiKey}
-          />
+        {/* Tab content — show skeleton while financials load */}
+        {financialsLoading && activeTab === "overview" ? (
+          <div className="space-y-6 animate-pulse">
+            {/* Skeleton: key metrics row */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+                  <div className="h-3 w-16 bg-gray-200 dark:bg-gray-700 rounded mb-2" />
+                  <div className="h-6 w-24 bg-gray-200 dark:bg-gray-700 rounded" />
+                </div>
+              ))}
+            </div>
+            {/* Skeleton: chart area */}
+            <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
+              <div className="h-4 w-32 bg-gray-200 dark:bg-gray-700 rounded mb-4" />
+              <div className="h-48 bg-gray-100 dark:bg-gray-800 rounded" />
+            </div>
+            {/* Skeleton: second chart */}
+            <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
+              <div className="h-4 w-28 bg-gray-200 dark:bg-gray-700 rounded mb-4" />
+              <div className="h-48 bg-gray-100 dark:bg-gray-800 rounded" />
+            </div>
+            <div className="flex items-center justify-center py-4 text-sm text-gray-400">
+              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              {locale === "zh" ? "正在加载财务数据..." : "Loading financial data..."}
+            </div>
+          </div>
+        ) : (
+          <>
+            {activeTab === "overview" && (
+              <OverviewTab
+                profile={profile}
+                financials={financials}
+                wacc={wacc}
+                ticker={decodedTicker}
+                scores={scores}
+                relVal={relVal}
+                freshness={financials?.freshness}
+                estimates={estimates}
+                apikey={fmpApiKey}
+                deepseekKey={deepseekApiKey}
+              />
+            )}
+            {activeTab === "dcf" && <DCFTab ticker={decodedTicker} waccData={wacc} financials={financials} profile={profile} prefetchedDefaults={prefetchedDefaults} />}
+            {activeTab === "relative" && (
+              <RelativeValuationTab ticker={decodedTicker} initialData={relVal} />
+            )}
+            {activeTab === "scoring" && <ScoringTab ticker={decodedTicker} initialScores={scores} />}
+            {activeTab === "insights" && (
+              <InsightsTab
+                ticker={decodedTicker}
+                estimates={estimates}
+                apikey={fmpApiKey}
+                deepseekKey={deepseekApiKey}
+              />
+            )}
+          </>
         )}
       </div>
     </>
