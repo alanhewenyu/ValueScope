@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, memo } from "react";
 import { useParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import { Loader2 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import CompanyHeader from "@/components/CompanyHeader";
-import OverviewTab from "@/components/stock/OverviewTab";
-import RelativeValuationTab from "@/components/stock/RelativeValuationTab";
-import ScoringTab from "@/components/stock/ScoringTab";
-import InsightsTab from "@/components/stock/InsightsTab";
+
+// Lazy-load tab components — only the active tab's JS is loaded
+const OverviewTab = dynamic(() => import("@/components/stock/OverviewTab"), { ssr: false });
+const RelativeValuationTab = dynamic(() => import("@/components/stock/RelativeValuationTab"), { ssr: false });
+const ScoringTab = dynamic(() => import("@/components/stock/ScoringTab"), { ssr: false });
+const InsightsTab = dynamic(() => import("@/components/stock/InsightsTab"), { ssr: false });
 import {
   getProfile,
   getFinancials,
@@ -299,16 +302,16 @@ export default function StockPage() {
 
 // ── DCF Tab helpers ──
 
-function MetricItem({ label, value }: { label: string; value: string }) {
+const MetricItem = memo(function MetricItem({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <div className="text-xs text-gray-400 dark:text-gray-500 mb-1">{label}</div>
       <div className="text-lg font-semibold text-gray-900 dark:text-white">{value}</div>
     </div>
   );
-}
+});
 
-function HistoryHint({ metric, t, periodLabel, label }: { metric: HistoryMetric | null; t: ReturnType<typeof useI18n>["t"]; periodLabel?: string; label?: string }) {
+const HistoryHint = memo(function HistoryHint({ metric, t, periodLabel, label }: { metric: HistoryMetric | null; t: ReturnType<typeof useI18n>["t"]; periodLabel?: string; label?: string }) {
   if (!metric) return null;
   const years = Object.keys(metric.values).sort();
   const yearRange = years.length >= 2 ? `(${years[0]}–${years[years.length - 1]})` : "";
@@ -322,7 +325,7 @@ function HistoryHint({ metric, t, periodLabel, label }: { metric: HistoryMetric 
       &nbsp;|&nbsp; {t.histRange}: {metric.min.toFixed(1)} – {metric.max.toFixed(1)}
     </div>
   );
-}
+});
 
 function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
   ticker: string;
@@ -2077,7 +2080,7 @@ function BridgeRow({
 
 // ── DCF Input Field ──
 
-function DCFInputField({
+const DCFInputField = memo(function DCFInputField({
   label,
   desc,
   value,
@@ -2146,4 +2149,4 @@ function DCFInputField({
       {historyHint}
     </div>
   );
-}
+});

@@ -6,7 +6,8 @@ import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n";
 import { Loader2 } from "lucide-react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Use relative path so requests go through Next.js rewrites (no CORS issues)
+const API_BASE = "";
 
 export default function AuthPage() {
   return (

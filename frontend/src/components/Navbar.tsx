@@ -30,10 +30,9 @@ export default function Navbar() {
   // Check admin access when user changes
   useEffect(() => {
     if (!user) { setIsAdmin(false); return; }
-    const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
     const token = localStorage.getItem("valuescope_token");
     if (!token) return;
-    fetch(`${API_BASE}/api/admin/stats`, {
+    fetch(`/api/admin/stats`, {
       headers: { Authorization: `Bearer ${token}` },
     }).then(r => { setIsAdmin(r.ok); }).catch(() => { setIsAdmin(false); });
   }, [user]);

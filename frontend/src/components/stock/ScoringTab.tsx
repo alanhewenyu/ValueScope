@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, memo } from "react";
 import { Loader2 } from "lucide-react";
 import { getScores, type ScoresData } from "@/lib/api";
 import ScoreRadar from "@/components/ScoreRadar";
@@ -9,7 +9,7 @@ import { useSettings } from "@/lib/settings";
 
 // ── Helper components (private) ──
 
-function MetricItem({ label, value }: { label: string; value: string }) {
+const MetricItem = memo(function MetricItem({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <div className="text-xs text-gray-400 dark:text-gray-500 mb-1">
@@ -20,9 +20,9 @@ function MetricItem({ label, value }: { label: string; value: string }) {
       </div>
     </div>
   );
-}
+});
 
-function ScoreBar({
+const ScoreBar = memo(function ScoreBar({
   label,
   score,
   weight,
@@ -58,9 +58,9 @@ function ScoreBar({
       </div>
     </div>
   );
-}
+});
 
-function ScoreLabel({
+const ScoreLabel = memo(function ScoreLabel({
   range,
   label,
   color,
@@ -75,7 +75,7 @@ function ScoreLabel({
       <div className="text-xs mt-0.5">{label}</div>
     </div>
   );
-}
+});
 
 // ── ScoringTab ──
 

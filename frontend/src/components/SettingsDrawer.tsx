@@ -113,8 +113,7 @@ export default function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
     if (!fmpApiKey.trim()) return;
     setTestStatus("testing");
     try {
-      const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const res = await fetch(`${base}/api/stock/search?q=AAPL&apikey=${encodeURIComponent(fmpApiKey.trim())}`);
+      const res = await fetch(`/api/stock/search?q=AAPL&apikey=${encodeURIComponent(fmpApiKey.trim())}`);
       if (res.ok) {
         const data = await res.json();
         setTestStatus(Array.isArray(data) && data.length > 0 ? "success" : "fail");

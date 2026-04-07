@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, memo } from "react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -18,20 +18,20 @@ import { type EstimatesData } from "@/lib/api";
 
 // ── Analyst Estimates Section ──
 
-function AnalystEstimatesSection({ estimates }: { estimates: EstimatesData }) {
+const AnalystEstimatesSection = memo(function AnalystEstimatesSection({ estimates }: { estimates: EstimatesData }) {
   const { t } = useI18n();
 
   const pastQuarters = estimates.estimates || [];
   const forwardQuarters = estimates.forward_estimates || [];
 
-  const chartData = [...pastQuarters].reverse().map((q) => {
+  const chartData = useMemo(() => [...pastQuarters].reverse().map((q) => {
     const est = q.estimated_eps;
     const act = q.actual_eps;
     const isBeat = act != null && est != null && act > est;
     const surprisePct = act != null && est != null && est !== 0
       ? ((act - est) / Math.abs(est) * 100) : null;
     return { period: q.period, estimated: est, actual: act, isBeat, surprisePct };
-  });
+  }), [pastQuarters]);
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
@@ -201,14 +201,14 @@ function AnalystEstimatesSection({ estimates }: { estimates: EstimatesData }) {
       </div>
     </div>
   );
-}
+});
 
 // ── Analyst Rating Changes Section ──
 
 type RatingChange = { date: string; company: string; previous: string; new: string; direction: string };
 type TimeRange = "3m" | "6m" | "1y" | "all";
 
-function RatingChangesSection({ changes }: { changes: RatingChange[] }) {
+const RatingChangesSection = memo(function RatingChangesSection({ changes }: { changes: RatingChange[] }) {
   const [range, setRange] = useState<TimeRange>("3m");
 
   const filtered = useMemo(() => {
@@ -302,7 +302,7 @@ function RatingChangesSection({ changes }: { changes: RatingChange[] }) {
       )}
     </div>
   );
-}
+});
 
 // ── InsightsTab ──
 

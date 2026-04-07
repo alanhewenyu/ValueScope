@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, memo } from "react";
 import { Loader2 } from "lucide-react";
 import { getRelativeValuation, type RelativeValuationData } from "@/lib/api";
 import PercentileBar from "@/components/PercentileBar";
@@ -8,7 +8,7 @@ import ValuationHistoryChart from "@/components/ValuationHistoryChart";
 import { useI18n } from "@/lib/i18n";
 import { useSettings } from "@/lib/settings";
 
-function MetricItem({ label, value }: { label: string; value: string }) {
+const MetricItem = memo(function MetricItem({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <div className="text-xs text-gray-400 dark:text-gray-500 mb-1">
@@ -19,7 +19,7 @@ function MetricItem({ label, value }: { label: string; value: string }) {
       </div>
     </div>
   );
-}
+});
 
 export default function RelativeValuationTab({ ticker, initialData }: { ticker: string; initialData?: RelativeValuationData | null }) {
   const { t } = useI18n();

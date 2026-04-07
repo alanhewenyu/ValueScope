@@ -74,8 +74,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
     // Auto-fill from server config if user hasn't set keys locally
     if (!localFmp) {
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      fetch(`${apiBase}/api/stock/server-config`)
+      fetch(`/api/stock/server-config`)
         .then((r) => r.json())
         .then((cfg) => {
           if (cfg.fmpApiKey && !readKey(KEY_FMP)) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, memo, useMemo } from "react";
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -45,7 +45,7 @@ function extractSeries(
     .reverse(); // chronological
 }
 
-function MetricItem({ label, value }: { label: string; value: string }) {
+const MetricItem = memo(function MetricItem({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <div className="text-xs text-gray-400 dark:text-gray-500 mb-1">
@@ -56,11 +56,11 @@ function MetricItem({ label, value }: { label: string; value: string }) {
       </div>
     </div>
   );
-}
+});
 
 // ── Analyst Estimates Section ──
 
-function AnalystEstimatesSection({ estimates }: { estimates: EstimatesData }) {
+const AnalystEstimatesSection = memo(function AnalystEstimatesSection({ estimates }: { estimates: EstimatesData }) {
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(false);
 
@@ -68,12 +68,12 @@ function AnalystEstimatesSection({ estimates }: { estimates: EstimatesData }) {
   const forwardQuarters = estimates.forward_estimates || [];
 
   // Prepare chart data: reverse so oldest is on left
-  const chartData = [...pastQuarters].reverse().map((q) => ({
+  const chartData = useMemo(() => [...pastQuarters].reverse().map((q) => ({
     period: q.period,
     estimated: q.estimated_eps,
     actual: q.actual_eps,
     isBeat: q.actual_eps != null && q.estimated_eps != null && q.actual_eps > q.estimated_eps,
-  }));
+  })), [pastQuarters]);
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
@@ -189,7 +189,7 @@ function AnalystEstimatesSection({ estimates }: { estimates: EstimatesData }) {
       )}
     </div>
   );
-}
+});
 
 // ── Earnings Call Insights Section ──
 
@@ -207,7 +207,7 @@ const sentimentDot = (score: number) => {
   return "bg-red-500";
 };
 
-function EarningsCallInsightsSection({
+const EarningsCallInsightsSection = memo(function EarningsCallInsightsSection({
   ticker,
   apikey,
   deepseekKey,
@@ -418,7 +418,7 @@ function EarningsCallInsightsSection({
       )}
     </div>
   );
-}
+});
 
 // ── OverviewTab ──
 
@@ -451,8 +451,8 @@ export default function OverviewTab({
 }) {
   const { t, locale } = useI18n();
 
-  // ── Extract chart data from financials ──
-  const chartData = (() => {
+  // ── Extract chart data from financials (memoized) ──
+  const chartData = useMemo(() => {
     if (!financials) return null;
     const revenue = extractSeries(financials, "Revenue");
     const revenueGrowth = extractSeries(financials, "Revenue Growth (%)");
@@ -544,7 +544,7 @@ export default function OverviewTab({
       latestPeriod: latestPeriodLabel,
       reportedCurrency,
     };
-  })();
+  }, [financials]);
 
   const tooltipStyle = {
     contentStyle: {
