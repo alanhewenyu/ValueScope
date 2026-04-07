@@ -255,29 +255,6 @@ def get_profile(
             except Exception as e:
                 logger.warning("yfinance enrichment failed for %s: %s", normalized, e)
 
-    # Last resort: try FMP API for HK stocks if akshare + yfinance both failed
-    if (not company_name or company_name == normalized) and is_hk_stock(normalized) and apikey:
-        try:
-            from modeling.data import get_jsonparsed_data
-            fmp_url = f"https://financialmodelingprep.com/stable/profile?symbol={normalized}&apikey={apikey}"
-            fmp_data = get_jsonparsed_data(fmp_url)
-            if fmp_data and fmp_data[0].get("companyName"):
-                d = fmp_data[0]
-                company_name = d["companyName"]
-                profile["companyName"] = company_name
-                profile["industry"] = profile.get("industry") or d.get("industry", "")
-                profile["sector"] = profile.get("sector") or d.get("sector", "")
-                profile["price"] = profile.get("price") or d.get("price", 0)
-                profile["marketCap"] = profile.get("marketCap") or d.get("mktCap") or d.get("marketCap", 0)
-                profile["currency"] = d.get("currency", "HKD")
-                profile["country"] = d.get("country", "Hong Kong")
-                profile["exchange"] = d.get("exchange") or d.get("exchangeShortName", "HKSE")
-                profile["beta"] = d.get("beta") or profile.get("beta", 0)
-                profile["description"] = d.get("description", "")
-                profile["image"] = d.get("image", "")
-        except Exception as e:
-            logger.warning("FMP fallback for HK stock %s failed: %s", normalized, e)
-
     if not company_name or company_name == normalized:
         raise HTTPException(status_code=404, detail=f"Company not found: {ticker}")
 
