@@ -189,8 +189,12 @@ def admin_delete_user(user_id: str, admin_id: str = Depends(require_admin)):
 
     if os.path.exists(val_db):
         with sqlite3.connect(val_db) as conn:
-            conn.execute("DELETE FROM valuations WHERE user_id=?", (user_id,))
-            conn.execute("DELETE FROM password_reset_tokens WHERE user_id=?", (user_id,))
+            # These tables may not exist yet — ignore errors
+            for tbl in ("valuations", "password_reset_tokens"):
+                try:
+                    conn.execute(f"DELETE FROM {tbl} WHERE user_id=?", (user_id,))
+                except Exception:
+                    pass
             cursor = conn.execute("DELETE FROM users WHERE id=?", (user_id,))
             conn.commit()
             if cursor.rowcount > 0:
