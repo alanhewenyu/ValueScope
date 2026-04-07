@@ -65,13 +65,23 @@ def get_relative_valuation(
     if cached is not None:
         return cached
 
-    # Get current valuation ratios
-    current = get_current_valuation(normalized, apikey)
-    if 'error' in current:
-        raise HTTPException(status_code=404, detail=current['error'])
+    # Parallel: fetch current ratios + historical percentiles simultaneously
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        fut_current = ex.submit(get_current_valuation, normalized, apikey)
+        fut_historical = ex.submit(get_historical_valuations, normalized, years, apikey)
+        current = fut_current.result()
+        historical = fut_historical.result()
 
-    # Get historical PE/PB percentiles
-    historical = get_historical_valuations(normalized, years=years, apikey=apikey)
+    if 'error' in current:
+        err_msg = current['error']
+        # yfinance rate limit — try to build partial result from historical data
+        if 'Too Many' in err_msg or 'Rate' in err_msg or '429' in err_msg:
+            logger.warning("yfinance rate-limited for %s, using partial data", normalized)
+            # Return historical data with empty current (frontend can handle None values)
+            current = {'ticker': normalized, 'company_name': normalized}
+        else:
+            raise HTTPException(status_code=404, detail=err_msg)
 
     result = _safe_json({
         'current': current,
