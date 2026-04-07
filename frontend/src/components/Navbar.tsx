@@ -18,14 +18,7 @@ export default function Navbar() {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
-  // Show Portfolio/History if logged in OR on localhost
-  const [isLocal, setIsLocal] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  useEffect(() => {
-    const h = window.location.hostname;
-    setIsLocal(h === "localhost" || h === "127.0.0.1");
-  }, []);
-  const showPrivate = isLocal || !!user;
 
   // Check admin access when user changes
   useEffect(() => {
@@ -69,16 +62,12 @@ export default function Navbar() {
             <Link href="/" className="hover:text-gray-900 dark:hover:text-white transition-colors">
               {t.home}
             </Link>
-            {showPrivate && (
-              <Link href="/history" className="hover:text-gray-900 dark:hover:text-white transition-colors">
-                {locale === "zh" ? "估值记录" : "History"}
-              </Link>
-            )}
-            {showPrivate && (
-              <Link href="/portfolio" className="hover:text-gray-900 dark:hover:text-white transition-colors">
-                {locale === "zh" ? "投资组合" : "Portfolio"}
-              </Link>
-            )}
+            <Link href="/history" className="hover:text-gray-900 dark:hover:text-white transition-colors">
+              {locale === "zh" ? "估值记录" : "History"}
+            </Link>
+            <Link href="/portfolio" className="hover:text-gray-900 dark:hover:text-white transition-colors">
+              {locale === "zh" ? "投资组合" : "Portfolio"}
+            </Link>
             {isAdmin && (
               <Link href="/admin" className="hover:text-gray-900 dark:hover:text-white transition-colors text-amber-600 dark:text-amber-400">
                 Admin
@@ -160,24 +149,20 @@ export default function Navbar() {
                 >
                   {t.home}
                 </Link>
-                {showPrivate && (
-                  <Link
-                    href="/history"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
-                  >
-                    {locale === "zh" ? "估值记录" : "History"}
-                  </Link>
-                )}
-                {showPrivate && (
-                  <Link
-                    href="/portfolio"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
-                  >
-                    {locale === "zh" ? "投资组合" : "Portfolio"}
-                  </Link>
-                )}
+                <Link
+                  href="/history"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                >
+                  {locale === "zh" ? "估值记录" : "History"}
+                </Link>
+                <Link
+                  href="/portfolio"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                >
+                  {locale === "zh" ? "投资组合" : "Portfolio"}
+                </Link>
                 {isAdmin && (
                   <Link
                     href="/admin"
