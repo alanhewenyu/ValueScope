@@ -2298,42 +2298,53 @@ _index_cache = {}  # key: cache_key -> {'symbols': set, 'timestamp': float}
 _INDEX_CACHE_TTL = 3600  # 1 hour
 
 
+_index_membership_cache = {}  # ticker → (timestamp, indexes)
+_INDEX_MEMBERSHIP_TTL = 3600  # 1 hour
+
 def get_index_membership(ticker, apikey=''):
     """Return list of major index names that `ticker` belongs to."""
+    from concurrent.futures import ThreadPoolExecutor
+
     ticker = _normalize_ticker(ticker)
+
+    # Per-ticker result cache
+    cached = _index_membership_cache.get(ticker)
+    if cached and time.time() - cached[0] < _INDEX_MEMBERSHIP_TTL:
+        return cached[1]
+
     indexes = []
 
     if is_a_share(ticker):
         bare = _ticker_to_bare_code(ticker)
-        for idx_code, idx_name in [
-            ('000300', '沪深300'),
-            ('000905', '中证500'),
-            ('000016', '上证50'),
-        ]:
-            if _check_akshare_index(bare, idx_code):
-                indexes.append(idx_name)
+        checks = [('000300', '沪深300'), ('000905', '中证500'), ('000016', '上证50')]
+        # Parallel: 3 akshare API calls at once (~3s instead of ~9s)
+        with ThreadPoolExecutor(max_workers=3) as ex:
+            futures = [(ex.submit(_check_akshare_index, bare, code), name) for code, name in checks]
+            for fut, name in futures:
+                if fut.result():
+                    indexes.append(name)
     elif is_hk_stock(ticker):
-        # Hang Seng Index / HSTECH / Stock Connect — via official HSI API + akshare
-        bare = re.sub(r'\.HK$', '', ticker.upper()).lstrip('0')  # "0700.HK" → "700"
-        for series_code, idx_name_en, idx_label in [
-            ('hsi', 'Hang Seng Index', '恒生指数'),
-            ('hstech', 'Hang Seng TECH Index', '恒生科技指数'),
-        ]:
-            if _check_hsi_index(bare, series_code, idx_name_en):
-                indexes.append(idx_label)
-        if _check_hk_stock_connect(ticker):
-            indexes.append('港股通')
+        bare = re.sub(r'\.HK$', '', ticker.upper()).lstrip('0')
+        hsi_checks = [('hsi', 'Hang Seng Index', '恒生指数'), ('hstech', 'Hang Seng TECH Index', '恒生科技指数')]
+        # Parallel: HSI checks + Stock Connect at once
+        with ThreadPoolExecutor(max_workers=3) as ex:
+            hsi_futures = [(ex.submit(_check_hsi_index, bare, sc, en), label) for sc, en, label in hsi_checks]
+            connect_fut = ex.submit(_check_hk_stock_connect, ticker)
+            for fut, label in hsi_futures:
+                if fut.result():
+                    indexes.append(label)
+            if connect_fut.result():
+                indexes.append('港股通')
     elif not is_jpn_stock(ticker):
-        # US stocks — check FMP constituent lists
         if apikey:
-            for idx_name, endpoint in [
-                ('S&P 500', 'sp500_constituent'),
-                ('Nasdaq 100', 'nasdaq_constituent'),
-                ('Dow Jones', 'dowjones_constituent'),
-            ]:
-                if _check_fmp_index(ticker, endpoint, apikey):
-                    indexes.append(idx_name)
+            us_checks = [('S&P 500', 'sp500_constituent'), ('Nasdaq 100', 'nasdaq_constituent'), ('Dow Jones', 'dowjones_constituent')]
+            with ThreadPoolExecutor(max_workers=3) as ex:
+                futures = [(ex.submit(_check_fmp_index, ticker, ep, apikey), name) for name, ep in us_checks]
+                for fut, name in futures:
+                    if fut.result():
+                        indexes.append(name)
 
+    _index_membership_cache[ticker] = (time.time(), indexes)
     return indexes
 
 
