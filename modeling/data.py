@@ -329,18 +329,25 @@ def fetch_company_profile(ticker, apikey=''):
             profile['currency'] = _b_cur
         return profile
     if is_hk_stock(ticker):
-        try:
-            if _is_cloud_mode():
+        # Try akshare first (cloud mode) or yfinance (local), with cross-fallback
+        profile = None
+        if _is_cloud_mode():
+            try:
                 from .akshare_hk_data import fetch_akshare_hk_company_profile
-                return fetch_akshare_hk_company_profile(ticker)
-            else:
+                profile = fetch_akshare_hk_company_profile(ticker)
+            except Exception as e:
+                print(S.warning(f"⚠ HK akshare profile failed ({type(e).__name__}: {e}), trying yfinance..."))
+        if not profile or not profile.get('companyName') or profile.get('companyName') == ticker:
+            try:
                 from .yfinance_data import fetch_yfinance_hk_company_profile
-                return fetch_yfinance_hk_company_profile(ticker)
-        except Exception as e:
-            print(S.warning(f"⚠ HK company profile failed ({type(e).__name__}: {e}). Using minimal profile."))
-            return {'companyName': ticker, 'marketCap': 0, 'beta': 1.0,
-                    'country': 'Hong Kong', 'currency': 'HKD', 'exchange': 'HKSE',
-                    'price': 0, 'outstandingShares': 0}
+                profile = fetch_yfinance_hk_company_profile(ticker)
+            except Exception as e:
+                print(S.warning(f"⚠ HK yfinance profile also failed ({type(e).__name__}: {e}). Using minimal profile."))
+        if profile:
+            return profile
+        return {'companyName': ticker, 'marketCap': 0, 'beta': 1.0,
+                'country': 'Hong Kong', 'currency': 'HKD', 'exchange': 'HKSE',
+                'price': 0, 'outstandingShares': 0}
     if is_jpn_stock(ticker):
         url = f'https://financialmodelingprep.com/api/v3/profile/{ticker}?apikey={apikey}'
     else:
