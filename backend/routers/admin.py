@@ -139,14 +139,24 @@ def admin_users(_: str = Depends(require_admin)):
 
     with sqlite3.connect(val_db) as conn:
         conn.row_factory = sqlite3.Row
-        rows = conn.execute("""
-            SELECT u.id, u.email, u.created_at,
-                   COALESCE(v.cnt, 0) AS valuation_count
-            FROM users u
-            LEFT JOIN (SELECT user_id, COUNT(*) AS cnt FROM valuations GROUP BY user_id) v
-                ON v.user_id = u.id
-            ORDER BY u.created_at DESC
-        """).fetchall()
+        # Check if valuations table exists (may not exist yet if no one has saved a valuation)
+        has_valuations = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='valuations'"
+        ).fetchone() is not None
+        if has_valuations:
+            rows = conn.execute("""
+                SELECT u.id, u.email, u.created_at,
+                       COALESCE(v.cnt, 0) AS valuation_count
+                FROM users u
+                LEFT JOIN (SELECT user_id, COUNT(*) AS cnt FROM valuations GROUP BY user_id) v
+                    ON v.user_id = u.id
+                ORDER BY u.created_at DESC
+            """).fetchall()
+        else:
+            rows = conn.execute("""
+                SELECT id, email, created_at, 0 AS valuation_count
+                FROM users ORDER BY created_at DESC
+            """).fetchall()
 
     users = []
     port_db = _get_portfolio_db_path()
