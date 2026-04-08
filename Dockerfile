@@ -39,5 +39,7 @@ COPY backend/  ./backend/
 
 EXPOSE 8000
 
-# Run with 4 uvicorn workers; host 0.0.0.0 so Docker port-mapping works
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+# Run with 2 uvicorn workers (sufficient for current traffic).
+# --max-requests 500: restart each worker after 500 requests to reclaim leaked memory.
+# --max-requests-jitter 50: stagger restarts so not all workers restart simultaneously.
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--max-requests", "500", "--max-requests-jitter", "50"]

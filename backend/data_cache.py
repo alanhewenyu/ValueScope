@@ -16,6 +16,27 @@ _global_lock = threading.Lock()
 _TTL = 300  # 5 minutes
 _PROFILE_TTL = 600  # 10 minutes
 _BETA_TTL = 86400  # 24 hours — beta barely changes day-to-day
+_MAX_CACHE_ENTRIES = 100  # cap to prevent unbounded memory growth
+
+
+def _evict_if_needed():
+    """Evict expired entries, then oldest entries if cache exceeds max size."""
+    if len(_cache) <= _MAX_CACHE_ENTRIES:
+        return
+    now = time.monotonic()
+    # Phase 1: remove expired entries
+    expired = [k for k, (ts, _) in _cache.items()
+               if (now - ts) > max(_TTL, _PROFILE_TTL, _BETA_TTL)]
+    for k in expired:
+        _cache.pop(k, None)
+        _locks.pop(k, None)
+    # Phase 2: if still over limit, remove oldest 25%
+    if len(_cache) > _MAX_CACHE_ENTRIES:
+        sorted_keys = sorted(_cache, key=lambda k: _cache[k][0])
+        to_remove = sorted_keys[:len(sorted_keys) // 4 or 1]
+        for k in to_remove:
+            _cache.pop(k, None)
+            _locks.pop(k, None)
 
 
 def _get_lock(key: str) -> threading.Lock:
@@ -59,6 +80,7 @@ def get_historical_financials(ticker, period, apikey, historical_periods):
 
         if data is not None:
             _cache[cache_key] = (time.monotonic(), copy.deepcopy(data))
+            _evict_if_needed()
 
         return data
 
@@ -84,6 +106,7 @@ def get_beta(ticker):
         from modeling.data import _calculate_beta_akshare
         beta = _calculate_beta_akshare(ticker)
         _cache[cache_key] = (time.monotonic(), beta)
+        _evict_if_needed()
         return beta
 
 
@@ -134,4 +157,5 @@ def get_company_profile(ticker, apikey=''):
             profile = _fill_profile_from_financial_data(profile, fin_cached[1])
 
         _cache[cache_key] = (time.monotonic(), copy.deepcopy(profile))
+        _evict_if_needed()
         return profile
