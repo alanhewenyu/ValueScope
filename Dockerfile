@@ -39,7 +39,6 @@ COPY backend/  ./backend/
 
 EXPOSE 8000
 
-# Run with 2 uvicorn workers (sufficient for current traffic).
-# --max-requests 500: restart each worker after 500 requests to reclaim leaked memory.
-# --max-requests-jitter 50: stagger restarts so not all workers restart simultaneously.
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--max-requests", "500"]
+# Run with 1 uvicorn worker (sufficient for current traffic).
+# --limit-max-requests 500: restart worker after 500 requests to reclaim leaked memory.
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--limit-max-requests", "500"]
