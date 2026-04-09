@@ -40,5 +40,5 @@ COPY backend/  ./backend/
 EXPOSE 8000
 
 # Run with 1 uvicorn worker (sufficient for current traffic).
-# --limit-max-requests 500: restart worker after 500 requests to reclaim leaked memory.
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--limit-max-requests", "500"]
+# Memory is controlled by cache eviction in data_cache.py instead of worker recycling.
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
