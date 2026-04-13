@@ -5,6 +5,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: "*",
       allow: "/",
+      disallow: ["/auth", "/history", "/portfolio", "/?ticker="],
     },
     sitemap: "https://valuescope.app/sitemap.xml",
   };
