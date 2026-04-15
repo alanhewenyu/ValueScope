@@ -12,14 +12,8 @@ export default function Home() {
   const { t, locale } = useI18n();
   const { user, loading: authLoading, logout } = useAuth();
   const router = useRouter();
-  const [isLocal, setIsLocal] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const h = window.location.hostname;
-    setIsLocal(h === "localhost" || h === "127.0.0.1");
-  }, []);
-  const showPrivate = isLocal || !!user;
 
   // Close menu on outside click
   useEffect(() => {
@@ -32,18 +26,14 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Floating top-right nav */}
-      <div className="absolute top-4 right-4 z-40 flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-        {showPrivate && (
-          <>
-            <Link href="/history" className="hover:text-gray-900 dark:hover:text-white transition-colors">
-              {locale === "zh" ? "估值记录" : "History"}
-            </Link>
-            <Link href="/portfolio" className="hover:text-gray-900 dark:hover:text-white transition-colors">
-              {locale === "zh" ? "投资组合" : "Portfolio"}
-            </Link>
-          </>
-        )}
+      {/* Floating top-right nav — links hidden on mobile to avoid overlap */}
+      <div className="absolute top-4 right-4 z-40 flex items-center gap-3 sm:gap-4 text-sm text-gray-500 dark:text-gray-400">
+        <Link href="/history" className="hidden sm:inline hover:text-gray-900 dark:hover:text-white transition-colors">
+          {locale === "zh" ? "估值记录" : "History"}
+        </Link>
+        <Link href="/portfolio" className="hidden sm:inline hover:text-gray-900 dark:hover:text-white transition-colors">
+          {locale === "zh" ? "投资组合" : "Portfolio"}
+        </Link>
         <LanguageToggle />
         {!authLoading && !user && (
           <Link
