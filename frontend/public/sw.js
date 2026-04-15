@@ -1,5 +1,5 @@
 // ValueScope Service Worker — enables PWA install + basic offline caching
-const CACHE_NAME = 'valuescope-v1';
+const CACHE_NAME = 'valuescope-v2';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
