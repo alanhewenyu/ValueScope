@@ -175,7 +175,7 @@ python main.py --auto             # 全自动
 
 了解更多公司估值内容，欢迎访问 [jianshan.co](https://jianshan.co) 或扫码关注微信公众号：**见山笔记**
 
-<img src="https://jianshan.co/images/wechat-qrcode.jpg" alt="见山笔记 微信公众号二维码" width="200">
+<img src="https://jianshan.co/images/wechat-qrcode-v2.jpg" alt="见山笔记 微信公众号二维码" width="200">
 
 ---
 

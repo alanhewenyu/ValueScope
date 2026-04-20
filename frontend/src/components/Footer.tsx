@@ -68,7 +68,7 @@ export default function Footer() {
             </p>
             <div className="bg-white rounded-xl p-3 inline-block">
               <Image
-                src="https://jianshan.co/images/wechat-qrcode.jpg"
+                src="https://jianshan.co/images/wechat-qrcode-v2.jpg"
                 alt="WeChat QR Code"
                 width={220}
                 height={220}

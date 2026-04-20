@@ -175,7 +175,7 @@ Issues and pull requests are welcome. Contact: [alanhe@icloud.com](mailto:alanhe
 
 For more on company valuation, visit [jianshan.co](https://jianshan.co) or scan to follow on WeChat:
 
-<img src="https://jianshan.co/images/wechat-qrcode.jpg" alt="见山笔记 WeChat QR Code" width="200">
+<img src="https://jianshan.co/images/wechat-qrcode-v2.jpg" alt="见山笔记 WeChat QR Code" width="200">
 
 ---
 
