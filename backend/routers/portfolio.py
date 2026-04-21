@@ -203,6 +203,7 @@ def list_closed_trades(user_id: str = Depends(get_current_user)):
 def add_closed_trade(trade: ClosedTradeIn, user_id: str = Depends(get_current_user)):
     """Record a closed trade."""
     _require_db()
+    import datetime as _dt
     from backend.services.portfolio_db import init_db, insert_closed_trade, get_conn
     init_db()
     with get_conn() as conn:
@@ -213,6 +214,7 @@ def add_closed_trade(trade: ClosedTradeIn, user_id: str = Depends(get_current_us
             realized_pnl_cny=trade.realized_pnl_cny,
             quantity=trade.quantity,
             cost_price=trade.buy_price, close_price=trade.sell_price,
+            close_date=_dt.date.today().isoformat(),
             user_id=user_id,
         )
         conn.commit()
@@ -666,17 +668,50 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
         capital = compute_capital(conn, fx, user_id=user_id)
     total_pnl_capital = net_assets - capital  # Total P&L = Net Assets - Capital
 
-    # YTD realized P&L from closed trades (by market)
+    # YTD realized P&L from closed trades (by market).
+    # For fully-closed tickers: aggregate Σ realized_pnl across all this year's trades
+    # for that ticker and subtract baseline_unrealized once. Robust to share-count
+    # changes, partial-sell + cost-basis adjustments, and mid-year buy-then-sell.
+    # For partial-closed tickers (still in positions): keep per-trade realized_pnl_cny;
+    # the held-position loop already subtracts baseline_unrealized via its own formula.
     import datetime as _dt
+    from collections import defaultdict
     ytd_start = f"{_dt.date.today().year}-01-01"
+    open_tickers = {p['ticker'] for p in positions}
     ytd_realized_by_market: dict[str, float] = {}
     ytd_realized_total = 0.0
+
+    fc_groups: dict[str, dict] = defaultdict(
+        lambda: {'realized_native': 0.0, 'market': 'Other', 'currency': 'CNY'})
+
     for row in _query(path,
-            "SELECT market, COALESCE(realized_pnl_cny, 0) AS rpl "
+            "SELECT market, ticker, currency, "
+            "COALESCE(realized_pnl, 0) AS rpn, "
+            "COALESCE(realized_pnl_cny, 0) AS rpl "
             "FROM closed_trades WHERE close_date >= ? AND user_id=?", (ytd_start, user_id)):
+        ticker = row['ticker']
         mkt = row['market'] or 'Other'
-        ytd_realized_by_market[mkt] = ytd_realized_by_market.get(mkt, 0) + row['rpl']
-        ytd_realized_total += row['rpl']
+        if ticker and ticker not in open_tickers:
+            g = fc_groups[ticker]
+            g['realized_native'] += row['rpn']
+            g['market'] = mkt
+            g['currency'] = row['currency']
+        else:
+            ytd_realized_by_market[mkt] = ytd_realized_by_market.get(mkt, 0) + row['rpl']
+            ytd_realized_total += row['rpl']
+
+    for ticker, g in fc_groups.items():
+        baseline = ytd_baselines.get(ticker)
+        rate = fx.get(g['currency'], 1.0)
+        if (baseline is not None
+                and baseline.get('cost_price') is not None
+                and baseline.get('quantity') is not None):
+            baseline_unrealized = (baseline['price'] - baseline['cost_price']) * baseline['quantity']
+            contribution = (g['realized_native'] - baseline_unrealized) * rate
+        else:
+            contribution = g['realized_native'] * rate
+        ytd_realized_by_market[g['market']] = ytd_realized_by_market.get(g['market'], 0) + contribution
+        ytd_realized_total += contribution
 
     total_ytd_pnl_cny += ytd_realized_total
 
