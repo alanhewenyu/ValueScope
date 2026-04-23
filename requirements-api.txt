@@ -20,7 +20,12 @@ akshare>=1.14
 yfinance>=1.2,<2.0
 
 # V8 engine for akshare
-py-mini-racer
+# NOTE: use `mini-racer` (the maintained fork, 0.14+) — NOT `py-mini-racer` (legacy
+# 0.6.0, 2020). Both install into the py_mini_racer/ namespace; if both get
+# installed the legacy __init__.py wins and calls old symbols on the new dylib,
+# crashing with `dlsym: mr_eval_context symbol not found`. akshare pulls
+# mini-racer in transitively but we pin explicitly for reproducibility.
+mini-racer
 
 # Authentication
 bcrypt>=4.0,<5.0
