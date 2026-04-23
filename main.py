@@ -454,6 +454,14 @@ def main(args):
 
         # ── Key financial driver charts (collapsed by default) ──
         _relval_data = _f_relval.result()  # already fetched in parallel
+
+        # Wait for beta + share_float BEFORE the prompt — they print progress
+        # messages from background threads. If they land mid-input(), the user
+        # sees the beta line glued to the prompt and can't read or answer it.
+        if _f_beta:
+            company_profile['beta'] = _f_beta.result()
+        company_info = _f_share_float.result()
+
         if not auto_mode:
             _show_charts = input(f'{S.prompt("View charts & relative valuation? (y/N, Enter to skip): ")}').strip().lower()
             if _show_charts in ('y', 'yes'):
@@ -462,11 +470,6 @@ def main(args):
         else:
             # In auto mode, skip charts (no user interaction)
             pass
-
-        # ── Collect Phase 2 results (should be done by now) ──
-        if _f_beta:
-            company_profile['beta'] = _f_beta.result()
-        company_info = _f_share_float.result()
 
         # ── Detect TTM & base year (fast, no I/O) ──
         _ttm_quarter = financial_data.get('ttm_latest_quarter', '')
