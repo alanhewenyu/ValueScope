@@ -23,7 +23,11 @@ from modeling.data import (
     get_company_share_float,
     _fill_profile_from_financial_data,
 )
-from backend.data_cache import get_historical_financials, get_company_profile as cached_get_profile
+from backend.data_cache import (
+    get_historical_financials,
+    get_company_profile as cached_get_profile,
+    update_profile_cache,
+)
 from modeling.dcf import (
     calculate_dcf,
     calculate_wacc,
@@ -40,6 +44,25 @@ from modeling.constants import (
 )
 from backend.cache import get as cache_get, put as cache_put, make_key
 from backend.utils import _build_valuation_params
+
+def _ensure_profile_complete(profile, financial_data, ticker):
+    """Backfill missing profile fields from financial_data.
+
+    A/HK shares can end up with outstandingShares=0 / generic name when the
+    quote endpoints (e.g. push2.eastmoney.com) are unreachable while the
+    financials endpoints (datacenter-web.eastmoney.com) still work. The
+    balance-sheet API exposes SHARE_CAPITAL which is the same 总股本 figure,
+    so use it as fallback. Push the enriched profile back to cache so that
+    parallel/subsequent calls within the request also see it.
+    """
+    if not (profile and financial_data):
+        return profile
+    if profile.get('outstandingShares', 0) and profile.get('companyName'):
+        return profile  # already complete
+    profile = _fill_profile_from_financial_data(profile, financial_data)
+    update_profile_cache(ticker, profile)
+    return profile
+
 
 router = APIRouter()
 
@@ -108,6 +131,8 @@ def get_wacc(
     if financial_data is None:
         raise HTTPException(status_code=404, detail=f"Financial data not found: {ticker}")
 
+    profile = _ensure_profile_complete(profile, financial_data, normalized)
+
     summary_df = financial_data["summary"]
     base_year_data = summary_df.iloc[:, 0].copy()
     base_year_data.name = summary_df.columns[0]
@@ -148,6 +173,8 @@ def run_dcf(params: DCFParams):
 
     if financial_data is None:
         raise HTTPException(status_code=404, detail=f"Financial data not found: {params.ticker}")
+
+    profile = _ensure_profile_complete(profile, financial_data, normalized)
 
     share_info = get_company_share_float(normalized, params.apikey, company_profile=profile)
     summary_df = financial_data["summary"]
@@ -362,6 +389,8 @@ def get_buffett_valuation(
 
     if financial_data is None:
         raise HTTPException(status_code=404, detail=f"Financial data not found: {ticker}")
+
+    profile = _ensure_profile_complete(profile, financial_data, normalized)
 
     share_info = get_company_share_float(normalized, apikey, company_profile=profile)
     summary_df = financial_data["summary"]
@@ -649,7 +678,7 @@ def ai_analyze(params: AIAnalyzeParams, request: Request):
         raise HTTPException(status_code=404, detail=f"Financial data not found: {params.ticker}")
 
     profile = cached_get_profile(normalized, params.apikey)
-    profile = _fill_profile_from_financial_data(profile, financial_data)
+    profile = _ensure_profile_complete(profile, financial_data, normalized)
 
     summary_df = financial_data["summary"]
     base_year_col = summary_df.columns[0]
@@ -827,7 +856,7 @@ def ai_analyze_stream(params: AIAnalyzeParams, request: Request):
             return
 
         profile = fut_prof.result()
-        profile = _fill_profile_from_financial_data(profile, financial_data)
+        profile = _ensure_profile_complete(profile, financial_data, normalized)
 
         summary_df = financial_data["summary"]
         base_year_col = summary_df.columns[0]
@@ -1088,7 +1117,7 @@ def gap_analyze(params: GapAnalyzeParams, request: Request):
             return
 
         profile = fut_prof.result()
-        profile = _fill_profile_from_financial_data(profile, financial_data)
+        profile = _ensure_profile_complete(profile, financial_data, normalized)
 
         summary_df = financial_data["summary"]
         base_year_col = summary_df.columns[0]

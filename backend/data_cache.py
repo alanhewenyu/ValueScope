@@ -156,6 +156,24 @@ def get_company_profile(ticker, apikey=''):
         if fin_cached and (time.monotonic() - fin_cached[0]) < _TTL:
             profile = _fill_profile_from_financial_data(profile, fin_cached[1])
 
-        _cache[cache_key] = (time.monotonic(), copy.deepcopy(profile))
-        _evict_if_needed()
+        # Don't cache an obviously incomplete profile for A/HK shares — happens when
+        # push2.eastmoney.com is unreachable but datacenter-web (financials) still works.
+        # Skipping cache lets the next request retry; meanwhile callers should call
+        # update_profile_cache() after enriching with financial_data to seed the cache.
+        from modeling.data import is_a_share, is_hk_stock
+        _needs_shares = is_a_share(ticker) or is_hk_stock(ticker)
+        if not (_needs_shares and not profile.get('outstandingShares')):
+            _cache[cache_key] = (time.monotonic(), copy.deepcopy(profile))
+            _evict_if_needed()
         return profile
+
+
+def update_profile_cache(ticker, profile):
+    """Push an enriched profile back into the cache.
+
+    Used when callers fetch profile + financials in parallel and then enrich
+    profile with financial_data after both complete. Without this, the cache
+    would hold the un-enriched (e.g. outstandingShares=0) version.
+    """
+    cache_key = f"profile:{ticker}"
+    _cache[cache_key] = (time.monotonic(), copy.deepcopy(profile))
