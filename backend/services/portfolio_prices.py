@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import os
 import re
 import time as _time
 import sqlite3
@@ -18,6 +19,12 @@ from typing import Callable
 from .portfolio_db import DB_PATH
 
 logger = logging.getLogger("valuescope.portfolio.prices")
+
+# FMP fallback — only active when FMP_API_KEY env var is set.
+# Public deployments (valuescope.app) leave this unset so user FMP keys
+# are never required. Self-hosters with a subscription set it in .env.
+FMP_API_KEY = os.environ.get("FMP_API_KEY", "")
+FMP_BASE = "https://financialmodelingprep.com/api/v3"
 
 # Module-level thread pool — reused across all calls (avoids create/destroy overhead)
 _pool = ThreadPoolExecutor(max_workers=8)
@@ -49,6 +56,34 @@ def _retry(fn: Callable, retries: int = _MAX_RETRIES, delay: float = _RETRY_DELA
             if attempt < retries:
                 _time.sleep(delay * (attempt + 1))  # linear backoff: 1s, 2s
     raise last_exc
+
+
+# ── FMP fallback (price + FX) ─────────────────────────────
+
+def _fetch_fmp_quote(symbol: str) -> tuple[float, float | None]:
+    """Fetch (price, previousClose) from FMP /quote. Raises on failure.
+
+    Symbol uses yfinance suffixes (.SS, .SZ, .HK, .T) — FMP accepts them as-is
+    for the markets we use. US tickers have no suffix in either source.
+    """
+    if not FMP_API_KEY:
+        raise RuntimeError("FMP_API_KEY not set")
+    import requests
+    resp = requests.get(
+        f"{FMP_BASE}/quote/{symbol}",
+        params={"apikey": FMP_API_KEY},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if not data:
+        raise ValueError(f"FMP returned empty for {symbol}")
+    row = data[0]
+    price = row.get("price")
+    if price is None:
+        raise ValueError(f"FMP no price for {symbol}")
+    prev = row.get("previousClose")
+    return float(price), (float(prev) if prev is not None else None)
 
 
 # ── A-share domestic API fallback ─────────────────────────
@@ -293,6 +328,17 @@ def fetch_price(ticker: str, regular_only: bool = False) -> tuple[float | None, 
                 logger.warning("price fetch failed for %s: %s", ticker, e)
                 result = (None, None, None)
 
+        # FMP fallback — last resort when yfinance/eastmoney both failed.
+        # Skip B-shares: FMP returns the SS/SZ listing price in CNY, but B-shares
+        # are denominated in USD/HKD, so the number would be in the wrong currency.
+        if result[0] is None and FMP_API_KEY and not _is_b_share(ticker):
+            try:
+                price, prev = _retry(lambda: _fetch_fmp_quote(ticker))
+                result = (price, currency, prev)
+                logger.info("FMP fallback succeeded for %s", ticker)
+            except Exception as e_fmp:
+                logger.warning("FMP fallback failed for %s: %s", ticker, e_fmp)
+
     # Only cache successful fetches; failed ones (None) should be retried immediately
     if result[0] is not None:
         _price_cache[ticker] = (result[0], result[1], result[2], _time.time())
@@ -327,21 +373,30 @@ def fetch_fx_rate(currency: str) -> float | None:
     try:
         result = _retry(_try_yf_fx)
     except Exception:
-        # Fallback: try exchangerate.host (free, no key needed)
+        result = None
+
+    # FMP fallback (only when key set) — preferred over exchangerate.host
+    if result is None and FMP_API_KEY:
+        try:
+            price, _ = _fetch_fmp_quote(f"{currency}CNY")
+            result = price
+            logger.info("FMP FX fallback succeeded for %s", currency)
+        except Exception as e_fmp:
+            logger.warning("FMP FX fallback failed for %s: %s", currency, e_fmp)
+
+    # Last resort: exchangerate.host (free, no key needed)
+    if result is None:
         try:
             import requests
             resp = requests.get(
-                f'https://api.exchangerate.host/latest',
+                'https://api.exchangerate.host/latest',
                 params={'base': currency, 'symbols': 'CNY'},
                 timeout=10,
             )
             resp.raise_for_status()
             data = resp.json()
-            result = data.get('rates', {}).get('CNY')
-            if result:
-                result = float(result)
-            else:
-                result = None
+            rate = data.get('rates', {}).get('CNY')
+            result = float(rate) if rate else None
         except Exception:
             result = None
 
