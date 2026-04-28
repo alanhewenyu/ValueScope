@@ -89,7 +89,12 @@ def _fetch_fmp_quote(symbol: str) -> tuple[float, float | None]:
 # ── A-share domestic API fallback ─────────────────────────
 
 def _fetch_ashare_domestic(ticker: str) -> tuple[float, str, float | None]:
-    """Fetch A-share price from eastmoney API. Returns (price, 'CNY', prev_close) or raises."""
+    """Fetch SSE/SZSE price from eastmoney. Returns (price, currency, prev_close) or raises.
+
+    Works for both A-shares (600xxx/000xxx → CNY) and B-shares (900xxx → USD,
+    20xxxx → HKD). Eastmoney returns the price in the actual trading currency,
+    so currency is inferred from the ticker via _infer_currency().
+    """
     import requests
     # Map yfinance ticker to eastmoney secid: 600xxx.SS -> 1.600xxx, 000xxx.SZ -> 0.000xxx
     code = ticker.split('.')[0]
@@ -111,15 +116,18 @@ def _fetch_ashare_domestic(ticker: str) -> tuple[float, str, float | None]:
     if not data:
         raise ValueError(f"No data returned for {ticker}")
 
-    # f43=latest price, f60=prev close, f86=last update timestamp
-    # prices in cents -> divide by 100
+    # f43=latest price, f60=prev close, f86=last update timestamp.
+    # Raw integer scale: A-shares & SZSE B-shares are ×100 (CNY/HKD, 2 decimals);
+    # SSE B-shares are ×1000 (USD, 3 decimals — quoted in cents). Mismatching
+    # this gives a 10× error on 900xxx.SS that silently inflates B-share MV.
     price_raw = data.get('f43')
     prev_raw = data.get('f60')
     if price_raw is None or price_raw == '-':
         raise ValueError(f"No price for {ticker}")
 
-    price = float(price_raw) / 100
-    prev_close = float(prev_raw) / 100 if prev_raw and prev_raw != '-' else None
+    divisor = 1000 if (_is_b_share(ticker) and ticker.endswith('.SS')) else 100
+    price = float(price_raw) / divisor
+    prev_close = float(prev_raw) / divisor if prev_raw and prev_raw != '-' else None
 
     # If data is not from today, market didn't trade today (weekend/holiday).
     # Set prev_close = price so daily P&L = 0.
@@ -132,7 +140,7 @@ def _fetch_ashare_domestic(ticker: str) -> tuple[float, str, float | None]:
         except (ValueError, OSError):
             pass
 
-    return (price, 'CNY', prev_close)
+    return (price, _infer_currency(ticker), prev_close)
 
 
 def _is_b_share(ticker: str) -> bool:
@@ -308,9 +316,10 @@ def fetch_price(ticker: str, regular_only: bool = False) -> tuple[float | None, 
     else:
         currency = _infer_currency(ticker)
 
-        # A-share tickers (not B-share): try domestic API first (faster, more reliable), yfinance as fallback
-        # B-shares (900xxx.SS, 200xxx.SZ) skip domestic API -- eastmoney returns CNY-converted price, not actual USD/HKD
-        if currency == 'CNY' and (ticker.endswith('.SS') or ticker.endswith('.SZ')):
+        # SSE/SZSE tickers (A-share + B-share): eastmoney returns the price in the
+        # actual trading currency, so it's safe for B-shares too. yfinance is a
+        # fallback when eastmoney is unreachable.
+        if ticker.endswith('.SS') or ticker.endswith('.SZ'):
             try:
                 result = _retry(lambda: _fetch_ashare_domestic(ticker))
             except Exception as e_dom:
@@ -335,7 +344,7 @@ def fetch_price(ticker: str, regular_only: bool = False) -> tuple[float | None, 
             try:
                 price, prev = _retry(lambda: _fetch_fmp_quote(ticker))
                 result = (price, currency, prev)
-                logger.info("FMP fallback succeeded for %s", ticker)
+                logger.warning("FMP fallback succeeded for %s", ticker)
             except Exception as e_fmp:
                 logger.warning("FMP fallback failed for %s: %s", ticker, e_fmp)
 
@@ -380,7 +389,7 @@ def fetch_fx_rate(currency: str) -> float | None:
         try:
             price, _ = _fetch_fmp_quote(f"{currency}CNY")
             result = price
-            logger.info("FMP FX fallback succeeded for %s", currency)
+            logger.warning("FMP FX fallback succeeded for %s", currency)
         except Exception as e_fmp:
             logger.warning("FMP FX fallback failed for %s: %s", currency, e_fmp)
 
