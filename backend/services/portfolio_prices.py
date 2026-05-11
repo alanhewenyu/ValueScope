@@ -170,7 +170,14 @@ def _infer_currency(ticker: str) -> str | None:
 
 
 def fetch_fund_nav(code: str) -> tuple[float | None, str | None, float | None]:
-    """Fetch fund NAV from eastmoney. Returns (nav, 'CNY', prev_nav) or (None, None, None)."""
+    """Fetch fund NAV. Returns (nav, 'CNY', prev_nav) or (None, None, None).
+
+    Primary: ``api.fund.eastmoney.com`` (direct, lightweight).
+    Fallback: ``ak.fund_open_fund_info_em`` (used when the primary host has DNS
+    or connection issues — e.g. ``api.fund.eastmoney.com`` was unreachable while
+    other eastmoney subdomains still resolved).
+    """
+    # --- Primary: direct HTTP to eastmoney fund API ---
     try:
         import requests
         url = 'https://api.fund.eastmoney.com/f10/lsjz'
@@ -199,7 +206,27 @@ def fetch_fund_nav(code: str) -> tuple[float | None, str | None, float | None]:
                         pass
                 return nav, 'CNY', prev_nav
     except Exception as e:
-        logger.warning("fund NAV fetch failed for %s: %s", code, e)
+        logger.warning("fund NAV (eastmoney direct) failed for %s: %s", code, e)
+
+    # --- Fallback: akshare fund_open_fund_info_em ---
+    try:
+        import akshare as ak
+        df = ak.fund_open_fund_info_em(symbol=code, indicator='单位净值走势')
+        if df is not None and not df.empty and '单位净值' in df.columns:
+            nav = float(df['单位净值'].iloc[-1])
+            prev_nav = float(df['单位净值'].iloc[-2]) if len(df) > 1 else None
+            # Non-trading day adjustment
+            if '净值日期' in df.columns and prev_nav is not None:
+                try:
+                    _nav_date = datetime.date.fromisoformat(str(df['净值日期'].iloc[-1]).strip())
+                    if _nav_date < datetime.date.today():
+                        prev_nav = nav
+                except Exception:
+                    pass
+            return nav, 'CNY', prev_nav
+    except Exception as e:
+        logger.warning("fund NAV (akshare fallback) failed for %s: %s", code, e)
+
     return None, None, None
 
 

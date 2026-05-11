@@ -577,17 +577,35 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
             daily_pnl = daily_pnl_pct = daily_pnl_cny = None
 
         # YTD P&L
+        # Standard formula: ytd = pnl - baseline_unrealized, which is correct
+        # under the convention that cost_price is adjusted after each partial sell
+        # to absorb realized gains (so `pnl = (current - cost) × current_qty`
+        # represents total realized + unrealized P&L of the position). User
+        # maintains this manually for stocks.
+        #
+        # Funds (market='基金') break this convention by design: industry practice
+        # leaves cost_price unchanged on partial redeem. The standard formula then
+        # under-counts the redeemed-units' YTD contribution. For a partial-redeem
+        # fund, approximate sold units as having moved to current NAV (smooth NAV
+        # makes this close to actual), yielding `ytd = (current - bp) × b_qty`.
         ytd_pnl = ytd_pnl_pct = ytd_pnl_cny = None
         bd = ytd_baselines.get(ticker) if ytd_baselines else None
         if bd is not None:
             bp = bd['price']
             b_qty = bd.get('quantity')
             b_cost = bd.get('cost_price')
-            if b_qty is not None and b_cost is not None:
+            is_fund_partial_redeem = (
+                pos.get('market') == '基金'
+                and b_qty is not None and qty < b_qty
+            )
+            if is_fund_partial_redeem:
+                ytd_pnl = (price - bp) * b_qty
+            elif b_qty is not None and b_cost is not None:
                 baseline_unrealized = (bp - b_cost) * b_qty
+                ytd_pnl = pnl - baseline_unrealized
             else:
                 baseline_unrealized = (bp - cost) * qty
-            ytd_pnl = pnl - baseline_unrealized
+                ytd_pnl = pnl - baseline_unrealized
             ytd_pnl_pct = (ytd_pnl / cost_total * 100) if cost_total != 0 else 0
             ytd_pnl_cny = ytd_pnl * rate
         # else: no baseline — ytd_pnl stays None (KPI YTD uses snapshot-based calculation)
