@@ -576,18 +576,20 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
         else:
             daily_pnl = daily_pnl_pct = daily_pnl_cny = None
 
-        # YTD P&L
-        # Standard formula: ytd = pnl - baseline_unrealized, which is correct
-        # under the convention that cost_price is adjusted after each partial sell
-        # to absorb realized gains (so `pnl = (current - cost) × current_qty`
-        # represents total realized + unrealized P&L of the position). User
-        # maintains this manually for stocks.
+        # YTD P&L for held shares only. Sold shares' YTD contribution is captured
+        # in closed_trades (aggregated below).
         #
-        # Funds (market='基金') break this convention by design: industry practice
-        # leaves cost_price unchanged on partial redeem. The standard formula then
-        # under-counts the redeemed-units' YTD contribution. For a partial-redeem
-        # fund, approximate sold units as having moved to current NAV (smooth NAV
-        # makes this close to actual), yielding `ytd = (current - bp) × b_qty`.
+        # Stocks use the cost-adjustment convention: cost_price is re-averaged
+        # after each partial sell to absorb realized gains, so `pnl - baseline_unrealized`
+        # gives correct YTD.
+        #
+        # Funds (market='基金') don't adjust cost on redeem (industry standard).
+        # For a partial redeem the held YTD is just price drift on remaining
+        # units: `(price - bp) × current_qty`. The redeemed units' realized YTD
+        # contribution is locked at sell-time in a closed_trade and picked up by
+        # the partial-close branch of the closed_trades aggregation below.
+        # Fund adds (qty > b_qty) still use the standard formula since cost is
+        # then a weighted average and the algebra works out.
         ytd_pnl = ytd_pnl_pct = ytd_pnl_cny = None
         bd = ytd_baselines.get(ticker) if ytd_baselines else None
         if bd is not None:
@@ -599,7 +601,7 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
                 and b_qty is not None and qty < b_qty
             )
             if is_fund_partial_redeem:
-                ytd_pnl = (price - bp) * b_qty
+                ytd_pnl = (price - bp) * qty
             elif b_qty is not None and b_cost is not None:
                 baseline_unrealized = (bp - b_cost) * b_qty
                 ytd_pnl = pnl - baseline_unrealized
@@ -690,8 +692,12 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
     # For fully-closed tickers: aggregate Σ realized_pnl across all this year's trades
     # for that ticker and subtract baseline_unrealized once. Robust to share-count
     # changes, partial-sell + cost-basis adjustments, and mid-year buy-then-sell.
-    # For partial-closed tickers (still in positions): keep per-trade realized_pnl_cny;
-    # the held-position loop already subtracts baseline_unrealized via its own formula.
+    # For partial-closed tickers (still in positions): contribute the YTD-attributable
+    # slice of the realized gain, i.e. (close_price − baseline_price) × qty × fx.
+    # This locks the sold portion's YTD at sell-time (won't drift with current price)
+    # and combines correctly with the fund's held formula (price - bp) × current_qty.
+    # Falls back to stored realized_pnl_cny when close_price/qty are missing
+    # (legacy records, e.g. Excel-imported partials).
     import datetime as _dt
     from collections import defaultdict
     ytd_start = f"{_dt.date.today().year}-01-01"
@@ -703,7 +709,7 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
         lambda: {'realized_native': 0.0, 'market': 'Other', 'currency': 'CNY'})
 
     for row in _query(path,
-            "SELECT market, ticker, currency, "
+            "SELECT market, ticker, currency, close_price, quantity, "
             "COALESCE(realized_pnl, 0) AS rpn, "
             "COALESCE(realized_pnl_cny, 0) AS rpl "
             "FROM closed_trades WHERE close_date >= ? AND user_id=?", (ytd_start, user_id)):
@@ -715,8 +721,18 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
             g['market'] = mkt
             g['currency'] = row['currency']
         else:
-            ytd_realized_by_market[mkt] = ytd_realized_by_market.get(mkt, 0) + row['rpl']
-            ytd_realized_total += row['rpl']
+            # Partial close: use (close_price - bp) × qty for YTD attribution.
+            baseline = ytd_baselines.get(ticker) if ticker else None
+            close_price = row['close_price']
+            qty_sold = row['quantity']
+            if (baseline is not None and close_price is not None
+                    and qty_sold is not None):
+                rate = fx.get(row['currency'], 1.0)
+                contribution = (close_price - baseline['price']) * qty_sold * rate
+            else:
+                contribution = row['rpl']
+            ytd_realized_by_market[mkt] = ytd_realized_by_market.get(mkt, 0) + contribution
+            ytd_realized_total += contribution
 
     for ticker, g in fc_groups.items():
         baseline = ytd_baselines.get(ticker)
