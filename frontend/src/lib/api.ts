@@ -997,6 +997,7 @@ export interface AccountSetting {
   deposit_cny: number;
   deposit_fx: number;
   notes: string | null;
+  cost_method?: string;  // 'diluted' | 'average'
   updated_at: string;
 }
 
@@ -1006,6 +1007,7 @@ export interface AccountSettingInput {
   deposit_cny?: number;
   deposit_fx?: number;
   notes?: string;
+  cost_method?: string;  // 'diluted' (re-avg on sell) | 'average' (IBKR)
 }
 
 export async function getAccountSettings(): Promise<AccountSetting[]> {

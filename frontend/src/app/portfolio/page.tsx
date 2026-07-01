@@ -1622,6 +1622,7 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
   const [newAcctName, setNewAcctName] = useState("");
   const [isNewAcct, setIsNewAcct] = useState(false);
   const [acctMode, setAcctMode] = useState<"cost" | "deposit">("cost");
+  const [acctCostMethod, setAcctCostMethod] = useState<"diluted" | "average">("diluted");
   const [acctDeposit, setAcctDeposit] = useState("");
   const [acctFx, setAcctFx] = useState("1.0");
   const [depositAction, setDepositAction] = useState<"update" | "add">("update");
@@ -1792,11 +1793,12 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
       } else {
         // Direct update (overwrite totals)
         await upsertAccountSetting({ broker, capital_mode: acctMode,
-          deposit_cny: parseFloat(acctDeposit) || 0, deposit_fx: parseFloat(acctFx) || 1.0 });
+          deposit_cny: parseFloat(acctDeposit) || 0, deposit_fx: parseFloat(acctFx) || 1.0,
+          cost_method: acctCostMethod });
       }
       setAcctSettings(await getAccountSettings());
       setAcctBroker(""); setNewAcctName(""); setIsNewAcct(false);
-      setAcctDeposit(""); setAcctFx("1.0"); setAcctMode("cost");
+      setAcctDeposit(""); setAcctFx("1.0"); setAcctMode("cost"); setAcctCostMethod("diluted");
       setDepositAction("update"); setDepositDate(""); setDepositNotes("");
       if (expandedBroker) {
         setDepositHistory(await getDepositHistory(expandedBroker));
@@ -2145,6 +2147,11 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                           <span className={`ml-2 px-1.5 py-0.5 rounded text-[9px] font-semibold ${s.capital_mode === "deposit" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"}`}>
                             {s.capital_mode === "deposit" ? (zh ? "入金" : "Deposit") : (zh ? "成本" : "Cost")}
                           </span>
+                          {s.capital_mode !== "deposit" && s.cost_method === "average" && (
+                            <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400" title={zh ? "平均成本口径（盈透）" : "Average-cost basis (IBKR)"}>
+                              {zh ? "平均" : "Avg"}
+                            </span>
+                          )}
                           {s.capital_mode === "deposit" && s.deposit_cny > 0 && <span className="ml-2 text-gray-400">¥{formatNumber(s.deposit_cny, 0)}</span>}
                           {s.capital_mode === "deposit" && s.deposit_fx > 1 && <span className="ml-1 text-gray-400 text-[10px]">@{s.deposit_fx}</span>}
                         </div>
@@ -2156,7 +2163,7 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                               try { setDepositHistory(await getDepositHistory(s.broker)); } catch { setDepositHistory([]); }
                             }} className="text-gray-400 hover:text-gray-600 text-[10px]">{expandedBroker === s.broker ? "▼" : "▶"}</button>
                           )}
-                          <button onClick={() => { setAcctBroker(s.broker); setAcctMode(s.capital_mode as "cost" | "deposit"); setAcctDeposit(s.deposit_cny > 0 ? String(s.deposit_cny) : ""); setAcctFx(String(s.deposit_fx)); setDepositAction("update"); }} className="text-blue-500 hover:text-blue-700">✎</button>
+                          <button onClick={() => { setAcctBroker(s.broker); setAcctMode(s.capital_mode as "cost" | "deposit"); setAcctCostMethod((s.cost_method as "diluted" | "average") || "diluted"); setAcctDeposit(s.deposit_cny > 0 ? String(s.deposit_cny) : ""); setAcctFx(String(s.deposit_fx)); setDepositAction("update"); }} className="text-blue-500 hover:text-blue-700">✎</button>
                           <button onClick={() => handleAcctDelete(s.broker)} className="text-red-400 hover:text-red-600">✕</button>
                         </div>
                       </div>
@@ -2231,10 +2238,11 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                       const existing = acctSettings.find((s) => s.broker === name);
                       if (existing) {
                         setAcctMode(existing.capital_mode as "cost" | "deposit");
+                        setAcctCostMethod((existing.cost_method as "diluted" | "average") || "diluted");
                         setAcctDeposit(existing.deposit_cny > 0 ? String(existing.deposit_cny) : "");
                         setAcctFx(String(existing.deposit_fx));
                       } else {
-                        setAcctMode("cost"); setAcctDeposit(""); setAcctFx("1.0");
+                        setAcctMode("cost"); setAcctCostMethod("diluted"); setAcctDeposit(""); setAcctFx("1.0");
                       }
                       setDepositAction("update");
                     }}>
@@ -2245,7 +2253,7 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                         return <option key={n} value={n}>{n}{tag}</option>;
                       })}
                     </select>
-                    <button onClick={() => { setIsNewAcct(true); setAcctBroker(""); setAcctMode("cost"); setAcctDeposit(""); setAcctFx("1.0"); }}
+                    <button onClick={() => { setIsNewAcct(true); setAcctBroker(""); setAcctMode("cost"); setAcctCostMethod("diluted"); setAcctDeposit(""); setAcctFx("1.0"); }}
                       className="px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-700 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 whitespace-nowrap">
                       {zh ? "➕ 新增" : "➕ New"}
                     </button>
@@ -2284,6 +2292,27 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                       <option value="cost">{zh ? "成本" : "Cost"}</option>
                       <option value="deposit">{zh ? "入金" : "Deposit"}</option>
                     </select>
+                  </div>
+                )}
+                {acctMode === "cost" && (
+                  <div className="space-y-1.5">
+                    <div className="flex gap-2 items-center">
+                      <span className="text-[10px] text-gray-400 whitespace-nowrap">{zh ? "成本口径" : "Cost basis"}</span>
+                      <select className={inputCls} style={{ width: 130 }} value={acctCostMethod}
+                        onChange={(e) => setAcctCostMethod(e.target.value as "diluted" | "average")}>
+                        <option value="diluted">{zh ? "摊薄成本" : "Diluted"}</option>
+                        <option value="average">{zh ? "平均成本 (盈透)" : "Average (IBKR)"}</option>
+                      </select>
+                    </div>
+                    <div className="text-[10px] text-gray-400 leading-relaxed bg-white dark:bg-gray-950 rounded px-2 py-1 border border-gray-200 dark:border-gray-800">
+                      {acctCostMethod === "average"
+                        ? (zh
+                          ? "平均成本：部分卖出后持仓成本不变（盈透口径）。请用「部分卖出」标签页减仓——它会记录已实现盈亏、成本保持不变。不要用「编辑」手动改成本。"
+                          : "Average: cost stays unchanged on partial sell (IBKR). Reduce positions via the \"Close\" tab — it books realized P&L and keeps cost intact. Don't hand-edit the cost.")
+                        : (zh
+                          ? "摊薄成本：券商在部分卖出后自动下调持仓成本（国内券商、富途）。用「编辑」填入券商显示的新数量和新成本即可。"
+                          : "Diluted: broker lowers the cost on partial sell (Chinese brokers, Futu). Use \"Edit\" to enter the new qty and cost shown by the broker.")}
+                    </div>
                   </div>
                 )}
                 {acctMode === "deposit" && (

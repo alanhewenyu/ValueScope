@@ -76,6 +76,7 @@ class AccountSettingIn(BaseModel):
     deposit_cny: float = 0
     deposit_fx: float = 1.0
     notes: str = ""
+    cost_method: str = "diluted"  # 'diluted' (re-avg on sell) or 'average' (IBKR)
 
 
 class DepositRecordIn(BaseModel):
@@ -275,7 +276,7 @@ def upsert_account_setting_api(setting: AccountSettingIn, user_id: str = Depends
         upsert_account_setting(
             conn, broker=setting.broker, capital_mode=setting.capital_mode,
             deposit_cny=setting.deposit_cny, deposit_fx=setting.deposit_fx,
-            notes=setting.notes, user_id=user_id,
+            notes=setting.notes, cost_method=setting.cost_method, user_id=user_id,
         )
         conn.commit()
     return {"ok": True}
@@ -477,6 +478,15 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
     if not positions:
         return {"holdings": [], "fx": {"CNY": 1.0}, "summary": {}}
 
+    # Per-broker cost convention. 'average' brokers (e.g. Interactive Brokers)
+    # keep the true weighted-average cost on a partial sell — realized P&L is
+    # booked in closed_trades — so their stocks get fund-style YTD attribution.
+    # 'diluted' (default) re-averages cost on sell to absorb realized gains.
+    broker_cost_method = {
+        r['broker']: (r['cost_method'] or 'diluted')
+        for r in _query(path, "SELECT broker, cost_method FROM account_settings WHERE user_id=?", (user_id,))
+    }
+
     # Load industry cache — backfill any tickers missing from cache
     industry_rows = _query(path, "SELECT ticker, sector, industry FROM industry_cache")
     industry_map = {r['ticker']: {'sector': r['sector'] or '', 'industry': r['industry'] or ''} for r in industry_rows}
@@ -583,24 +593,28 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
         # after each partial sell to absorb realized gains, so `pnl - baseline_unrealized`
         # gives correct YTD.
         #
-        # Funds (market='基金') don't adjust cost on redeem (industry standard).
-        # For a partial redeem the held YTD is just price drift on remaining
-        # units: `(price - bp) × current_qty`. The redeemed units' realized YTD
-        # contribution is locked at sell-time in a closed_trade and picked up by
+        # Average-cost instruments don't adjust cost on a partial sell: funds
+        # (market='基金', industry standard) and stocks on 'average' brokers like
+        # Interactive Brokers. For a partial sell the held YTD is just price drift
+        # on remaining units: `(price - bp) × current_qty`. The sold units' realized
+        # YTD contribution is locked at sell-time in a closed_trade and picked up by
         # the partial-close branch of the closed_trades aggregation below.
-        # Fund adds (qty > b_qty) still use the standard formula since cost is
-        # then a weighted average and the algebra works out.
+        # Adds (qty > b_qty) still use the standard formula since cost is then a
+        # weighted average and the algebra works out.
+        uses_avg_cost = (
+            pos.get('market') == '基金'
+            or broker_cost_method.get(pos.get('broker'), 'diluted') == 'average'
+        )
         ytd_pnl = ytd_pnl_pct = ytd_pnl_cny = None
         bd = ytd_baselines.get(ticker) if ytd_baselines else None
         if bd is not None:
             bp = bd['price']
             b_qty = bd.get('quantity')
             b_cost = bd.get('cost_price')
-            is_fund_partial_redeem = (
-                pos.get('market') == '基金'
-                and b_qty is not None and qty < b_qty
+            is_avg_cost_partial_sell = (
+                uses_avg_cost and b_qty is not None and qty < b_qty
             )
-            if is_fund_partial_redeem:
+            if is_avg_cost_partial_sell:
                 ytd_pnl = (price - bp) * qty
             elif b_qty is not None and b_cost is not None:
                 baseline_unrealized = (bp - b_cost) * b_qty

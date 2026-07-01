@@ -159,6 +159,7 @@ CREATE TABLE IF NOT EXISTS account_settings (
     deposit_cny   REAL NOT NULL DEFAULT 0,
     deposit_fx    REAL NOT NULL DEFAULT 1.0,
     notes         TEXT,
+    cost_method   TEXT NOT NULL DEFAULT 'diluted',
     updated_at    TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
@@ -472,6 +473,7 @@ def init_db(db_path: str | None = None) -> None:
         _migrate_backfill_stock_pnl_ytd_base(conn)
         _migrate_seed_account_settings(conn)
         _migrate_add_user_id(conn)
+        _migrate_add_cost_method(conn)
 
 
 def _migrate_seed_account_settings(conn):
@@ -506,6 +508,24 @@ def _migrate_seed_account_settings(conn):
             "INSERT OR IGNORE INTO account_settings (broker, capital_mode, deposit_cny, deposit_fx) "
             "VALUES (?, 'deposit', ?, 1.0)",
             ('B股', B_SHARE_CAPITAL))
+    conn.commit()
+
+
+def _migrate_add_cost_method(conn):
+    """Add cost_method to account_settings (idempotent).
+
+    'diluted' (default): broker re-averages 持仓成本 on partial sell to absorb
+        realized gains (Chinese brokers, Futu). The tracker reads the new cost
+        off the broker screen.
+    'average': cost stays at true weighted-average buy price on partial sell;
+        realized P&L is booked separately in closed_trades (Interactive Brokers).
+        Stocks on such accounts are treated like funds for YTD attribution.
+    """
+    try:
+        conn.execute(
+            "ALTER TABLE account_settings ADD COLUMN cost_method TEXT NOT NULL DEFAULT 'diluted'")
+    except sqlite3.OperationalError:
+        pass  # already exists
     conn.commit()
 
 
@@ -570,6 +590,7 @@ def _migrate_add_user_id(conn):
             broker TEXT NOT NULL, capital_mode TEXT NOT NULL DEFAULT 'cost',
             deposit_cny REAL NOT NULL DEFAULT 0, deposit_fx REAL NOT NULL DEFAULT 1.0,
             notes TEXT,
+            cost_method TEXT NOT NULL DEFAULT 'diluted',
             updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
             user_id TEXT NOT NULL DEFAULT 'local',
             UNIQUE(broker, user_id))""",
@@ -619,20 +640,22 @@ def get_account_settings(conn: sqlite3.Connection, user_id: str = 'local') -> li
 def upsert_account_setting(conn: sqlite3.Connection, broker: str,
                            capital_mode: str, deposit_cny: float = 0,
                            deposit_fx: float = 1.0, notes: str = '',
+                           cost_method: str = 'diluted',
                            user_id: str = 'local') -> None:
     """Insert or update account capital settings.
     Also ensures a CNY cash row exists for this account (balance 0 if new).
     """
     conn.execute("""
-        INSERT INTO account_settings (broker, capital_mode, deposit_cny, deposit_fx, notes, updated_at, user_id)
-        VALUES (?, ?, ?, ?, ?, datetime('now', 'localtime'), ?)
+        INSERT INTO account_settings (broker, capital_mode, deposit_cny, deposit_fx, notes, cost_method, updated_at, user_id)
+        VALUES (?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), ?)
         ON CONFLICT(broker, user_id) DO UPDATE SET
             capital_mode = excluded.capital_mode,
             deposit_cny = excluded.deposit_cny,
             deposit_fx = excluded.deposit_fx,
             notes = excluded.notes,
+            cost_method = excluded.cost_method,
             updated_at = excluded.updated_at
-    """, (broker, capital_mode, deposit_cny, deposit_fx, notes, user_id))
+    """, (broker, capital_mode, deposit_cny, deposit_fx, notes, cost_method, user_id))
     # Auto-create cash row if none exists for this account
     existing = conn.execute(
         "SELECT 1 FROM cash_balances WHERE account=? AND user_id=? LIMIT 1", (broker, user_id)
