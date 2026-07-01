@@ -1704,6 +1704,26 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
     return { pnl, pnlCny, currency: closeTarget.currency, qty, sellPrice, costPrice };
   }, [closeTarget, closeQty, closePrice, data]);
 
+  // Per-broker cost convention ('diluted' default | 'average'). Used to steer
+  // partial-sell / edit workflows to the right entry point per account.
+  const brokerCostMethod = (broker: string): "diluted" | "average" =>
+    (acctSettings.find((s) => s.broker === broker)?.cost_method as "diluted" | "average") || "diluted";
+
+  // Warn: partial sell via Close on a diluted account leaves cost un-diluted
+  // and mis-attributes YTD. (Full close is fine.) → use Edit instead.
+  const closeDilutedWarn = !!closeTarget && closePnl != null
+    && brokerCostMethod(closeTarget.broker) === "diluted"
+    && closePnl.qty > 0 && closePnl.qty < closeTarget.quantity;
+
+  // Warn: reducing qty via Edit on an average-cost account skips the closed_trade,
+  // so realized P&L is never booked. → use the Close tab for reductions.
+  const editAvgReduceWarn = (() => {
+    if (!isEditing || !editBroker || brokerCostMethod(editBroker) !== "average") return false;
+    const orig = holdings.find((h) => h.ticker === editTicker && h.broker === editBroker);
+    const newQty = parseFloat(editQty);
+    return !!orig && Number.isFinite(newQty) && newQty < orig.quantity;
+  })();
+
   async function handleClose() {
     if (!closeTarget || !closePnl) return;
     const qty = closePnl.qty;
@@ -1946,6 +1966,13 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                     {["CNY", "HKD", "USD", "JPY"].map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
+                {editAvgReduceWarn && (
+                  <div className="p-2 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-800 text-[11px] text-amber-800 dark:text-amber-200 leading-relaxed">
+                    {zh
+                      ? `⚠️「${editBroker}」是平均口径账户。减仓请改用「部分卖出」标签页——直接在这里改小数量不会记录已实现盈亏，Capital 和 YTD 会算错。`
+                      : `⚠️ "${editBroker}" uses average cost. Reduce positions via the "Close" tab — lowering the quantity here skips the realized-P&L record, corrupting Capital and YTD.`}
+                  </div>
+                )}
                 <button onClick={handleSave} disabled={saving} className="w-full px-3 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
                   {saving ? "..." : (zh ? "保存" : "Save")}
                 </button>
@@ -2014,6 +2041,14 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                       {closePnl.qty < closeTarget.quantity && (
                         <div className="text-[10px] text-amber-600 mt-1">{zh ? `部分卖出 ${closePnl.qty}/${closeTarget.quantity}` : `Partial: ${closePnl.qty}/${closeTarget.quantity}`}</div>
                       )}
+                    </div>
+                  )}
+
+                  {closeDilutedWarn && (
+                    <div className="mb-3 p-2 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-800 text-[11px] text-amber-800 dark:text-amber-200 leading-relaxed">
+                      {zh
+                        ? `⚠️「${closeTarget.broker}」是摊薄口径账户。部分减仓请改用「编辑」填入券商显示的新数量和新成本——这里部分卖出不会摊薄成本，且会算错 YTD。（整体清仓则不受影响。）`
+                        : `⚠️ "${closeTarget.broker}" uses diluted cost. For a partial reduction use "Edit" to enter the broker's new qty and cost — a partial sell here won't dilute the cost and mis-attributes YTD. (Full close is fine.)`}
                     </div>
                   )}
 
@@ -2144,14 +2179,14 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                       <div className="flex items-center justify-between px-2 py-1.5 text-xs font-mono">
                         <div className="flex-1">
                           <span className="font-medium">{s.broker}</span>
-                          <span className={`ml-2 px-1.5 py-0.5 rounded text-[9px] font-semibold ${s.capital_mode === "deposit" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"}`}>
+                          <span className={`ml-2 px-1.5 py-0.5 rounded text-[9px] font-semibold ${s.capital_mode === "deposit" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"}`}
+                            title={zh ? "本金口径：入金总额 or 持仓成本" : "Capital basis: deposit total or position cost"}>
                             {s.capital_mode === "deposit" ? (zh ? "入金" : "Deposit") : (zh ? "成本" : "Cost")}
                           </span>
-                          {s.capital_mode !== "deposit" && s.cost_method === "average" && (
-                            <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400" title={zh ? "平均成本口径（盈透）" : "Average-cost basis (IBKR)"}>
-                              {zh ? "平均" : "Avg"}
-                            </span>
-                          )}
+                          <span className={`ml-1 px-1.5 py-0.5 rounded text-[9px] font-semibold ${s.cost_method === "average" ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400" : "bg-transparent text-gray-400 border border-gray-200 dark:border-gray-700"}`}
+                            title={zh ? "个股成本口径：部分卖出后成本是否变动" : "Per-stock cost basis on partial sell"}>
+                            {s.cost_method === "average" ? (zh ? "平均" : "Avg") : (zh ? "摊薄" : "Diluted")}
+                          </span>
                           {s.capital_mode === "deposit" && s.deposit_cny > 0 && <span className="ml-2 text-gray-400">¥{formatNumber(s.deposit_cny, 0)}</span>}
                           {s.capital_mode === "deposit" && s.deposit_fx > 1 && <span className="ml-1 text-gray-400 text-[10px]">@{s.deposit_fx}</span>}
                         </div>
@@ -2249,7 +2284,9 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                       <option value="">{zh ? "— 选择账户 —" : "— Select account —"}</option>
                       {knownAccounts.map((n) => {
                         const s = acctSettings.find((st) => st.broker === n);
-                        const tag = s ? (s.capital_mode === "deposit" ? " [入金]" : " [成本]") : "";
+                        const capTag = s ? (s.capital_mode === "deposit" ? (zh ? "入金" : "Deposit") : (zh ? "成本" : "Cost")) : "";
+                        const cmTag = s?.cost_method === "average" ? (zh ? "·平均" : "·Avg") : "";
+                        const tag = s ? ` [${capTag}${cmTag}]` : "";
                         return <option key={n} value={n}>{n}{tag}</option>;
                       })}
                     </select>
@@ -2294,7 +2331,7 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                     </select>
                   </div>
                 )}
-                {acctMode === "cost" && (
+                {(!isNewAcct ? !!acctBroker : !!newAcctName.trim()) && (
                   <div className="space-y-1.5">
                     <div className="flex gap-2 items-center">
                       <span className="text-[10px] text-gray-400 whitespace-nowrap">{zh ? "成本口径" : "Cost basis"}</span>
