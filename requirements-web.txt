@@ -1,8 +1,0 @@
-pandas
-openpyxl
-akshare
-yfinance
-requests
-markdown
-streamlit>=1.42.0
-plotly
