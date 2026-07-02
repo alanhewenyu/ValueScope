@@ -189,7 +189,9 @@ def take_snapshot(dry_run=False):
             ticker_data = {}
             for i, pos in enumerate(positions):
                 p = _fetched[i] if _fetched[i] is not None else pos["cost_price"]
-                ticker_data[pos["ticker"]] = (
+                # Keyed per (ticker, broker) — same ticker across accounts
+                # gets one baseline each (qty/cost differ per account).
+                ticker_data[(pos["ticker"], pos["broker"])] = (
                     p, pos["currency"], pos["quantity"], pos["cost_price"]
                 )
             record_ytd_baselines(conn, current_year, ticker_data, today)

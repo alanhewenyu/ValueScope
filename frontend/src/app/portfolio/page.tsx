@@ -1676,7 +1676,9 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
   }
 
   async function handleDelete(ticker: string, broker: string) {
-    if (!confirm(zh ? `确认删除 ${ticker} (${broker})？此操作不可恢复。` : `Confirm delete ${ticker} (${broker})? This cannot be undone.`)) return;
+    if (!confirm(zh
+      ? `确认删除 ${ticker} (${broker})？此操作不可恢复。\n\n⚠️ 删除不会记录已实现盈亏——如果是清仓，请改用「部分卖出」标签页（卖出全部数量），否则收益会从统计中消失。`
+      : `Confirm delete ${ticker} (${broker})? This cannot be undone.\n\n⚠️ Deleting books NO realized P&L — if you sold out, use the "Close" tab (sell the full quantity) instead, or the gains vanish from your stats.`)) return;
     try { await deletePosition(ticker, broker); onRefresh(); setMsg("✅ Deleted"); } catch { setMsg("❌ Error"); }
   }
 
@@ -1721,7 +1723,17 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
     if (!isEditing || !editBroker || brokerCostMethod(editBroker) !== "average") return false;
     const orig = holdings.find((h) => h.ticker === editTicker && h.broker === editBroker);
     const newQty = parseFloat(editQty);
-    return !!orig && Number.isFinite(newQty) && newQty < orig.quantity;
+    return !!orig && Number.isFinite(newQty) && newQty > 0 && newQty < orig.quantity;
+  })();
+
+  // Warn: editing qty to 0 (any account) skips the closed_trade entirely —
+  // the position's realized P&L is never booked. Full close must go through
+  // the Close tab.
+  const editZeroWarn = (() => {
+    if (!isEditing || !editBroker) return false;
+    const orig = holdings.find((h) => h.ticker === editTicker && h.broker === editBroker);
+    const newQty = parseFloat(editQty);
+    return !!orig && orig.quantity > 0 && Number.isFinite(newQty) && newQty <= 0;
   })();
 
   async function handleClose() {
@@ -1971,6 +1983,13 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                     {zh
                       ? `⚠️「${editBroker}」是平均口径账户。减仓请改用「部分卖出」标签页——直接在这里改小数量不会记录已实现盈亏，Capital 和 YTD 会算错。`
                       : `⚠️ "${editBroker}" uses average cost. Reduce positions via the "Close" tab — lowering the quantity here skips the realized-P&L record, corrupting Capital and YTD.`}
+                  </div>
+                )}
+                {editZeroWarn && (
+                  <div className="p-2 rounded bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-800 text-[11px] text-red-800 dark:text-red-200 leading-relaxed">
+                    {zh
+                      ? "⚠️ 数量改为 0 不会记录已实现盈亏，这部分收益会从系统中消失。清仓请到「部分卖出」标签页操作（卖出全部数量）。"
+                      : "⚠️ Setting quantity to 0 books no realized P&L — those gains vanish from the system. To close out, use the \"Close\" tab (sell the full quantity)."}
                   </div>
                 )}
                 <button onClick={handleSave} disabled={saving} className="w-full px-3 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">

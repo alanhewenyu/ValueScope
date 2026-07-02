@@ -205,9 +205,20 @@ def add_closed_trade(trade: ClosedTradeIn, user_id: str = Depends(get_current_us
     """Record a closed trade."""
     _require_db()
     import datetime as _dt
-    from backend.services.portfolio_db import init_db, insert_closed_trade, get_conn
+    from backend.services.portfolio_db import (
+        init_db, insert_closed_trade, get_conn, compute_locked_ytd_cny,
+    )
     init_db()
     with get_conn() as conn:
+        # Lock this sale's YTD attribution now, while the baseline still
+        # describes the lot being sold — immune to later baseline resets
+        # (full close + re-buy) and FX drift.
+        ytd_locked = compute_locked_ytd_cny(
+            conn, ticker=trade.ticker, broker=trade.broker, market=trade.market,
+            currency=trade.currency, quantity=trade.quantity,
+            close_price=trade.sell_price, realized_pnl=trade.realized_pnl,
+            realized_pnl_cny=trade.realized_pnl_cny, user_id=user_id,
+        )
         insert_closed_trade(
             conn, ticker=trade.ticker, name=trade.name, market=trade.market,
             broker=trade.broker, currency=trade.currency,
@@ -216,6 +227,7 @@ def add_closed_trade(trade: ClosedTradeIn, user_id: str = Depends(get_current_us
             quantity=trade.quantity,
             cost_price=trade.buy_price, close_price=trade.sell_price,
             close_date=_dt.date.today().isoformat(),
+            ytd_pnl_cny_locked=ytd_locked,
             user_id=user_id,
         )
         conn.commit()
@@ -469,6 +481,7 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
         fetch_price, get_previous_close, get_fx_rates as _get_fx,
         refresh_all_prices,
     )
+    from backend.services.ytd_calc import held_ytd
     import pandas as pd
 
     init_db()
@@ -511,26 +524,26 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
     import datetime
     current_year = datetime.date.today().year
     with get_conn() as conn:
-        ytd_baselines = get_ytd_baselines(conn, current_year)
+        ytd_baselines = get_ytd_baselines(conn, current_year, user_id=user_id)
 
         # Backfill baselines for positions added after the yearly snapshot
         missing_baseline = [
             p for p in positions
-            if p['ticker'] not in ytd_baselines
+            if (p['ticker'], p['broker']) not in ytd_baselines
         ]
         if missing_baseline:
             from backend.services.portfolio_db import record_ytd_baselines
             ticker_data = {}
             for p in missing_baseline:
                 # Use cost_price as baseline: new mid-year positions start YTD from cost
-                ticker_data[p['ticker']] = (
+                ticker_data[(p['ticker'], p['broker'])] = (
                     p['cost_price'], p['currency'], p['quantity'], p['cost_price']
                 )
             today_str = datetime.date.today().isoformat()
-            record_ytd_baselines(conn, current_year, ticker_data, today_str)
+            record_ytd_baselines(conn, current_year, ticker_data, today_str, user_id=user_id)
             conn.commit()
             # Reload after backfill
-            ytd_baselines = get_ytd_baselines(conn, current_year)
+            ytd_baselines = get_ytd_baselines(conn, current_year, user_id=user_id)
 
     # Enrich each position
     holdings = []
@@ -606,22 +619,12 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
             or broker_cost_method.get(pos.get('broker'), 'diluted') == 'average'
         )
         ytd_pnl = ytd_pnl_pct = ytd_pnl_cny = None
-        bd = ytd_baselines.get(ticker) if ytd_baselines else None
-        if bd is not None:
-            bp = bd['price']
-            b_qty = bd.get('quantity')
-            b_cost = bd.get('cost_price')
-            is_avg_cost_partial_sell = (
-                uses_avg_cost and b_qty is not None and qty < b_qty
-            )
-            if is_avg_cost_partial_sell:
-                ytd_pnl = (price - bp) * qty
-            elif b_qty is not None and b_cost is not None:
-                baseline_unrealized = (bp - b_cost) * b_qty
-                ytd_pnl = pnl - baseline_unrealized
-            else:
-                baseline_unrealized = (bp - cost) * qty
-                ytd_pnl = pnl - baseline_unrealized
+        bd = None
+        if ytd_baselines:
+            bd = (ytd_baselines.get((ticker, pos['broker']))
+                  or ytd_baselines.get((ticker, '')))  # legacy broker-less row
+        ytd_pnl = held_ytd(price, cost, qty, bd, uses_avg_cost)
+        if ytd_pnl is not None:
             ytd_pnl_pct = (ytd_pnl / cost_total * 100) if cost_total != 0 else 0
             ytd_pnl_cny = ytd_pnl * rate
         # else: no baseline — ytd_pnl stays None (KPI YTD uses snapshot-based calculation)
@@ -715,49 +718,70 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
     import datetime as _dt
     from collections import defaultdict
     ytd_start = f"{_dt.date.today().year}-01-01"
-    open_tickers = {p['ticker'] for p in positions}
+    open_pairs = {(p['ticker'], p['broker']) for p in positions}
     ytd_realized_by_market: dict[str, float] = {}
     ytd_realized_total = 0.0
 
-    fc_groups: dict[str, dict] = defaultdict(
-        lambda: {'realized_native': 0.0, 'market': 'Other', 'currency': 'CNY'})
+    def _baseline_for(tk: str, brk: str):
+        return ytd_baselines.get((tk, brk)) or ytd_baselines.get((tk, ''))
+
+    fc_groups: dict[tuple, dict] = defaultdict(
+        lambda: {'realized_native': 0.0, 'market': 'Other', 'currency': 'CNY',
+                 'locked_sum': 0.0, 'locked_all': True})
 
     for row in _query(path,
-            "SELECT market, ticker, currency, close_price, quantity, "
+            "SELECT market, broker, ticker, currency, close_price, quantity, "
             "COALESCE(realized_pnl, 0) AS rpn, "
-            "COALESCE(realized_pnl_cny, 0) AS rpl "
+            "COALESCE(realized_pnl_cny, 0) AS rpl, "
+            "ytd_pnl_cny_locked AS locked "
             "FROM closed_trades WHERE close_date >= ? AND user_id=?", (ytd_start, user_id)):
         ticker = row['ticker']
         mkt = row['market'] or 'Other'
-        if ticker and ticker not in open_tickers:
-            g = fc_groups[ticker]
+        if ticker and (ticker, row['broker']) not in open_pairs:
+            g = fc_groups[(ticker, row['broker'])]
             g['realized_native'] += row['rpn']
             g['market'] = mkt
             g['currency'] = row['currency']
-        else:
-            # Partial close: use (close_price - bp) × qty for YTD attribution.
-            baseline = ytd_baselines.get(ticker) if ticker else None
-            close_price = row['close_price']
-            qty_sold = row['quantity']
-            if (baseline is not None and close_price is not None
-                    and qty_sold is not None):
-                rate = fx.get(row['currency'], 1.0)
-                contribution = (close_price - baseline['price']) * qty_sold * rate
+            if row['locked'] is not None:
+                g['locked_sum'] += row['locked']
             else:
-                contribution = row['rpl']
+                g['locked_all'] = False
+        else:
+            # Partial close: sold shares' YTD, locked at sell time.
+            # Legacy rows (no locked value) fall back to computing from the
+            # live baseline; last resort is the stored realized CNY.
+            if row['locked'] is not None:
+                contribution = row['locked']
+            else:
+                baseline = _baseline_for(ticker, row['broker']) if ticker else None
+                close_price = row['close_price']
+                qty_sold = row['quantity']
+                if (baseline is not None and close_price is not None
+                        and qty_sold is not None):
+                    rate = fx.get(row['currency'], 1.0)
+                    contribution = (close_price - baseline['price']) * qty_sold * rate
+                else:
+                    contribution = row['rpl']
             ytd_realized_by_market[mkt] = ytd_realized_by_market.get(mkt, 0) + contribution
             ytd_realized_total += contribution
 
-    for ticker, g in fc_groups.items():
-        baseline = ytd_baselines.get(ticker)
+    # Fully-closed (ticker, broker) groups. When every trade carries a locked
+    # value, sum those (each sale locked at its own time). Otherwise use the
+    # aggregate formula Σ realized − baseline_unrealized, robust to partial
+    # sells with cost re-averaging and mid-year buy-then-sell.
+    for (ticker, brk), g in fc_groups.items():
         rate = fx.get(g['currency'], 1.0)
-        if (baseline is not None
-                and baseline.get('cost_price') is not None
-                and baseline.get('quantity') is not None):
-            baseline_unrealized = (baseline['price'] - baseline['cost_price']) * baseline['quantity']
-            contribution = (g['realized_native'] - baseline_unrealized) * rate
+        if g['locked_all']:
+            contribution = g['locked_sum']
         else:
-            contribution = g['realized_native'] * rate
+            baseline = _baseline_for(ticker, brk)
+            if (baseline is not None
+                    and baseline.get('cost_price') is not None
+                    and baseline.get('quantity') is not None):
+                baseline_unrealized = (baseline['price'] - baseline['cost_price']) * baseline['quantity']
+                contribution = (g['realized_native'] - baseline_unrealized) * rate
+            else:
+                contribution = g['realized_native'] * rate
         ytd_realized_by_market[g['market']] = ytd_realized_by_market.get(g['market'], 0) + contribution
         ytd_realized_total += contribution
 

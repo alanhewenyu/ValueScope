@@ -108,7 +108,8 @@ CREATE TABLE IF NOT EXISTS closed_trades (
     quantity     REAL,
     cost_price   REAL,
     close_price  REAL,
-    cost_total   REAL
+    cost_total   REAL,
+    ytd_pnl_cny_locked REAL
 );
 
 CREATE TABLE IF NOT EXISTS cash_balances (
@@ -199,13 +200,15 @@ CREATE TABLE IF NOT EXISTS snapshot_market_detail (
 CREATE TABLE IF NOT EXISTS ytd_baseline_prices (
     year       INTEGER NOT NULL,
     ticker     TEXT NOT NULL,
+    broker     TEXT NOT NULL DEFAULT '',
     price      REAL NOT NULL,
     currency   TEXT NOT NULL,
     date       TEXT NOT NULL,
     quantity   REAL,
     cost_price REAL,
     created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    UNIQUE(year, ticker)
+    user_id    TEXT NOT NULL DEFAULT 'local',
+    UNIQUE(year, ticker, broker, user_id)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_ticker_broker ON positions(ticker, broker);
@@ -233,6 +236,7 @@ def _migrate_closed_trades(conn):
     for col, col_type in [
         ('quantity', 'REAL'), ('cost_price', 'REAL'), ('close_price', 'REAL'),
         ('cost_total', 'REAL'), ('realized_pnl_cny', 'REAL'),
+        ('ytd_pnl_cny_locked', 'REAL'),
     ]:
         try:
             conn.execute(f"ALTER TABLE closed_trades ADD COLUMN {col} {col_type}")
@@ -432,7 +436,11 @@ def _migrate_backfill_stock_pnl_ytd_base(conn):
         cost = r[4] if r[4] is not None else price
         pnl_cny = (price - cost) * qty * fx.get(cur, 1.0)
         name, market = pos_info.get(tk, (tk, ''))
-        stock_pnl[(tk, market)] = {'name': name, 'market': market, 'pnl_cny': pnl_cny}
+        key = (tk, market)
+        if key in stock_pnl:  # multiple broker rows per ticker — accumulate
+            stock_pnl[key]['pnl_cny'] += pnl_cny
+        else:
+            stock_pnl[key] = {'name': name, 'market': market, 'pnl_cny': pnl_cny}
     for r in conn.execute(
         "SELECT ticker, name, market, realized_pnl_cny FROM closed_trades "
         "WHERE (close_date IS NULL OR close_date <= ?) AND realized_pnl_cny IS NOT NULL",
@@ -474,6 +482,7 @@ def init_db(db_path: str | None = None) -> None:
         _migrate_seed_account_settings(conn)
         _migrate_add_user_id(conn)
         _migrate_add_cost_method(conn)
+        _migrate_ytd_baseline_broker(conn)
 
 
 def _migrate_seed_account_settings(conn):
@@ -526,6 +535,67 @@ def _migrate_add_cost_method(conn):
             "ALTER TABLE account_settings ADD COLUMN cost_method TEXT NOT NULL DEFAULT 'diluted'")
     except sqlite3.OperationalError:
         pass  # already exists
+    conn.commit()
+
+
+def _migrate_ytd_baseline_broker(conn):
+    """Re-key ytd_baseline_prices from (year, ticker) to (year, ticker, broker, user_id).
+
+    A ticker-keyed baseline breaks when the same ticker is held in multiple
+    accounts (shared bp/qty/cost corrupt every account's YTD) and when a
+    position is fully closed and re-bought (stale row blocks the cost-based
+    refresh).
+
+    Backfill per old row:
+      - 0 open positions (fully-closed ticker): keep one row, broker='' —
+        legacy marker still readable by the closed-trades aggregation.
+      - 1 open position: assign its broker; keep original qty/cost (they are
+        baseline-era values the diluted algebra needs).
+      - N open positions: one row per broker with that broker's current
+        qty/cost and the original baseline price. Approximation — the old
+        row can't be split exactly; known cases repaired via data fix.
+    """
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(ytd_baseline_prices)").fetchall()]
+    if 'broker' in cols:
+        return
+    conn.execute("ALTER TABLE ytd_baseline_prices RENAME TO ytd_baseline_prices_old")
+    conn.execute("""
+        CREATE TABLE ytd_baseline_prices (
+            year       INTEGER NOT NULL,
+            ticker     TEXT NOT NULL,
+            broker     TEXT NOT NULL DEFAULT '',
+            price      REAL NOT NULL,
+            currency   TEXT NOT NULL,
+            date       TEXT NOT NULL,
+            quantity   REAL,
+            cost_price REAL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            user_id    TEXT NOT NULL DEFAULT 'local',
+            UNIQUE(year, ticker, broker, user_id))""")
+    old_rows = conn.execute(
+        "SELECT year, ticker, price, currency, date, quantity, cost_price, created_at, user_id "
+        "FROM ytd_baseline_prices_old").fetchall()
+    for row in old_rows:
+        year, ticker, price, currency, date_val, qty, cost, created, uid = row
+        positions = conn.execute(
+            "SELECT broker, quantity, cost_price FROM positions "
+            "WHERE ticker=? AND status='open' AND user_id=?", (ticker, uid)).fetchall()
+        if len(positions) <= 1:
+            broker = positions[0][0] if positions else ''
+            conn.execute(
+                "INSERT OR IGNORE INTO ytd_baseline_prices "
+                "(year, ticker, broker, price, currency, date, quantity, cost_price, created_at, user_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (year, ticker, broker, price, currency, date_val, qty, cost, created, uid))
+        else:
+            for b, b_qty, b_cost in positions:
+                conn.execute(
+                    "INSERT OR IGNORE INTO ytd_baseline_prices "
+                    "(year, ticker, broker, price, currency, date, quantity, cost_price, created_at, user_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (year, ticker, b, price, currency, date_val, b_qty, b_cost, created, uid))
+    conn.execute("DROP TABLE ytd_baseline_prices_old")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ytd_year ON ytd_baseline_prices(year)")
     conn.commit()
 
 
@@ -863,6 +933,9 @@ def get_open_tickers(conn: sqlite3.Connection, user_id: str = 'local') -> list[d
 def upsert_position(conn: sqlite3.Connection, ticker: str, name: str, market: str,
                     broker: str, currency: str, quantity: float, cost_price: float,
                     user_id: str = 'local') -> None:
+    is_new = conn.execute(
+        "SELECT 1 FROM positions WHERE ticker=? AND broker=? AND user_id=? LIMIT 1",
+        (ticker, broker, user_id)).fetchone() is None
     conn.execute("""
         INSERT INTO positions (ticker, name, market, broker, currency, quantity, cost_price,
                                status, updated_at, created_at, user_id)
@@ -876,6 +949,20 @@ def upsert_position(conn: sqlite3.Connection, ticker: str, name: str, market: st
                   OR abs(positions.cost_price - excluded.cost_price) > 0.0001
                 THEN datetime('now','localtime') ELSE positions.updated_at END
     """, (ticker, name, market, broker, currency, quantity, cost_price, user_id))
+    if is_new:
+        # Baseline lifecycle: a brand-new position (incl. re-buy after a full
+        # close this year) starts YTD from cost. Replace any stale baseline —
+        # past sales' YTD attribution is locked on closed_trades at sell time,
+        # so refreshing the baseline can't corrupt it.
+        year = datetime.now().year
+        conn.execute(
+            "DELETE FROM ytd_baseline_prices WHERE year=? AND ticker=? AND broker=? AND user_id=?",
+            (year, ticker, broker, user_id))
+        conn.execute("""
+            INSERT INTO ytd_baseline_prices
+                (year, ticker, broker, price, currency, date, quantity, cost_price, user_id)
+            VALUES (?, ?, ?, ?, ?, date('now', 'localtime'), ?, ?, ?)
+        """, (year, ticker, broker, cost_price, currency, quantity, cost_price, user_id))
 
 
 def insert_closed_trade(conn: sqlite3.Connection, ticker: str | None, name: str,
@@ -884,15 +971,16 @@ def insert_closed_trade(conn: sqlite3.Connection, ticker: str | None, name: str,
                         quantity: float | None = None, cost_price: float | None = None,
                         close_price: float | None = None, cost_total: float | None = None,
                         realized_pnl_cny: float | None = None,
+                        ytd_pnl_cny_locked: float | None = None,
                         user_id: str = 'local') -> None:
     conn.execute("""
         INSERT INTO closed_trades (ticker, name, market, broker, currency, realized_pnl,
                                    close_date, notes, quantity, cost_price, close_price,
-                                   cost_total, realized_pnl_cny, user_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                   cost_total, realized_pnl_cny, ytd_pnl_cny_locked, user_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (ticker, name, market, broker, currency, realized_pnl,
           close_date, notes, quantity, cost_price, close_price, cost_total,
-          realized_pnl_cny, user_id))
+          realized_pnl_cny, ytd_pnl_cny_locked, user_id))
 
 
 def upsert_cash(conn: sqlite3.Connection, account: str, currency: str, balance: float,
@@ -979,31 +1067,109 @@ def upsert_snapshot(conn: sqlite3.Connection, date: str, total_assets: float,
 
 # ── YTD baselines ──
 
-def get_ytd_baselines(conn: sqlite3.Connection, year: int) -> dict[str, dict]:
+def get_ytd_baselines(conn: sqlite3.Connection, year: int,
+                      user_id: str = 'local') -> dict[tuple[str, str], dict]:
+    """Return baselines keyed by (ticker, broker).
+
+    Legacy rows (fully-closed tickers migrated without an open position)
+    appear under (ticker, '') — callers fall back to that key.
+    """
     rows = conn.execute(
-        "SELECT ticker, price, quantity, cost_price FROM ytd_baseline_prices WHERE year = ?",
-        (year,)).fetchall()
+        "SELECT ticker, broker, price, quantity, cost_price "
+        "FROM ytd_baseline_prices WHERE year = ? AND user_id = ?",
+        (year, user_id)).fetchall()
     result = {}
     for r in rows:
-        tk = r['ticker'] if isinstance(r, sqlite3.Row) else r[0]
-        result[tk] = {
-            'price': r['price'] if isinstance(r, sqlite3.Row) else r[1],
-            'quantity': r['quantity'] if isinstance(r, sqlite3.Row) else r[2],
-            'cost_price': r['cost_price'] if isinstance(r, sqlite3.Row) else r[3],
+        result[(r[0], r[1])] = {
+            'price': r[2], 'quantity': r[3], 'cost_price': r[4],
         }
     return result
 
 
-def record_ytd_baselines(conn: sqlite3.Connection, year: int, ticker_data: dict, date: str) -> None:
-    for ticker, vals in ticker_data.items():
+def record_ytd_baselines(conn: sqlite3.Connection, year: int, ticker_data: dict,
+                         date: str, user_id: str = 'local') -> None:
+    """ticker_data: {(ticker, broker): (price, currency[, quantity, cost_price])}."""
+    for (ticker, broker), vals in ticker_data.items():
         price, currency = vals[0], vals[1]
         qty = vals[2] if len(vals) > 2 else None
         cost = vals[3] if len(vals) > 3 else None
         conn.execute("""
             INSERT OR IGNORE INTO ytd_baseline_prices
-                (year, ticker, price, currency, date, quantity, cost_price)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (year, ticker, price, currency, date, qty, cost))
+                (year, ticker, broker, price, currency, date, quantity, cost_price, user_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (year, ticker, broker, price, currency, date, qty, cost, user_id))
+
+
+def compute_locked_ytd_cny(conn: sqlite3.Connection, ticker: str | None, broker: str,
+                           market: str, currency: str, quantity: float | None,
+                           close_price: float | None, realized_pnl: float,
+                           realized_pnl_cny: float | None,
+                           user_id: str = 'local', year: int | None = None) -> float | None:
+    """YTD attribution (CNY) of a sale, locked at sell time.
+
+    Uses the baseline as it exists NOW — later baseline resets (full close +
+    re-buy) or FX moves no longer corrupt past attribution.
+
+    Convention-dependent (matches held_ytd so held + locked = total YTD):
+      average/fund: (sell − bp) × qty — cost never absorbs gains, so each
+        sale attributes its own shares from the baseline price.
+      diluted FULL close: realized − (bp − b_cost) × b_qty — the trade's
+        realized P&L (vs diluted cost) already contains all gains absorbed by
+        earlier Edit-recorded partial sells; subtracting the group's baseline
+        unrealized once completes the attribution.
+      diluted partial close (warned-against workflow): (sell − bp) × qty,
+        the historical behaviour.
+
+    FX: implied sale-time rate (realized_pnl_cny / realized_pnl) when sane,
+    else the stored fx_rates table.
+    """
+    if year is None:
+        year = datetime.now().year
+    baseline = None
+    if ticker:
+        row = conn.execute(
+            "SELECT price, quantity, cost_price FROM ytd_baseline_prices "
+            "WHERE year=? AND ticker=? AND broker=? AND user_id=?",
+            (year, ticker, broker, user_id)).fetchone()
+        if row is None:  # legacy broker-less row
+            row = conn.execute(
+                "SELECT price, quantity, cost_price FROM ytd_baseline_prices "
+                "WHERE year=? AND ticker=? AND broker='' AND user_id=?",
+                (year, ticker, user_id)).fetchone()
+        if row:
+            baseline = {'price': row[0], 'quantity': row[1], 'cost_price': row[2]}
+    if baseline is None or close_price is None or quantity is None:
+        return realized_pnl_cny  # attribution == realized; reuse its sale-time CNY
+
+    cm_row = conn.execute(
+        "SELECT cost_method FROM account_settings WHERE broker=? AND user_id=?",
+        (broker, user_id)).fetchone()
+    uses_avg_cost = (market == '基金'
+                     or (cm_row and (cm_row[0] or 'diluted') == 'average'))
+
+    bp = baseline['price']
+    if uses_avg_cost:
+        native = (close_price - bp) * quantity
+    else:
+        pos = conn.execute(
+            "SELECT quantity FROM positions WHERE ticker=? AND broker=? AND user_id=? "
+            "AND status='open'", (ticker, broker, user_id)).fetchone()
+        is_full_close = pos is None or quantity >= pos[0] - 1e-9
+        b_qty, b_cost = baseline.get('quantity'), baseline.get('cost_price')
+        if is_full_close and b_qty is not None and b_cost is not None:
+            native = realized_pnl - (bp - b_cost) * b_qty
+        else:
+            native = (close_price - bp) * quantity
+
+    fx = None
+    if realized_pnl and realized_pnl_cny is not None:
+        implied = realized_pnl_cny / realized_pnl
+        if 0.001 < implied < 100:
+            fx = implied
+    if fx is None:
+        r = conn.execute("SELECT rate_to_cny FROM fx_rates WHERE currency=?", (currency,)).fetchone()
+        fx = r[0] if r else 1.0
+    return native * fx
 
 
 if __name__ == '__main__':
