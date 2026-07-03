@@ -48,6 +48,33 @@ class TestInception:
         assert units == pytest.approx(100000)
 
 
+class TestContinuitySeed:
+    def test_inception_continues_legacy_ratio(self, db):
+        # T0 seed = NAV/Capital so the published curve has no seam
+        res = roll_units(db, "u1", "2026-07-04", 150000, capital=100000)
+        assert res is not None
+        units, nav = res
+        assert nav == pytest.approx(1.5)
+        assert units == pytest.approx(100000)
+
+    def test_rolls_forward_from_seeded_nav(self, db):
+        upsert_snapshot(db, "2026-07-04", 150000, 150000, 150000, 0, 0, 0,
+                        user_id="u1", units=100000, unit_nav=1.5)
+        db.commit()
+        res = roll_units(db, "u1", "2026-07-06", 165000)
+        assert res is not None
+        units, nav = res
+        assert nav == pytest.approx(1.65)
+        assert units == pytest.approx(100000)
+
+    def test_zero_capital_falls_back_to_one(self, db):
+        res = roll_units(db, "u1", "2026-07-04", 50000, capital=0)
+        assert res is not None
+        units, nav = res
+        assert nav == pytest.approx(1.0)
+        assert units == pytest.approx(50000)
+
+
 class TestRolling:
     def test_market_gain_moves_nav_not_units(self, db):
         _snap(db, "2026-07-01", 100000)

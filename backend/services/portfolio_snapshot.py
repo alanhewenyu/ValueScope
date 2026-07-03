@@ -186,8 +186,9 @@ def take_snapshot(dry_run=False, user_id: str = "local"):
     market_json = json.dumps(market_mv, ensure_ascii=False)
     print(f"Market MV:    {market_json}")
 
-    # ── TWR unitization (fund-style units; first run = inception at 1.0) ──
-    unit_res = roll_units(conn, user_id, today, net_assets)
+    # ── TWR unitization. Inception seeds unit_nav at NAV/Capital so the
+    #    series continues the legacy performance curve without a seam ──
+    unit_res = roll_units(conn, user_id, today, net_assets, capital=capital)
     units, unit_nav = unit_res if unit_res else (None, None)
     if unit_nav is not None:
         print(f"Unit NAV:     {unit_nav:.4f}  ({units:,.0f} units)")

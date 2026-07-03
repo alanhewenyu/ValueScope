@@ -749,21 +749,24 @@ function PerformanceChart({ navHistory, snapshots = [], locale }: {
   const benchColors: Record<string, string> = { "CSI 300": "#ef4444", "S&P 500": "#22c55e", "Hang Seng": "#f59e0b" };
 
   if (showBenchmarks && Object.keys(benchData).length > 0) {
-    // Portfolio indexed return. Prefer TWR unit NAV (flow-proof: deposits
-    // issue units instead of showing up as gains); fall back to the legacy
-    // NAV/capital ratio for history before unitization began.
+    // Portfolio indexed return — a stitched, seamless series:
+    // before T0 the legacy NAV/Capital ratio, from T0 the TWR unit NAV.
+    // The inception seed equals NAV/Capital on T0, so the segments meet
+    // at the same value and the curve stays continuous.
     const rangeStart = filteredNav[0].date;
     const twrPts = snapshots.filter(
       (s) => s.unit_nav != null && s.unit_nav > 0 && s.date >= rangeStart,
     );
-    const useTwr = twrPts.length >= 2;
+    const t0 = twrPts[0]?.date ?? "";
     let portIndexed: { date: string; indexed: number }[];
-    if (useTwr) {
-      const base = twrPts[0].unit_nav as number;
-      portIndexed = twrPts.map((s) => ({
-        date: s.date,
-        indexed: ((s.unit_nav as number) / base) * 100,
-      }));
+    if (twrPts.length > 0) {
+      const pre = filteredNav
+        .filter((p) => p.date < t0 && p.capital_invested > 0)
+        .map((p) => ({ date: p.date, val: p.net_asset_value / p.capital_invested }));
+      const post = twrPts.map((s) => ({ date: s.date, val: s.unit_nav as number }));
+      const series = [...pre, ...post];
+      const base = series[0].val;
+      portIndexed = series.map((p) => ({ date: p.date, indexed: (p.val / base) * 100 }));
     } else {
       const startEnav = filteredNav[0].net_asset_value / filteredNav[0].capital_invested;
       portIndexed = filteredNav.map((p) => ({
@@ -771,7 +774,7 @@ function PerformanceChart({ navHistory, snapshots = [], locale }: {
         indexed: (p.net_asset_value / p.capital_invested) / startEnav * 100,
       }));
     }
-    const portLabel = useTwr ? "Portfolio (TWR)" : "Portfolio";
+    const portLabel = twrPts.length > 0 ? "Portfolio (TWR)" : "Portfolio";
 
     // Build indexed benchmark returns (filter to date range)
     const startDate = portIndexed[0].date;

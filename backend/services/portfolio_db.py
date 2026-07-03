@@ -704,8 +704,22 @@ def _migrate_twr_columns(conn):
     conn.commit()
 
 
+def _inception(net_assets: float, capital: float | None) -> tuple[float, float] | None:
+    """Seed units at T0. Continuity convention (like a fund changing
+    administrators): start unit_nav at the legacy cumulative multiple
+    NAV/Capital so the published performance series has no seam — the old
+    ratio-based curve and the TWR curve meet at the same value on T0.
+    Falls back to 1.0 when capital is unusable (new/empty accounts)."""
+    if net_assets <= 0:
+        return None
+    if capital and capital > 0:
+        unit_nav = net_assets / capital
+        return (capital, unit_nav)  # units = net_assets / unit_nav
+    return (net_assets, 1.0)
+
+
 def roll_units(conn: sqlite3.Connection, user_id: str, date: str,
-               net_assets: float) -> tuple[float, float] | None:
+               net_assets: float, capital: float | None = None) -> tuple[float, float] | None:
     """Fund-style unitization step for one snapshot day.
 
     unit_nav_D = (net_assets_D − net_flow_D) / units_prev   (flows priced at
@@ -728,9 +742,7 @@ def roll_units(conn: sqlite3.Connection, user_id: str, date: str,
 
     if prev is None:
         # Inception (T0): the whole pre-history becomes the opening balance
-        if net_assets <= 0:
-            return None
-        return (net_assets, 1.0)
+        return _inception(net_assets, capital)
 
     prev_date, prev_units = prev[0], prev[1]
     flow = conn.execute("""
@@ -743,7 +755,7 @@ def roll_units(conn: sqlite3.Connection, user_id: str, date: str,
     if unit_nav <= 0:
         # Pathological (flow larger than assets — bad data): re-incept
         # rather than producing a negative NAV
-        return (net_assets, 1.0) if net_assets > 0 else None
+        return _inception(net_assets, capital)
     units = prev_units + flow / unit_nav
     if units <= 0:
         return None
