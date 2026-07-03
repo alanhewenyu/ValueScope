@@ -213,7 +213,10 @@ export default async function StockLayout({
   const decoded = decodeURIComponent(ticker);
   return (
     <>
-      {children}
+      {/* min-h-screen: while the app is loading (skeleton/tab spinner) the
+          content area collapses; without a floor the SEO section below gets
+          pulled into the viewport and then pushed back down — a visible flash */}
+      <div className="min-h-screen">{children}</div>
       {/* Suspense: the interactive app streams immediately; the crawlable
           summary arrives later in the same response without blocking TTFB */}
       <Suspense fallback={null}>
