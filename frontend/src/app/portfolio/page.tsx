@@ -1693,6 +1693,8 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
   const [closeTarget, setCloseTarget] = useState<PortfolioHolding | null>(null);
   const [closeQty, setCloseQty] = useState("");
   const [closePrice, setClosePrice] = useState("");
+  const [closeFee, setCloseFee] = useState("");       // diluted partial: fees fold into cost
+  const [closeNewCost, setCloseNewCost] = useState(""); // diluted partial: computed, editable
 
   // ── Cash & Margin tab state ──
   const [cashEdits, setCashEdits] = useState<Record<string, string>>({});
@@ -1791,6 +1793,7 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
     setCloseTarget(h);
     setCloseQty(String(h.quantity));
     setClosePrice(h.price ? String(h.price) : "");
+    setCloseFee(""); setCloseNewCost("");
   }
 
   const closePnl = useMemo(() => {
@@ -1809,11 +1812,49 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
   const brokerCostMethod = (broker: string): "diluted" | "average" =>
     (acctSettings.find((s) => s.broker === broker)?.cost_method as "diluted" | "average") || "diluted";
 
-  // Warn: partial sell via Close on a diluted account leaves cost un-diluted
-  // and mis-attributes YTD. (Full close is fine.) → use Edit instead.
-  const closeDilutedWarn = !!closeTarget && closePnl != null
+  // Diluted partial sell: assisted flow — same accounting semantics as the
+  // manual Edit path (no closed_trade; realized gain absorbed into cost),
+  // but the system computes the new diluted cost and books the cash.
+  const dilutedPartial = !!closeTarget && closePnl != null
     && brokerCostMethod(closeTarget.broker) === "diluted"
     && closePnl.qty > 0 && closePnl.qty < closeTarget.quantity;
+
+  // Broker formula: new cost = (old basis − net proceeds) / remaining qty.
+  // Fee is deducted from proceeds, matching how brokers fold fees into the
+  // diluted cost. Prefilled but editable — paste the broker's exact number
+  // if it differs by a hair.
+  useEffect(() => {
+    if (!dilutedPartial || !closeTarget || !closePnl) return;
+    const fee = parseFloat(closeFee) || 0;
+    const remaining = closeTarget.quantity - closePnl.qty;
+    if (remaining <= 0 || closePnl.sellPrice <= 0) return;
+    const netProceeds = closePnl.qty * closePnl.sellPrice - fee;
+    const newCost = (closeTarget.quantity * closeTarget.cost_price - netProceeds) / remaining;
+    setCloseNewCost(newCost.toFixed(4));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dilutedPartial, closeQty, closePrice, closeFee, closeTarget]);
+
+  /** Credit sale proceeds to signed cash (negative balances net margin
+   *  automatically); 港股通 HK sales convert to CNY at the day's FX. */
+  async function autoBookProceeds(amount: number) {
+    if (!closeTarget) return;
+    let proceeds = amount;
+    let cur = closeTarget.currency;
+    const isHkConnect = closeTarget.market === "HK"
+      && !!acctSettings.find((s) => s.broker === closeTarget.broker)?.hk_connect;
+    if (isHkConnect && cur !== "CNY") {
+      const rate = data?.fx?.[cur] || 1.0;
+      proceeds = proceeds * rate;
+      cur = "CNY";
+    }
+    const ok = confirm(zh
+      ? `是否自动将卖出所得 ${proceeds.toFixed(2)} ${cur} 计入现金？${isHkConnect ? "\n（港股通：已按汇率折算为人民币）" : ""}\n负余额（融资）会被自动冲抵。\n（取消 = 不入账，自行手动管理）`
+      : `Auto-credit sale proceeds ${proceeds.toFixed(2)} ${cur} to cash?${isHkConnect ? "\n(HK Connect: converted to CNY at FX)" : ""}\nNegative balances (margin) net automatically.\n(Cancel = manage manually)`);
+    if (ok) {
+      const cashRow = (data?.cash || []).find((c) => c.account === closeTarget.broker && c.currency === cur);
+      await updateCash({ account: closeTarget.broker, currency: cur, balance: (cashRow?.balance || 0) + proceeds });
+    }
+  }
 
   // Warn: reducing qty via Edit on an average-cost account skips the closed_trade,
   // so realized P&L is never booked. → use the Close tab for reductions.
@@ -1838,6 +1879,32 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
     if (!closeTarget || !closePnl) return;
     const qty = closePnl.qty;
     const fullClose = qty >= closeTarget.quantity;
+
+    // ── Diluted partial sell: Edit-equivalent semantics, automated ──
+    if (dilutedPartial) {
+      const fee = parseFloat(closeFee) || 0;
+      const newCost = parseFloat(closeNewCost);
+      if (!Number.isFinite(newCost)) { alert(zh ? "请填写新成本" : "New cost required"); return; }
+      const remaining = closeTarget.quantity - qty;
+      const netProceeds = qty * closePnl.sellPrice - fee;
+      const msg = zh
+        ? `摊薄减仓 ${closeTarget.name}\n卖出: ${qty} @ ${closePnl.sellPrice}${fee ? `（手续费 ${fee.toFixed(2)}）` : ""}\n净回款: ${netProceeds.toFixed(2)} ${closePnl.currency}\n剩余: ${fmtNum(remaining, 0)} @ 新成本 ${newCost}\n（不记已实现盈亏——收益已摊入成本，与券商口径一致）`
+        : `Diluted reduce ${closeTarget.name}\nSell: ${qty} @ ${closePnl.sellPrice}${fee ? ` (fee ${fee.toFixed(2)})` : ""}\nNet proceeds: ${netProceeds.toFixed(2)} ${closePnl.currency}\nRemaining: ${fmtNum(remaining, 0)} @ new cost ${newCost}\n(No realized P&L booked — absorbed into cost, matching the broker)`;
+      if (!confirm(msg)) return;
+      setSaving(true);
+      try {
+        await upsertPosition({
+          ticker: closeTarget.ticker, name: closeTarget.name, market: closeTarget.market,
+          broker: closeTarget.broker, quantity: remaining,
+          cost_price: newCost, currency: closeTarget.currency,
+        });
+        await autoBookProceeds(netProceeds);
+        setCloseTarget(null); setCloseSearch(""); setCloseFee(""); setCloseNewCost("");
+        setMsg(`✅ ${zh ? "已减仓" : "Reduced"}`); onRefresh();
+      } catch { setMsg("❌ Error"); } finally { setSaving(false); }
+      return;
+    }
+
     const confirmMsg = zh
       ? `${fullClose ? "清仓" : "部分卖出"} ${closeTarget.name}\n数量: ${qty}\n卖出价: ${closePnl.sellPrice}\n盈亏: ${closePnl.pnl >= 0 ? "+" : ""}${closePnl.pnl.toFixed(2)} ${closePnl.currency}\n盈亏(¥): ${closePnl.pnlCny >= 0 ? "+" : ""}${closePnl.pnlCny.toFixed(0)}`
       : `${fullClose ? "Close" : "Partial sell"} ${closeTarget.name}\nQty: ${qty}\nSell: ${closePnl.sellPrice}\nP&L: ${closePnl.pnl >= 0 ? "+" : ""}${closePnl.pnl.toFixed(2)} ${closePnl.currency}\nP&L(¥): ${closePnl.pnlCny >= 0 ? "+" : ""}${closePnl.pnlCny.toFixed(0)}`;
@@ -1863,25 +1930,7 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
         });
       }
 
-      // ── Proceeds auto-booking. Cash is IBKR-style signed (negative =
-      //    margin loan), so crediting cash nets any loan automatically.
-      //    港股通: HK stocks via mainland brokers settle sales in CNY. ──
-      let proceeds = qty * closePnl.sellPrice;
-      let cur = closeTarget.currency;
-      const isHkConnect = closeTarget.market === "HK"
-        && !!acctSettings.find((s) => s.broker === closeTarget.broker)?.hk_connect;
-      if (isHkConnect && cur !== "CNY") {
-        const rate = data?.fx?.[cur] || 1.0;
-        proceeds = proceeds * rate;
-        cur = "CNY";
-      }
-      const autoBook = confirm(zh
-        ? `是否自动将卖出所得 ${proceeds.toFixed(2)} ${cur} 计入现金？${isHkConnect ? "\n（港股通：已按汇率折算为人民币）" : ""}\n负余额（融资）会被自动冲抵。\n（取消 = 不入账，自行手动管理）`
-        : `Auto-credit sale proceeds ${proceeds.toFixed(2)} ${cur} to cash?${isHkConnect ? "\n(HK Connect: converted to CNY at FX)" : ""}\nNegative balances (margin) net automatically.\n(Cancel = manage manually)`);
-      if (autoBook) {
-        const cashRow = (data?.cash || []).find((c) => c.account === closeTarget.broker && c.currency === cur);
-        await updateCash({ account: closeTarget.broker, currency: cur, balance: (cashRow?.balance || 0) + proceeds });
-      }
+      await autoBookProceeds(qty * closePnl.sellPrice);
 
       setCloseTarget(null); setCloseSearch("");
       setMsg(`✅ ${zh ? "已平仓" : "Closed"}`); onRefresh();
@@ -2201,17 +2250,38 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                     </div>
                   )}
 
-                  {closeDilutedWarn && (
-                    <div className="mb-3 p-2 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-800 text-[11px] text-amber-800 dark:text-amber-200 leading-relaxed">
-                      {zh
-                        ? `⚠️「${closeTarget.broker}」是摊薄口径账户。部分减仓请改用「编辑」填入券商显示的新数量和新成本——这里部分卖出不会摊薄成本，且会算错 YTD。（整体清仓则不受影响。）`
-                        : `⚠️ "${closeTarget.broker}" uses diluted cost. For a partial reduction use "Edit" to enter the broker's new qty and cost — a partial sell here won't dilute the cost and mis-attributes YTD. (Full close is fine.)`}
+                  {dilutedPartial && (
+                    <div className="mb-3 p-2 rounded bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 space-y-2">
+                      <div className="text-[11px] text-blue-800 dark:text-blue-200 leading-relaxed">
+                        {zh
+                          ? `「${closeTarget.broker}」是摊薄口径：本次减仓不记已实现盈亏，收益摊入剩余持仓成本（与券商一致），现金自动入账。`
+                          : `"${closeTarget.broker}" uses diluted cost: no realized P&L is booked — the gain folds into the remaining cost (matching the broker) and cash is credited automatically.`}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <div className="text-[10px] text-gray-500 mb-1">{zh ? "手续费（选填，摊入成本）" : "Fees (optional, folds into cost)"}</div>
+                          <input className={inputCls} inputMode="decimal" placeholder="0"
+                            value={closeFee} onChange={(e) => setCloseFee(e.target.value)} />
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-gray-500 mb-1">{zh ? "新摊薄成本（可改为券商精确值）" : "New diluted cost (editable)"}</div>
+                          <input className={inputCls} inputMode="decimal"
+                            value={closeNewCost} onChange={(e) => setCloseNewCost(e.target.value)} />
+                        </div>
+                      </div>
+                      {closePnl && closePnl.qty > 0 && closePnl.sellPrice > 0 && (
+                        <div className="text-[10px] font-mono text-gray-500">
+                          {zh ? "剩余" : "Remaining"} {fmtNum(closeTarget.quantity - closePnl.qty, 0)} · {zh ? "净回款" : "Net proceeds"} {(closePnl.qty * closePnl.sellPrice - (parseFloat(closeFee) || 0)).toFixed(2)} {closePnl.currency}
+                        </div>
+                      )}
                     </div>
                   )}
 
                   <button onClick={handleClose} disabled={saving || !closePnl || closePnl.qty <= 0 || closePnl.sellPrice <= 0}
                     className="w-full px-3 py-2 text-sm rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 font-medium">
-                    {saving ? "..." : (zh ? (closePnl && closePnl.qty < closeTarget.quantity ? "部分卖出" : "确认平仓") : (closePnl && closePnl.qty < closeTarget.quantity ? "Partial Sell" : "Close Position"))}
+                    {saving ? "..." : (zh
+                      ? (dilutedPartial ? "摊薄减仓" : closePnl && closePnl.qty < closeTarget.quantity ? "部分卖出" : "确认平仓")
+                      : (dilutedPartial ? "Diluted Reduce" : closePnl && closePnl.qty < closeTarget.quantity ? "Partial Sell" : "Close Position"))}
                   </button>
                 </div>
               )}
@@ -2579,8 +2649,8 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                           ? "平均成本：部分卖出后持仓成本不变（盈透口径）。请用「部分卖出」标签页减仓——它会记录已实现盈亏、成本保持不变。不要用「编辑」手动改成本。"
                           : "Average: cost stays unchanged on partial sell (IBKR). Reduce positions via the \"Close\" tab — it books realized P&L and keeps cost intact. Don't hand-edit the cost.")
                         : (zh
-                          ? "摊薄成本：券商在部分卖出后自动下调持仓成本（国内券商、富途）。用「编辑」填入券商显示的新数量和新成本即可。"
-                          : "Diluted: broker lowers the cost on partial sell (Chinese brokers, Futu). Use \"Edit\" to enter the new qty and cost shown by the broker.")}
+                          ? "摊薄成本：券商在部分卖出后自动下调持仓成本（国内券商、富途）。减仓推荐走「平仓」页——自动计算新摊薄成本并入账现金；也可用「编辑」照抄券商数字。"
+                          : "Diluted: broker lowers the cost on partial sell (Chinese brokers, Futu). Reduce via the Close tab — it computes the new diluted cost and books the cash; or hand-copy the broker's numbers via Edit.")}
                     </div>
                     <label className="flex items-center gap-1.5 text-[10px] text-gray-500 cursor-pointer">
                       <input type="checkbox" checked={acctHkConnect} onChange={(e) => setAcctHkConnect(e.target.checked)} />
