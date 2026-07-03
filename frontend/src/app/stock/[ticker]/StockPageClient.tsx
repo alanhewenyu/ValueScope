@@ -311,16 +311,6 @@ export default function StockPageClient({
           </div>
         )}
 
-        {/* Company description — first thing under the header */}
-        {profile?.description && (
-          <CompanyDescription
-            title={locale === "zh" ? "公司简介" : "Company Profile"}
-            text={profile.description}
-            moreLabel={locale === "zh" ? "展开" : "Show more"}
-            lessLabel={locale === "zh" ? "收起" : "Show less"}
-          />
-        )}
-
         {/* Tab navigation — always visible */}
         <div className="border-b border-gray-200 dark:border-gray-800 mb-6">
           <div className="flex gap-1 -mb-px overflow-x-auto">
@@ -371,6 +361,16 @@ export default function StockPageClient({
           </div>
         ) : (
           <>
+            {/* Description lives at the top of Overview (the landing tab) so
+                the tab bar stays right under the header */}
+            {activeTab === "overview" && profile?.description && (
+              <CompanyDescription
+                title={locale === "zh" ? "公司简介" : "Company Profile"}
+                text={profile.description}
+                moreLabel={locale === "zh" ? "展开" : "Show more"}
+                lessLabel={locale === "zh" ? "收起" : "Show less"}
+              />
+            )}
             {activeTab === "overview" && (
               <OverviewTab
                 profile={profile}
