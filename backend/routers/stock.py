@@ -39,7 +39,11 @@ _ticker_cache: list[dict] | None = None  # [{"s": symbol, "n": name, "x": exchan
 
 
 def _get_a_share_list() -> list[tuple[str, str]]:
-    """Lazily load and cache A-share code/name list from akshare."""
+    """Lazily load and cache A-share code/name list from akshare.
+
+    Falls back to the bundled tickers.json snapshot when akshare fails —
+    it does in production (Railway US), where eastmoney/SSE block the fetch.
+    """
     global _a_share_cache
     if _a_share_cache is not None:
         return _a_share_cache
@@ -48,8 +52,16 @@ def _get_a_share_list() -> list[tuple[str, str]]:
         df = ak.stock_info_a_code_name()
         _a_share_cache = list(zip(df["code"].tolist(), df["name"].tolist()))
     except Exception as e:
-        logger.warning("Failed to load A-share list: %s", e)
+        logger.warning("Failed to load A-share list from akshare: %s", e)
         _a_share_cache = []
+    if not _a_share_cache:
+        _a_share_cache = [
+            (t["s"].split(".")[0], t["n"])
+            for t in _get_ticker_list()
+            if t.get("s", "").endswith((".SS", ".SZ"))
+        ]
+        if _a_share_cache:
+            logger.info("A-share list loaded from bundled snapshot (%d entries)", len(_a_share_cache))
     return _a_share_cache
 
 
@@ -61,7 +73,7 @@ def _a_share_name_zh(normalized: str) -> str:
     global _a_share_name_map
     if not is_a_share(normalized):
         return ""
-    if _a_share_name_map is None:
+    if not _a_share_name_map:  # retry while list source was unavailable
         _a_share_name_map = dict(_get_a_share_list())
     return _a_share_name_map.get(normalized.split(".")[0], "")
 
@@ -83,15 +95,23 @@ def _get_ticker_list() -> list[dict]:
     global _ticker_cache
     if _ticker_cache is not None:
         return _ticker_cache
-    try:
-        import os
-        path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                            ".streamlit", "static", "tickers.json")
-        with open(path, "r", encoding="utf-8") as f:
-            _ticker_cache = json.loads(f.read())
-    except Exception as e:
-        logger.warning("Failed to load tickers.json: %s", e)
-        _ticker_cache = []
+    import os
+    _root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    # backend/static ships in the Docker image; .streamlit is legacy local-only
+    for path in (
+        os.path.join(_root, "backend", "static", "tickers.json"),
+        os.path.join(_root, ".streamlit", "static", "tickers.json"),
+    ):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                _ticker_cache = json.loads(f.read())
+            return _ticker_cache
+        except FileNotFoundError:
+            continue
+        except Exception as e:
+            logger.warning("Failed to load %s: %s", path, e)
+    logger.warning("No tickers.json found — local search disabled")
+    _ticker_cache = []
     return _ticker_cache
 
 
