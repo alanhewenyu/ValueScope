@@ -43,6 +43,12 @@ function setCache(key: string, data: unknown) {
   _responseCache.set(key, { data, ts: Date.now() });
 }
 
+/** Seed the client response cache with server-rendered data so the
+ *  initial-load fetches (profile/financials) resolve instantly. */
+export function seedCache(key: string, data: unknown) {
+  setCache(key, data);
+}
+
 async function fetchAPI<T>(path: string, options?: RequestInit & { timeoutMs?: number; retries?: number; cacheKey?: string }): Promise<T> {
   // Return cached response for GET requests if available
   const cacheKey = options?.cacheKey;
@@ -68,8 +74,10 @@ async function fetchAPI<T>(path: string, options?: RequestInit & { timeoutMs?: n
         ...options,
         signal: controller.signal,
         headers: {
-          // Don't set Content-Type for FormData — browser sets it with boundary
-          ...(isFormData ? {} : { "Content-Type": "application/json" }),
+          // Content-Type only when there's a JSON body (FormData sets its own
+          // with boundary). Setting it on GET made every request non-simple,
+          // forcing a CORS preflight — a full extra round-trip per call.
+          ...(options?.body && !isFormData ? { "Content-Type": "application/json" } : {}),
           ...getAuthHeader(),
           ...options?.headers,
         },
