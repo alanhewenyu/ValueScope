@@ -25,14 +25,6 @@ interface SeoProfile {
   exchange?: string;
 }
 
-interface SeoFinancials {
-  formatted_summary?: {
-    columns: string[];
-    index: string[];
-    data: string[][];
-  };
-}
-
 const CURRENCY_SYMBOL: Record<string, string> = {
   CNY: "¥",
   HKD: "HK$",
@@ -61,21 +53,6 @@ async function fetchSeoProfile(ticker: string): Promise<SeoProfile | null> {
     });
     if (!res.ok) return null;
     return (await res.json()) as SeoProfile;
-  } catch {
-    return null;
-  }
-}
-
-async function fetchSeoFinancials(ticker: string): Promise<SeoFinancials | null> {
-  // A-share / HK financials need no API key. US/JP require the user's FMP
-  // key (402 without one), so the fetch simply returns null for those.
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/stock/financials/${ticker}`, {
-      next: { revalidate: 21600 }, // cache for 6 hours
-      signal: AbortSignal.timeout(9000),
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as SeoFinancials;
   } catch {
     return null;
   }
@@ -131,24 +108,22 @@ export async function generateMetadata({
  *  Real user-visible content (not cloaking) so Google/Baidu get substance
  *  without executing JS or waiting for client-side API calls. */
 async function SeoContent({ ticker }: { ticker: string }) {
-  const [profile, financials] = await Promise.all([
-    fetchSeoProfile(ticker),
-    fetchSeoFinancials(ticker),
-  ]);
+  const profile = await fetchSeoProfile(ticker);
 
   if (!profile) return null;
 
   const name = displayName(profile, ticker);
   const nameEn = profile.company_name || "";
-  const summary = financials?.formatted_summary;
 
   return (
     <section className="max-w-7xl mx-auto px-4 py-8 text-sm text-gray-600 dark:text-gray-400">
       {/* Collapsed by default: crawlers index <details> content at full weight
-          (mobile-first), while users just see one quiet row at the page end */}
+          (mobile-first), while users just see one quiet row at the page end.
+          The expanded description users read lives in the client page above
+          the tabs; this server-rendered copy exists for no-JS crawlers. */}
       <details className="border-t border-gray-200 dark:border-gray-800 pt-4 space-y-4">
         <summary className="cursor-pointer text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 select-none">
-          {name}（{ticker}）公司简介与历史财务数据
+          {name}（{ticker}）公司简介
         </summary>
         <h2 className="text-base font-semibold text-gray-800 dark:text-gray-200 mt-4">
           {name}
@@ -164,47 +139,6 @@ async function SeoContent({ ticker }: { ticker: string }) {
           {profile.price ? `最新股价：${formatPrice(profile)}。` : ""}
           本页提供 {name} 的 DCF 现金流折现估值、相对估值历史分位、多维财务评分与 AI 辅助分析。
         </p>
-        {summary && summary.index.length > 0 && (
-          <div className="overflow-x-auto">
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">
-              {name} 历史财务数据
-            </h3>
-            <table className="min-w-full border-collapse text-xs">
-              <thead>
-                <tr>
-                  <th className="text-left py-1.5 pr-4 border-b border-gray-200 dark:border-gray-800 font-medium">
-                    指标
-                  </th>
-                  {summary.columns.map((col) => (
-                    <th
-                      key={col}
-                      className="text-right py-1.5 pl-4 border-b border-gray-200 dark:border-gray-800 font-medium"
-                    >
-                      {col}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {summary.index.map((rowName, i) => (
-                  <tr key={rowName}>
-                    <td className="text-left py-1.5 pr-4 border-b border-gray-100 dark:border-gray-900">
-                      {rowName}
-                    </td>
-                    {(summary.data[i] || []).map((val, j) => (
-                      <td
-                        key={j}
-                        className="text-right py-1.5 pl-4 border-b border-gray-100 dark:border-gray-900 tabular-nums"
-                      >
-                        {val ?? ""}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </details>
     </section>
   );

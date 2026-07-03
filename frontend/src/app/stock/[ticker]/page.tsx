@@ -49,6 +49,35 @@ import { useSettings } from "@/lib/settings";
 
 type TabId = "overview" | "dcf" | "relative" | "scoring" | "insights";
 
+function CompanyDescription({
+  title,
+  text,
+  moreLabel,
+  lessLabel,
+}: {
+  title: string;
+  text: string;
+  moreLabel: string;
+  lessLabel: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="mb-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-3">
+      <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-1">{title}</h2>
+      <p className={`text-sm text-gray-600 dark:text-gray-400 leading-relaxed ${expanded ? "" : "line-clamp-2"}`}>
+        {text}
+      </p>
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="mt-1 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+      >
+        {expanded ? lessLabel : moreLabel}
+      </button>
+    </div>
+  );
+}
+
 export default function StockPage() {
   const params = useParams();
   const ticker = (params.ticker as string) || "";
@@ -263,6 +292,16 @@ export default function StockPage() {
               {t.warnFmpRequired}
             </p>
           </div>
+        )}
+
+        {/* Company description — first thing under the header */}
+        {profile?.description && (
+          <CompanyDescription
+            title={locale === "zh" ? "公司简介" : "Company Profile"}
+            text={profile.description}
+            moreLabel={locale === "zh" ? "展开" : "Show more"}
+            lessLabel={locale === "zh" ? "收起" : "Show less"}
+          />
         )}
 
         {/* Tab navigation — always visible */}
