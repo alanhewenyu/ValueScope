@@ -18,7 +18,11 @@ _global_lock = threading.Lock()
 _TTL = 300  # 5 minutes
 _PROFILE_TTL = 600  # 10 minutes
 _BETA_TTL = 86400  # 24 hours — beta barely changes day-to-day
-_MAX_CACHE_ENTRIES = 100  # cap to prevent unbounded memory growth
+# Small hot layer only — the SQLite disk cache (persistent_cache) serves
+# misses in ~10-20ms, so a big in-memory cache just burns Railway GB-minutes.
+# Financial dicts hold multiple DataFrames (MBs each); 100 entries ≈ hundreds
+# of MB once crawlers sweep the 10k-page sitemap.
+_MAX_CACHE_ENTRIES = 24
 
 # Persistent (SQLite) TTLs — the warm layer that survives restarts.
 # Financial statements change quarterly; a day-old copy beats a 5-20s cold fetch.

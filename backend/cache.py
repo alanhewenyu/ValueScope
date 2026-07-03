@@ -8,8 +8,9 @@ from typing import Any
 _lock = threading.Lock()
 _store: dict[str, tuple[float, Any]] = {}  # key -> (expiry_ts, value)
 
-# Maximum cache entries to prevent unbounded growth
-_MAX_ENTRIES = 200
+# Maximum cache entries to prevent unbounded growth. Kept small: entries are
+# formatted per-ticker JSON payloads and memory is ~100% of the Railway bill.
+_MAX_ENTRIES = 64
 
 
 def get(key: str) -> Any | None:
