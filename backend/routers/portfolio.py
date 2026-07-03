@@ -81,10 +81,13 @@ class AccountSettingIn(BaseModel):
 
 class DepositRecordIn(BaseModel):
     broker: str
-    amount_cny: float
+    amount_cny: float  # signed: deposit > 0, withdrawal < 0
     fx_rate: float = 1.0
     deposit_date: str = ""
     notes: str = ""
+    currency: str = "CNY"
+    amount: Optional[float] = None  # original-currency amount (defaults to amount_cny / fx_rate)
+    update_cash: bool = False  # also move the matching cash balance
 
 
 class MarginIn(BaseModel):
@@ -410,7 +413,9 @@ def add_deposit_record_api(data: DepositRecordIn, user_id: str = Depends(get_cur
     init_db()
     with get_conn() as conn:
         add_deposit_record(conn, data.broker, data.amount_cny,
-                           data.fx_rate, data.deposit_date, data.notes, user_id=user_id)
+                           data.fx_rate, data.deposit_date, data.notes, user_id=user_id,
+                           currency=data.currency, amount=data.amount,
+                           update_cash=data.update_cash)
         conn.commit()
     return {"ok": True}
 

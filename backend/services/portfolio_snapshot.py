@@ -34,6 +34,7 @@ except ImportError:
 
 from backend.services.portfolio_db import (
     DB_PATH, get_conn, upsert_snapshot, upsert_fx, init_db, compute_capital,
+    roll_units,
 )
 from backend.services.portfolio_prices import fetch_price, fetch_fx_rate
 
@@ -179,6 +180,12 @@ def take_snapshot(dry_run=False, user_id: str = "local"):
     market_json = json.dumps(market_mv, ensure_ascii=False)
     print(f"Market MV:    {market_json}")
 
+    # ── TWR unitization (fund-style units; first run = inception at 1.0) ──
+    unit_res = roll_units(conn, user_id, today, net_assets)
+    units, unit_nav = unit_res if unit_res else (None, None)
+    if unit_nav is not None:
+        print(f"Unit NAV:     {unit_nav:.4f}  ({units:,.0f} units)")
+
     if dry_run:
         print(f"\n[DRY RUN] Would write snapshot for {today}")
     else:
@@ -186,7 +193,8 @@ def take_snapshot(dry_run=False, user_id: str = "local"):
         upsert_snapshot(conn, today, total_assets, net_assets,
                         equity_mv, cash_cny, total_leverage, total_pnl_cny,
                         market_data=market_json, capital=capital,
-                        market_pnl=market_pnl_json, user_id=user_id)
+                        market_pnl=market_pnl_json, user_id=user_id,
+                        units=units, unit_nav=unit_nav)
 
         # Auto-create YTD baselines if none exist for current year
         from backend.services.portfolio_db import get_ytd_baselines, record_ytd_baselines

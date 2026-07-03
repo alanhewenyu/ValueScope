@@ -886,6 +886,8 @@ export interface Snapshot {
   capital: number | null;
   market_pnl: string | null;
   realized_pnl_cny: number | null;
+  units?: number | null;
+  unit_nav?: number | null; // TWR unit NAV (1.0 at inception), null before T0
 }
 
 export interface MarginBalance {
@@ -1071,10 +1073,13 @@ export interface DepositRecord {
 
 export interface DepositRecordInput {
   broker: string;
-  amount_cny: number;
+  amount_cny: number; // signed: deposit > 0, withdrawal < 0
   fx_rate?: number;
   deposit_date?: string;
   notes?: string;
+  currency?: string;
+  amount?: number; // original-currency amount (signed)
+  update_cash?: boolean; // also move the matching cash balance
 }
 
 export async function getDepositHistory(broker: string): Promise<DepositRecord[]> {

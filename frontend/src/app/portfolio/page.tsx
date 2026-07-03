@@ -102,6 +102,56 @@ function sortMarkets(keys: string[]) {
 // KPI Card
 // ══════════════════════════════════════════
 
+/** Shared fields for dated cash-flow entry (deposit/withdrawal). The date is
+ *  mandatory because the TWR unit engine prices flows at that day's NAV. */
+function FlowFields({ zh, inputCls, flowDirection, setFlowDirection, flowCurrency, setFlowCurrency,
+  flowUpdateCash, setFlowUpdateCash, depositDate, setDepositDate, depositNotes, setDepositNotes }: {
+  zh: boolean; inputCls: string;
+  flowDirection: "in" | "out"; setFlowDirection: (d: "in" | "out") => void;
+  flowCurrency: string; setFlowCurrency: (c: string) => void;
+  flowUpdateCash: boolean; setFlowUpdateCash: (b: boolean) => void;
+  depositDate: string; setDepositDate: (d: string) => void;
+  depositNotes: string; setDepositNotes: (n: string) => void;
+}) {
+  return (
+    <>
+      <div className="flex rounded overflow-hidden border border-gray-300 dark:border-gray-700">
+        <button type="button" onClick={() => setFlowDirection("in")}
+          className={`flex-1 text-[10px] py-1 font-medium transition-colors ${flowDirection === "in" ? "bg-green-600 text-white" : "bg-white dark:bg-gray-900 text-gray-500 hover:bg-gray-100"}`}>
+          {zh ? "入金" : "Deposit"}
+        </button>
+        <button type="button" onClick={() => setFlowDirection("out")}
+          className={`flex-1 text-[10px] py-1 font-medium transition-colors ${flowDirection === "out" ? "bg-red-600 text-white" : "bg-white dark:bg-gray-900 text-gray-500 hover:bg-gray-100"}`}>
+          {zh ? "出金" : "Withdraw"}
+        </button>
+      </div>
+      <div>
+        <div className="text-[10px] text-gray-400 mb-0.5">
+          {zh ? "日期（必填，用于净值折算）" : "Date (required for unit NAV)"}
+        </div>
+        <input className={inputCls} type="date" value={depositDate} onChange={(e) => setDepositDate(e.target.value)} />
+      </div>
+      <div className="flex gap-2 items-center">
+        <span className="text-[10px] text-gray-400 whitespace-nowrap">{zh ? "现金币种" : "Cash currency"}</span>
+        <select className={inputCls} style={{ width: 90 }} value={flowCurrency} onChange={(e) => setFlowCurrency(e.target.value)}>
+          {["CNY", "USD", "HKD", "JPY"].map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
+      <label className="flex items-center gap-1.5 text-[10px] text-gray-500 cursor-pointer">
+        <input type="checkbox" checked={flowUpdateCash} onChange={(e) => setFlowUpdateCash(e.target.checked)} />
+        {zh ? "同步更新该账户现金余额（推荐）" : "Also update this account's cash balance (recommended)"}
+      </label>
+      <div className="text-[10px] text-gray-400 leading-relaxed">
+        {zh ? "注意：股息、利息到账不是入金——直接改现金余额即可，它们会体现为收益。" : "Note: dividends/interest are NOT deposits — just edit the cash balance; they count as returns."}
+      </div>
+      <div>
+        <div className="text-[10px] text-gray-400 mb-0.5">{zh ? "备注（可选）" : "Notes (optional)"}</div>
+        <input className={inputCls} placeholder={zh ? "例如：第二笔入金" : "e.g. 2nd deposit"} value={depositNotes} onChange={(e) => setDepositNotes(e.target.value)} />
+      </div>
+    </>
+  );
+}
+
 function KpiCard({ label, value, sub, subColor }: {
   label: string; value: string; sub?: string; subColor?: string;
 }) {
@@ -599,7 +649,7 @@ function PerformanceSection({ locale, hideChart, hideRisk }: { locale: string; h
   return (
     <>
       {/* Performance Chart (NAV + Capital) */}
-      {!hideChart && navSorted.length > 2 && <PerformanceChart navHistory={navSorted} locale={locale} />}
+      {!hideChart && navSorted.length > 2 && <PerformanceChart navHistory={navSorted} snapshots={snapshotsSorted} locale={locale} />}
 
       {/* Risk Analytics */}
       {!hideRisk && (<>
@@ -638,7 +688,9 @@ function PerformanceSection({ locale, hideChart, hideRisk }: { locale: string; h
 // Performance Chart (SVG line chart)
 // ══════════════════════════════════════════
 
-function PerformanceChart({ navHistory, locale }: { navHistory: NavHistoryPoint[]; locale: string }) {
+function PerformanceChart({ navHistory, snapshots = [], locale }: {
+  navHistory: NavHistoryPoint[]; snapshots?: Snapshot[]; locale: string;
+}) {
   const [range, setRange] = useState<string>("2Y");
   const [showBenchmarks, setShowBenchmarks] = useState(false);
   const [benchData, setBenchData] = useState<Record<string, BenchmarkPoint[]>>({});
@@ -684,16 +736,33 @@ function PerformanceChart({ navHistory, locale }: { navHistory: NavHistoryPoint[
   const benchColors: Record<string, string> = { "CSI 300": "#ef4444", "S&P 500": "#22c55e", "Hang Seng": "#f59e0b" };
 
   if (showBenchmarks && Object.keys(benchData).length > 0) {
-    // Build indexed portfolio return
-    const startEnav = filteredNav[0].net_asset_value / filteredNav[0].capital_invested;
-    const portIndexed = filteredNav.map((p) => ({
-      date: p.date,
-      indexed: (p.net_asset_value / p.capital_invested) / startEnav * 100,
-    }));
+    // Portfolio indexed return. Prefer TWR unit NAV (flow-proof: deposits
+    // issue units instead of showing up as gains); fall back to the legacy
+    // NAV/capital ratio for history before unitization began.
+    const rangeStart = filteredNav[0].date;
+    const twrPts = snapshots.filter(
+      (s) => s.unit_nav != null && s.unit_nav > 0 && s.date >= rangeStart,
+    );
+    const useTwr = twrPts.length >= 2;
+    let portIndexed: { date: string; indexed: number }[];
+    if (useTwr) {
+      const base = twrPts[0].unit_nav as number;
+      portIndexed = twrPts.map((s) => ({
+        date: s.date,
+        indexed: ((s.unit_nav as number) / base) * 100,
+      }));
+    } else {
+      const startEnav = filteredNav[0].net_asset_value / filteredNav[0].capital_invested;
+      portIndexed = filteredNav.map((p) => ({
+        date: p.date,
+        indexed: (p.net_asset_value / p.capital_invested) / startEnav * 100,
+      }));
+    }
+    const portLabel = useTwr ? "Portfolio (TWR)" : "Portfolio";
 
     // Build indexed benchmark returns (filter to date range)
-    const startDate = filteredNav[0].date;
-    const endDate = filteredNav[filteredNav.length - 1].date;
+    const startDate = portIndexed[0].date;
+    const endDate = portIndexed[portIndexed.length - 1].date;
     const benchIndexed: Record<string, { date: string; indexed: number }[]> = {};
     for (const [name, points] of Object.entries(benchData)) {
       const inRange = points.filter((p) => p.date >= startDate && p.date <= endDate);
@@ -826,7 +895,7 @@ function PerformanceChart({ navHistory, locale }: { navHistory: NavHistoryPoint[
           </svg>
           {/* Legend */}
           <div className="flex flex-wrap gap-4 mt-2 text-xs font-mono">
-            <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-blue-500 inline-block" /> Portfolio {portRet > 0 ? "+" : ""}{portRet.toFixed(1)}%</span>
+            <span className="flex items-center gap-1.5"><span className="w-4 h-0.5 bg-blue-500 inline-block" /> {portLabel} {portRet > 0 ? "+" : ""}{portRet.toFixed(1)}%</span>
             {Object.entries(benchIndexed).map(([name, pts]) => (
               <span key={name} className="flex items-center gap-1.5">
                 <span className="w-4 h-0.5 inline-block" style={{ borderTop: `1.5px dashed ${benchColors[name]}`, height: 0 }} />
@@ -1628,6 +1697,10 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
   const [acctFx, setAcctFx] = useState("1.0");
   const [depositAction, setDepositAction] = useState<"update" | "add">("update");
   const [depositDate, setDepositDate] = useState("");
+  // Cash-flow entry (TWR unit engine consumes dated flows)
+  const [flowDirection, setFlowDirection] = useState<"in" | "out">("in");
+  const [flowCurrency, setFlowCurrency] = useState("CNY");
+  const [flowUpdateCash, setFlowUpdateCash] = useState(true);
   const [depositNotes, setDepositNotes] = useState("");
   const [depositHistory, setDepositHistory] = useState<DepositRecord[]>([]);
   const [expandedBroker, setExpandedBroker] = useState<string | null>(null);
@@ -1765,6 +1838,34 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
           cost_price: closeTarget.cost_price, currency: closeTarget.currency,
         });
       }
+
+      // ── Proceeds allocation: margin first (IBKR nets negative cash
+      //    automatically; CN margin accounts may keep the loan — user picks) ──
+      const proceeds = qty * closePnl.sellPrice;
+      const cur = closeTarget.currency;
+      const autoBook = confirm(zh
+        ? `是否自动将卖出所得 ${proceeds.toFixed(2)} ${cur} 计入账目？\n（取消 = 不入账，自行手动管理现金/融资）`
+        : `Auto-book sale proceeds ${proceeds.toFixed(2)} ${cur}?\n(Cancel = manage cash/margin manually)`);
+      if (autoBook) {
+        const marginRow = marginData.find((m) => m.category === "in_house" && m.currency === cur && m.amount > 0);
+        let toCash = proceeds;
+        if (marginRow) {
+          const repay = Math.min(proceeds, marginRow.amount);
+          const repayFirst = confirm(zh
+            ? `检测到融资余额 ${marginRow.amount.toFixed(2)} ${cur}。\n确定 = 优先偿还融资 ${repay.toFixed(2)}，剩余 ${(proceeds - repay).toFixed(2)} 计入现金（盈透模式）\n取消 = 全部计入现金（保留融资）`
+            : `Outstanding margin: ${marginRow.amount.toFixed(2)} ${cur}.\nOK = repay ${repay.toFixed(2)} first, ${(proceeds - repay).toFixed(2)} to cash (IBKR-style)\nCancel = all to cash (keep the loan)`);
+          if (repayFirst) {
+            await updateMargin({ broker: marginRow.broker, category: "in_house", currency: cur, amount: marginRow.amount - repay });
+            toCash = proceeds - repay;
+          }
+        }
+        if (toCash > 0) {
+          const cashRow = (data?.cash || []).find((c) => c.account === closeTarget.broker && c.currency === cur);
+          await updateCash({ account: closeTarget.broker, currency: cur, balance: (cashRow?.balance || 0) + toCash });
+        }
+        setMarginData(await getMarginBalances());
+      }
+
       setCloseTarget(null); setCloseSearch("");
       setMsg(`✅ ${zh ? "已平仓" : "Closed"}`); onRefresh();
     } catch { setMsg("❌ Error"); } finally { setSaving(false); }
@@ -1809,20 +1910,40 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
   }
 
   // ── Settings handlers ──
+
+  /** Record a signed, dated cash flow. The date is mandatory: the TWR unit
+   *  engine converts flows into units at that day's NAV. */
+  async function submitFlow(broker: string): Promise<boolean> {
+    const amt = parseFloat(acctDeposit) || 0;
+    if (!amt) return false;
+    if (!depositDate) {
+      alert(zh
+        ? "请填写日期——净值(TWR)计算需要每笔资金流的准确日期"
+        : "Date is required — TWR unit accounting needs the exact flow date");
+      return false;
+    }
+    const fx = flowCurrency === "CNY" ? 1.0 : parseFloat(acctFx) || 1.0;
+    const sign = flowDirection === "in" ? 1 : -1;
+    await addDepositRecord({
+      broker,
+      amount_cny: sign * amt,
+      fx_rate: fx,
+      deposit_date: depositDate,
+      notes: depositNotes,
+      currency: flowCurrency,
+      update_cash: flowUpdateCash,
+    });
+    return true;
+  }
+
   async function handleAcctSave() {
     const broker = isNewAcct ? newAcctName.trim() : acctBroker;
     if (!broker) return;
     setSaving(true);
     try {
       if (acctMode === "deposit" && depositAction === "add") {
-        // Append deposit record → backend auto-recalculates totals in account_settings
-        await addDepositRecord({
-          broker,
-          amount_cny: parseFloat(acctDeposit) || 0,
-          fx_rate: parseFloat(acctFx) || 1.0,
-          deposit_date: depositDate,
-          notes: depositNotes,
-        });
+        // Append flow record → backend auto-recalculates totals in account_settings
+        if (!(await submitFlow(broker))) { setSaving(false); return; }
       } else {
         // Direct update (overwrite totals)
         await upsertAccountSetting({ broker, capital_mode: acctMode,
@@ -1833,6 +1954,7 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
       setAcctBroker(""); setNewAcctName(""); setIsNewAcct(false);
       setAcctDeposit(""); setAcctFx("1.0"); setAcctMode("cost"); setAcctCostMethod("diluted");
       setDepositAction("update"); setDepositDate(""); setDepositNotes("");
+      setFlowDirection("in"); setFlowCurrency("CNY"); setFlowUpdateCash(true);
       if (expandedBroker) {
         setDepositHistory(await getDepositHistory(expandedBroker));
       }
@@ -2121,6 +2243,11 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                 {newCashAccount === "__other__" && (
                   <input className={`${inputCls} mb-2`} placeholder={zh ? "输入账户名称" : "Account name"} value={newCashCustomName} onChange={(e) => setNewCashCustomName(e.target.value)} />
                 )}
+                <div className="text-[10px] text-gray-400 leading-relaxed mb-1.5">
+                  {zh
+                    ? "改余额 = 修正（分红、结算、费用等，计入收益）。入金/出金请用「账户设置 → 记录资金流」，否则净值(TWR)曲线会失真。"
+                    : "Edits here = corrections (dividends, settlement, fees — counted as returns). For deposits/withdrawals use Settings → Record Flow, or the TWR curve will drift."}
+                </div>
                 <button onClick={handleCashSaveAll} disabled={saving || Object.keys(cashEdits).length === 0} className="w-full px-3 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 mb-2">
                   {saving ? "..." : (zh ? "保存现金" : "Save Cash")}
                 </button>
@@ -2409,17 +2536,47 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                         value={acctFx} onChange={(e) => setAcctFx(e.target.value)} />
                     </div>
                     {depositAction === "add" && (
-                      <>
-                        <div>
-                          <div className="text-[10px] text-gray-400 mb-0.5">{zh ? "入金日期（可选）" : "Date (optional)"}</div>
-                          <input className={inputCls} type="date" value={depositDate} onChange={(e) => setDepositDate(e.target.value)} />
-                        </div>
-                        <div>
-                          <div className="text-[10px] text-gray-400 mb-0.5">{zh ? "备注（可选）" : "Notes (optional)"}</div>
-                          <input className={inputCls} placeholder={zh ? "例如：第二笔入金" : "e.g. 2nd deposit"} value={depositNotes} onChange={(e) => setDepositNotes(e.target.value)} />
-                        </div>
-                      </>
+                      <FlowFields zh={zh} inputCls={inputCls}
+                        flowDirection={flowDirection} setFlowDirection={setFlowDirection}
+                        flowCurrency={flowCurrency} setFlowCurrency={setFlowCurrency}
+                        flowUpdateCash={flowUpdateCash} setFlowUpdateCash={setFlowUpdateCash}
+                        depositDate={depositDate} setDepositDate={setDepositDate}
+                        depositNotes={depositNotes} setDepositNotes={setDepositNotes} />
                     )}
+                  </div>
+                )}
+                {/* Cost-mode accounts also need dated flows — the TWR unit
+                    engine is portfolio-wide, capital stays cost-based */}
+                {acctMode === "cost" && (!isNewAcct ? !!acctBroker : !!newAcctName.trim()) && (
+                  <div className="space-y-2 border-t border-gray-200 dark:border-gray-800 pt-2">
+                    <div className="text-[10px] font-medium text-gray-500">
+                      {zh ? "记录入金 / 出金（用于净值 TWR 计算，不影响成本口径本金）" : "Record deposit / withdrawal (feeds TWR units; capital stays cost-based)"}
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-gray-400 mb-0.5">{zh ? "金额 (人民币)" : "Amount (CNY)"}</div>
+                      <input className={inputCls} inputMode="decimal" placeholder={zh ? "例如：50000" : "e.g. 50000"}
+                        value={acctDeposit} onChange={(e) => setAcctDeposit(e.target.value)} />
+                    </div>
+                    <FlowFields zh={zh} inputCls={inputCls}
+                      flowDirection={flowDirection} setFlowDirection={setFlowDirection}
+                      flowCurrency={flowCurrency} setFlowCurrency={setFlowCurrency}
+                      flowUpdateCash={flowUpdateCash} setFlowUpdateCash={setFlowUpdateCash}
+                      depositDate={depositDate} setDepositDate={setDepositDate}
+                      depositNotes={depositNotes} setDepositNotes={setDepositNotes} />
+                    <button disabled={saving || !parseFloat(acctDeposit)}
+                      onClick={async () => {
+                        const broker = isNewAcct ? newAcctName.trim() : acctBroker;
+                        setSaving(true);
+                        try {
+                          if (await submitFlow(broker)) {
+                            setAcctDeposit(""); setDepositDate(""); setDepositNotes("");
+                            onRefresh(); setMsg("✅ Saved");
+                          }
+                        } catch { setMsg("❌ Error"); } finally { setSaving(false); }
+                      }}
+                      className="w-full px-3 py-1.5 text-xs rounded bg-gray-700 dark:bg-gray-600 text-white hover:bg-gray-800 disabled:opacity-50">
+                      {saving ? "..." : (zh ? "记录资金流" : "Record Flow")}
+                    </button>
                   </div>
                 )}
                 <button onClick={handleAcctSave} disabled={saving || (isNewAcct ? !newAcctName.trim() : !acctBroker)}

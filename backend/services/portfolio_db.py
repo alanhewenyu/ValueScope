@@ -484,6 +484,7 @@ def init_db(db_path: str | None = None) -> None:
         _migrate_add_cost_method(conn)
         _migrate_ytd_baseline_broker(conn)
         _migrate_snapshot_unique_per_user(conn)
+        _migrate_twr_columns(conn)
 
 
 def _migrate_seed_account_settings(conn):
@@ -677,6 +678,75 @@ def _migrate_add_user_id(conn):
     conn.commit()
 
 
+def _migrate_twr_columns(conn):
+    """TWR unitization: fund-style units on snapshots, currency on flows.
+
+    - daily_snapshots.units / unit_nav: outstanding units and NAV per unit.
+      First snapshot after deploy is the inception (T0): unit_nav = 1.0,
+      units = net_assets. History before T0 stays NULL — never backfilled.
+    - deposit_history.currency / amount: original-currency amount so a flow
+      can also update the matching cash balance (amount_cny stays the
+      CNY-converted value used by capital totals and the unit engine).
+    """
+    for table, col, ddl in [
+        ("daily_snapshots", "units", "units REAL"),
+        ("daily_snapshots", "unit_nav", "unit_nav REAL"),
+        ("deposit_history", "currency", "currency TEXT NOT NULL DEFAULT 'CNY'"),
+        ("deposit_history", "amount", "amount REAL"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+        except sqlite3.OperationalError:
+            pass  # already exists
+    conn.commit()
+
+
+def roll_units(conn: sqlite3.Connection, user_id: str, date: str,
+               net_assets: float) -> tuple[float, float] | None:
+    """Fund-style unitization step for one snapshot day.
+
+    unit_nav_D = (net_assets_D − net_flow_D) / units_prev   (flows priced at
+    day-D close, so a deposit can't inflate that day's return)
+    units_D    = units_prev + net_flow_D / unit_nav_D
+
+    net_flow covers dated flows since the previous unitized snapshot
+    (exclusive) through `date` (inclusive) — weekend/holiday flows roll into
+    the next trading-day snapshot. Undated legacy flows are ignored: history
+    before inception is collapsed into the opening balance by design.
+
+    Returns (units, unit_nav), or None when the account isn't unitizable
+    (zero/negative net assets at inception).
+    """
+    prev = conn.execute("""
+        SELECT date, units FROM daily_snapshots
+        WHERE user_id=? AND units IS NOT NULL AND units > 0 AND date < ?
+        ORDER BY date DESC LIMIT 1
+    """, (user_id, date)).fetchone()
+
+    if prev is None:
+        # Inception (T0): the whole pre-history becomes the opening balance
+        if net_assets <= 0:
+            return None
+        return (net_assets, 1.0)
+
+    prev_date, prev_units = prev[0], prev[1]
+    flow = conn.execute("""
+        SELECT COALESCE(SUM(amount_cny), 0) FROM deposit_history
+        WHERE user_id=? AND deposit_date IS NOT NULL
+          AND deposit_date > ? AND deposit_date <= ?
+    """, (user_id, prev_date, date)).fetchone()[0]
+
+    unit_nav = (net_assets - flow) / prev_units
+    if unit_nav <= 0:
+        # Pathological (flow larger than assets — bad data): re-incept
+        # rather than producing a negative NAV
+        return (net_assets, 1.0) if net_assets > 0 else None
+    units = prev_units + flow / unit_nav
+    if units <= 0:
+        return None
+    return (units, unit_nav)
+
+
 def _migrate_snapshot_unique_per_user(conn):
     """daily_snapshots: UNIQUE(date) → UNIQUE(date, user_id).
 
@@ -828,13 +898,26 @@ def _recalc_deposit_totals(conn: sqlite3.Connection, broker: str,
 def add_deposit_record(conn: sqlite3.Connection, broker: str,
                        amount_cny: float, fx_rate: float = 1.0,
                        deposit_date: str = '', notes: str = '',
-                       user_id: str = 'local') -> None:
-    """Add a deposit record and recalculate account_settings totals."""
+                       user_id: str = 'local',
+                       currency: str = 'CNY',
+                       amount: float | None = None,
+                       update_cash: bool = False) -> None:
+    """Add a cash-flow record (deposit > 0, withdrawal < 0) and recalculate
+    account_settings totals. amount is the original-currency value; with
+    update_cash the matching cash balance moves in the same transaction so
+    the flow ledger and cash can't drift apart."""
+    if amount is None:
+        amount = amount_cny / fx_rate if fx_rate else amount_cny
     conn.execute("""
-        INSERT INTO deposit_history (broker, amount_cny, fx_rate, deposit_date, notes, user_id)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (broker, amount_cny, fx_rate, deposit_date or None, notes or None, user_id))
+        INSERT INTO deposit_history (broker, amount_cny, fx_rate, deposit_date, notes, user_id, currency, amount)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (broker, amount_cny, fx_rate, deposit_date or None, notes or None, user_id, currency, amount))
     _recalc_deposit_totals(conn, broker, user_id)
+    if update_cash:
+        row = conn.execute(
+            "SELECT balance FROM cash_balances WHERE account=? AND currency=? AND user_id=?",
+            (broker, currency, user_id)).fetchone()
+        upsert_cash(conn, broker, currency, (row[0] if row else 0) + amount, user_id=user_id)
 
 
 def delete_deposit_record(conn: sqlite3.Connection, record_id: int,
@@ -1068,16 +1151,18 @@ def upsert_snapshot(conn: sqlite3.Connection, date: str, total_assets: float,
                     market_pnl: str | None = None,
                     realized_pnl_cny: float | None = None,
                     stock_pnl: list[dict] | None = None,
-                    user_id: str = 'local') -> None:
+                    user_id: str = 'local',
+                    units: float | None = None,
+                    unit_nav: float | None = None) -> None:
     """Record daily snapshot — first write of the day wins (no overwrite)."""
     conn.execute("""
         INSERT OR IGNORE INTO daily_snapshots
             (date, total_assets, net_assets, equity_mv_cny, cash_cny,
              leverage_cny, total_pnl_cny, market_data, capital, market_pnl,
-             realized_pnl_cny, created_at, user_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'), ?)
+             realized_pnl_cny, created_at, user_id, units, unit_nav)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?)
     """, (date, total_assets, net_assets, equity_mv, cash, leverage, total_pnl,
-          market_data, capital, market_pnl, realized_pnl_cny, user_id))
+          market_data, capital, market_pnl, realized_pnl_cny, user_id, units, unit_nav))
 
     if market_pnl:
         conn.execute("""
