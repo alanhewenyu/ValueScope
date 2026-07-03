@@ -1,20 +1,9 @@
 import type { MetadataRoute } from "next";
+import tickers from "@/data/sitemap-tickers.json";
 
-// Popular tickers that should be indexed by search engines.
-// These cover A-shares (blue chips + popular), HK stocks, and US mega-caps.
-const SEED_TICKERS = [
-  // A-shares — blue chips
-  "600519.SS", "000858.SZ", "601318.SS", "600036.SS", "000333.SZ",
-  "600900.SS", "601012.SS", "000568.SZ", "600276.SS", "300750.SZ",
-  "601899.SS", "600031.SS", "000001.SZ", "600809.SS", "002594.SZ",
-  "601888.SS", "600030.SS", "000651.SZ", "601166.SS", "600690.SS",
-  // HK stocks
-  "00700.HK", "09988.HK", "03690.HK", "09999.HK", "01810.HK",
-  "02020.HK", "09618.HK", "01024.HK", "00941.HK", "02318.HK",
-  // US stocks
-  "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA",
-  "TSLA", "META", "BRK-B", "JPM", "V",
-];
+// Full indexable surface: all A-shares + HK main board (the differentiated
+// niche — no direct competitor covers A-share DCF), plus major US/JP names.
+// Snapshot generated from public/tickers.json; regenerate when that updates.
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();
@@ -28,13 +17,22 @@ export default function sitemap(): MetadataRoute.Sitemap {
     },
   ];
 
-  for (const ticker of SEED_TICKERS) {
-    pages.push({
-      url: `https://valuescope.app/stock/${ticker}`,
-      lastModified: now,
-      changeFrequency: "daily",
-      priority: 0.8,
-    });
+  const groups: { symbols: string[]; priority: number }[] = [
+    { symbols: tickers.a_shares, priority: 0.7 },
+    { symbols: tickers.hk, priority: 0.6 },
+    { symbols: tickers.us, priority: 0.8 },
+    { symbols: tickers.jp, priority: 0.6 },
+  ];
+
+  for (const { symbols, priority } of groups) {
+    for (const symbol of symbols) {
+      pages.push({
+        url: `https://valuescope.app/stock/${symbol}`,
+        lastModified: now,
+        changeFrequency: "weekly",
+        priority,
+      });
+    }
   }
 
   return pages;

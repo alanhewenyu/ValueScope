@@ -5,6 +5,18 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 const TOKEN_KEY = "valuescope_token";
 
+/** API error carrying the backend's structured error code (e.g. "fmp_key_required"). */
+export class ApiError extends Error {
+  code: string;
+  status: number;
+  constructor(message: string, code = "", status = 0) {
+    super(message);
+    this.name = "ApiError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
 function getAuthHeader(): Record<string, string> {
   if (typeof window === "undefined") return {};
   const token = localStorage.getItem(TOKEN_KEY);
@@ -65,7 +77,15 @@ async function fetchAPI<T>(path: string, options?: RequestInit & { timeoutMs?: n
       clearTimeout(timer);
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }));
-        throw new Error(err.detail || `API error: ${res.status}`);
+        // Structured errors: detail = { error_code, message }
+        if (err.detail && typeof err.detail === "object") {
+          throw new ApiError(
+            err.detail.message || `API error: ${res.status}`,
+            err.detail.error_code || "",
+            res.status,
+          );
+        }
+        throw new ApiError(err.detail || `API error: ${res.status}`, "", res.status);
       }
       const data = await res.json();
       if (cacheKey) setCache(cacheKey, data);
@@ -96,6 +116,7 @@ export interface SearchResult {
 export interface CompanyProfile {
   symbol: string;
   company_name: string;
+  name_zh?: string;
   industry: string;
   sector: string;
   country: string;

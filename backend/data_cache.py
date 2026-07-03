@@ -10,6 +10,8 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+from backend import persistent_cache
+
 _cache: dict[str, tuple[float, dict]] = {}
 _locks: dict[str, threading.Lock] = {}
 _global_lock = threading.Lock()
@@ -17,6 +19,12 @@ _TTL = 300  # 5 minutes
 _PROFILE_TTL = 600  # 10 minutes
 _BETA_TTL = 86400  # 24 hours — beta barely changes day-to-day
 _MAX_CACHE_ENTRIES = 100  # cap to prevent unbounded memory growth
+
+# Persistent (SQLite) TTLs — the warm layer that survives restarts.
+# Financial statements change quarterly; a day-old copy beats a 5-20s cold fetch.
+_DISK_FIN_TTL = 86400        # 24 hours
+_DISK_PROFILE_TTL = 3600     # 1 hour (price drifts, but router already caches 30 min)
+_DISK_BETA_TTL = 7 * 86400   # 7 days
 
 
 def _evict_if_needed():
@@ -67,6 +75,13 @@ def get_historical_financials(ticker, period, apikey, historical_periods):
         if cached and (time.monotonic() - cached[0]) < _TTL:
             return copy.deepcopy(cached[1])
 
+        # Warm layer: disk cache survives restarts and covers cold tickers
+        disk = persistent_cache.get(f"fin:{cache_key}")
+        if disk is not None:
+            _cache[cache_key] = (time.monotonic(), copy.deepcopy(disk))
+            _evict_if_needed()
+            return disk
+
         from modeling.data import get_historical_financials as _raw
 
         data = _raw(ticker, period, apikey, historical_periods)
@@ -81,6 +96,7 @@ def get_historical_financials(ticker, period, apikey, historical_periods):
         if data is not None:
             _cache[cache_key] = (time.monotonic(), copy.deepcopy(data))
             _evict_if_needed()
+            persistent_cache.put(f"fin:{cache_key}", data, _DISK_FIN_TTL)
 
         return data
 
@@ -103,10 +119,17 @@ def get_beta(ticker):
         if cached and (time.monotonic() - cached[0]) < _BETA_TTL:
             return cached[1]
 
+        disk = persistent_cache.get(cache_key)
+        if disk is not None:
+            _cache[cache_key] = (time.monotonic(), disk)
+            _evict_if_needed()
+            return disk
+
         from modeling.data import _calculate_beta_akshare
         beta = _calculate_beta_akshare(ticker)
         _cache[cache_key] = (time.monotonic(), beta)
         _evict_if_needed()
+        persistent_cache.put(cache_key, beta, _DISK_BETA_TTL)
         return beta
 
 
@@ -130,6 +153,12 @@ def get_company_profile(ticker, apikey=''):
         cached = _cache.get(cache_key)
         if cached and (time.monotonic() - cached[0]) < _PROFILE_TTL:
             return copy.deepcopy(cached[1])
+
+        disk = persistent_cache.get(cache_key)
+        if disk is not None:
+            _cache[cache_key] = (time.monotonic(), copy.deepcopy(disk))
+            _evict_if_needed()
+            return disk
 
         from modeling.data import (
             fetch_company_profile as _raw_profile,
@@ -165,6 +194,7 @@ def get_company_profile(ticker, apikey=''):
         if not (_needs_shares and not profile.get('outstandingShares')):
             _cache[cache_key] = (time.monotonic(), copy.deepcopy(profile))
             _evict_if_needed()
+            persistent_cache.put(cache_key, profile, _DISK_PROFILE_TTL)
         return profile
 
 
@@ -177,3 +207,4 @@ def update_profile_cache(ticker, profile):
     """
     cache_key = f"profile:{ticker}"
     _cache[cache_key] = (time.monotonic(), copy.deepcopy(profile))
+    persistent_cache.put(cache_key, profile, _DISK_PROFILE_TTL)

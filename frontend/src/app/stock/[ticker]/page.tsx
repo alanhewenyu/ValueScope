@@ -43,6 +43,7 @@ import {
 } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
 import { formatCurrency, formatLargeNumber, formatNumber } from "@/lib/format";
+import { trackEvent } from "@/lib/gtag";
 import { useI18n } from "@/lib/i18n";
 import { useSettings } from "@/lib/settings";
 
@@ -106,7 +107,7 @@ export default function StockPage() {
         profileResult = p;
         setProfile(p);
         if (p?.company_name) {
-          document.title = `${p.company_name} (${decodedTicker}) | ValueScope`;
+          document.title = `${p.name_zh || p.company_name} (${decodedTicker}) | ValueScope`;
         }
       })
       .catch((e) => {
@@ -541,6 +542,7 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
         setAiProgress(msg);
       });
       setAiResult(result);
+      trackEvent("ai_analyze", { ticker });
       // Refresh quota after usage
       if (!hasAiKeys) getAIQuota().then(setAiQuota).catch(() => {});
       // Apply AI parameters to form
@@ -591,6 +593,9 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
     try {
       const data = await runDCF(params);
       setResult(data);
+      // Only the first manual run counts as a conversion — the debounced
+      // auto-rerun on every slider change would flood GA otherwise
+      if (!hasRunOnce.current) trackEvent("run_valuation", { ticker });
       hasRunOnce.current = true;
       if (shouldScroll) {
         setTimeout(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
@@ -638,6 +643,7 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
         reported_currency: result.reported_currency,
       }, (msg) => setGapProgress(msg));
       setGapResult(data);
+      trackEvent("gap_analyze", { ticker });
     } catch (err: unknown) {
       setGapError(err instanceof Error ? err.message : "Gap analysis failed");
     } finally {
@@ -1335,6 +1341,7 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
                         wacc: waccRate,
                         ronic_match_wacc: ronicMatchWacc,
                       });
+                      trackEvent("export_excel", { ticker });
                     } catch { alert("Export failed"); }
                     setExcelExporting(false);
                   }}

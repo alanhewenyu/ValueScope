@@ -20,6 +20,7 @@ from modeling.data import (
     format_summary_df,
     is_a_share,
     is_hk_stock,
+    is_jpn_stock,
     _fill_profile_from_financial_data,
     get_index_membership,
 )
@@ -50,6 +51,31 @@ def _get_a_share_list() -> list[tuple[str, str]]:
         logger.warning("Failed to load A-share list: %s", e)
         _a_share_cache = []
     return _a_share_cache
+
+
+_a_share_name_map: dict[str, str] | None = None
+
+
+def _a_share_name_zh(normalized: str) -> str:
+    """Chinese short name for an A-share (e.g. 600519.SS → 贵州茅台), else ""."""
+    global _a_share_name_map
+    if not is_a_share(normalized):
+        return ""
+    if _a_share_name_map is None:
+        _a_share_name_map = dict(_get_a_share_list())
+    return _a_share_name_map.get(normalized.split(".")[0], "")
+
+
+def _needs_fmp_key(normalized: str) -> bool:
+    """US and Japan stocks are served by FMP and require an API key."""
+    return not (is_a_share(normalized) or is_hk_stock(normalized))
+
+
+_FMP_KEY_REQUIRED_DETAIL = {
+    "error_code": "fmp_key_required",
+    "message": "US/Japan stock data requires a Financial Modeling Prep API key. "
+               "Add your key in Settings to view this stock.",
+}
 
 
 def _get_ticker_list() -> list[dict]:
@@ -99,6 +125,7 @@ def get_server_config(request: Request):
 class CompanyProfile(BaseModel):
     symbol: str
     company_name: str
+    name_zh: str = ""  # Chinese short name (A-shares, from akshare list)
     industry: str = ""
     sector: str = ""
     country: str = ""
@@ -225,13 +252,31 @@ def get_profile(
 
     normalized = _normalize_ticker(ticker)
 
+    # US/JP profiles come from FMP and need a key. Fall back to the server key
+    # for this endpoint only — it's a cheap call and SSR/SEO metadata depends
+    # on it. Financials/valuation for US stocks still require the user's key.
+    effective_key = apikey
+    if _needs_fmp_key(normalized) and not effective_key:
+        import os
+        effective_key = os.environ.get("FMP_API_KEY", "")
+        if not effective_key:
+            raise HTTPException(status_code=402, detail=_FMP_KEY_REQUIRED_DETAIL)
+
     # Check cache (TTL 30 min for profile — price may change)
     ck = make_key("profile", normalized)
     cached = cache_get(ck)
     if cached is not None:
         return cached
 
-    profile = cached_get_profile(normalized, apikey)
+    try:
+        profile = cached_get_profile(normalized, effective_key)
+    except HTTPException:
+        raise
+    except ValueError:
+        raise HTTPException(status_code=404, detail=f"Company not found: {ticker}")
+    except Exception as e:
+        logger.warning("Profile fetch failed for %s: %s: %s", normalized, type(e).__name__, e)
+        raise HTTPException(status_code=502, detail="Upstream data source error, please retry")
 
     # For A-shares and HK stocks, enrich with yfinance data if akshare returned minimal info
     company_name = profile.get("companyName", "")
@@ -261,6 +306,7 @@ def get_profile(
     result = CompanyProfile(
         symbol=normalized,
         company_name=company_name,
+        name_zh=_a_share_name_zh(normalized),
         industry=profile.get("industry", ""),
         sector=profile.get("sector", ""),
         country=profile.get("country", ""),
@@ -290,6 +336,10 @@ def get_financials(
         raise HTTPException(status_code=400, detail=err)
 
     normalized = _normalize_ticker(ticker)
+
+    # US/JP financial statements come from FMP — user's own key required
+    if _needs_fmp_key(normalized) and not apikey:
+        raise HTTPException(status_code=402, detail=_FMP_KEY_REQUIRED_DETAIL)
 
     # Check cache (TTL 1 hour — financial data changes infrequently)
     ck = make_key("financials", normalized)

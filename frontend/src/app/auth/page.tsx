@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n";
+import { trackEvent } from "@/lib/gtag";
 import { Loader2 } from "lucide-react";
 
 // Use relative path so requests go through Next.js rewrites (no CORS issues)
@@ -56,6 +57,7 @@ function AuthPageInner() {
           return;
         }
         await register(email, password);
+        trackEvent("sign_up");
         router.replace("/");
       } else if (mode === "forgot") {
         const res = await fetch(`${API_BASE}/api/auth/forgot-password`, {
