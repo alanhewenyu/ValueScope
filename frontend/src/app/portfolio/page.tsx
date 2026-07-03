@@ -2268,29 +2268,14 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                 </button>
               </div>
 
-              {/* Margin / Leverage — batch edit */}
+              {/* Leverage — in-house margin is a negative cash balance now
+                  (IBKR-style); only off-exchange leverage needs its own entry */}
               <div>
-                <div className="text-[10px] text-gray-500 uppercase mb-2">{zh ? "杠杆/融资" : "Leverage / Margin"}</div>
-
-                {/* In-house margin */}
-                <div className="mb-2 p-2 rounded bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800">
-                  <div className="text-[10px] text-gray-400 mb-1.5">
-                    {zh ? "场内融资（旧方式 —— 推荐改用负现金：把融资额记为该账户现金的负数，此处清零）" : "In-house Margin (legacy — prefer negative cash: record the loan as a negative balance, zero this out)"}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {["USD", "HKD", "JPY", "CNY"].map((cur) => {
-                      const key = `in_house|${cur}`;
-                      const existing = marginData.find((m) => m.category === "in_house" && m.currency === cur);
-                      const val = key in marginEdits ? marginEdits[key] : String(existing?.amount || 0);
-                      return (
-                        <div key={key} className="flex items-center gap-1">
-                          <span className="text-[10px] text-gray-400 w-8">{cur}</span>
-                          <input className={`${inputCls} flex-1 text-right text-xs`} inputMode="decimal" value={val}
-                            onChange={(e) => setMarginEdits((prev) => ({ ...prev, [key]: e.target.value }))} />
-                        </div>
-                      );
-                    })}
-                  </div>
+                <div className="text-[10px] text-gray-500 uppercase mb-2">{zh ? "杠杆" : "Leverage"}</div>
+                <div className="text-[10px] text-gray-400 leading-relaxed mb-2">
+                  {zh
+                    ? "场内融资直接记为对应账户的负现金余额（如盈透融资 $10万 → USD 现金填 -100000），自动计入杠杆。"
+                    : "In-house margin = a negative cash balance on the account (e.g. IBKR loan $100k → USD cash -100000); it counts as leverage automatically."}
                 </div>
 
                 {/* Off-exchange leverage */}
