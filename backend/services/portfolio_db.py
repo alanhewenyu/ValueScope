@@ -483,6 +483,7 @@ def init_db(db_path: str | None = None) -> None:
         _migrate_add_user_id(conn)
         _migrate_add_cost_method(conn)
         _migrate_ytd_baseline_broker(conn)
+        _migrate_snapshot_unique_per_user(conn)
 
 
 def _migrate_seed_account_settings(conn):
@@ -673,6 +674,43 @@ def _migrate_add_user_id(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_margin_user ON margin_balances(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_settings_user ON account_settings(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_deposit_user ON deposit_history(user_id)")
+    conn.commit()
+
+
+def _migrate_snapshot_unique_per_user(conn):
+    """daily_snapshots: UNIQUE(date) → UNIQUE(date, user_id).
+
+    The original single-user schema allowed one snapshot row per date, so in
+    the shared multi-user DB every user after the first got silently dropped
+    by INSERT OR IGNORE. Rebuild preserving all existing columns and rows.
+    """
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='daily_snapshots'"
+    ).fetchone()
+    if not row or "UNIQUE(date, user_id)" in (row[0] or ""):
+        return
+    cols_info = conn.execute("PRAGMA table_info(daily_snapshots)").fetchall()
+    cols = [c[1] for c in cols_info if c[1] != "id"]
+    col_list = ", ".join(cols)
+    # Rebuild with the same columns, compound unique key
+    col_defs = ",\n            ".join(
+        f"{c[1]} {c[2]}" + (" NOT NULL" if c[3] and c[1] != "id" else "")
+        + (f" DEFAULT ({c[4]})" if c[4] is not None else "")
+        for c in cols_info if c[1] != "id"
+    )
+    conn.execute("ALTER TABLE daily_snapshots RENAME TO daily_snapshots_old")
+    conn.execute(f"""
+        CREATE TABLE daily_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            {col_defs},
+            UNIQUE(date, user_id)
+        )
+    """)
+    conn.execute(f"""
+        INSERT INTO daily_snapshots ({col_list})
+        SELECT {col_list} FROM daily_snapshots_old
+    """)
+    conn.execute("DROP TABLE daily_snapshots_old")
     conn.commit()
 
 
@@ -1029,40 +1067,41 @@ def upsert_snapshot(conn: sqlite3.Connection, date: str, total_assets: float,
                     capital: float | None = None, market_detail: dict | None = None,
                     market_pnl: str | None = None,
                     realized_pnl_cny: float | None = None,
-                    stock_pnl: list[dict] | None = None) -> None:
+                    stock_pnl: list[dict] | None = None,
+                    user_id: str = 'local') -> None:
     """Record daily snapshot — first write of the day wins (no overwrite)."""
     conn.execute("""
         INSERT OR IGNORE INTO daily_snapshots
             (date, total_assets, net_assets, equity_mv_cny, cash_cny,
              leverage_cny, total_pnl_cny, market_data, capital, market_pnl,
-             realized_pnl_cny, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
+             realized_pnl_cny, created_at, user_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'), ?)
     """, (date, total_assets, net_assets, equity_mv, cash, leverage, total_pnl,
-          market_data, capital, market_pnl, realized_pnl_cny))
+          market_data, capital, market_pnl, realized_pnl_cny, user_id))
 
     if market_pnl:
         conn.execute("""
             UPDATE daily_snapshots SET market_pnl = ?
-            WHERE date = ? AND market_pnl IS NULL""", (market_pnl, date))
+            WHERE date = ? AND user_id = ? AND market_pnl IS NULL""", (market_pnl, date, user_id))
     if realized_pnl_cny is not None:
         conn.execute("""
             UPDATE daily_snapshots SET realized_pnl_cny = ?
-            WHERE date = ? AND realized_pnl_cny IS NULL""", (realized_pnl_cny, date))
+            WHERE date = ? AND user_id = ? AND realized_pnl_cny IS NULL""", (realized_pnl_cny, date, user_id))
 
     if market_detail:
         for market, cur_dict in market_detail.items():
             if isinstance(cur_dict, dict):
                 for currency, mv in cur_dict.items():
                     conn.execute("""
-                        INSERT OR IGNORE INTO snapshot_market_detail (date, market, currency, mv)
-                        VALUES (?, ?, ?, ?)""", (date, market, currency, mv))
+                        INSERT OR IGNORE INTO snapshot_market_detail (date, market, currency, mv, user_id)
+                        VALUES (?, ?, ?, ?, ?)""", (date, market, currency, mv, user_id))
 
     if stock_pnl:
         for sp in stock_pnl:
             conn.execute("""
-                INSERT OR IGNORE INTO snapshot_stock_pnl (date, ticker, name, market, pnl_cny)
-                VALUES (?, ?, ?, ?, ?)
-            """, (date, sp['ticker'], sp.get('name'), sp.get('market', ''), sp.get('pnl_cny', 0)))
+                INSERT OR IGNORE INTO snapshot_stock_pnl (date, ticker, name, market, pnl_cny, user_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (date, sp['ticker'], sp.get('name'), sp.get('market', ''), sp.get('pnl_cny', 0), user_id))
 
 
 # ── YTD baselines ──

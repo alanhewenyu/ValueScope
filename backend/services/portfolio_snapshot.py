@@ -42,17 +42,24 @@ def _fmt(val):
     return f"{val:,.0f}" if val is not None else "—"
 
 
-def take_snapshot(dry_run=False):
-    """Fetch all prices, compute NAV, write snapshot."""
+def _now_cn() -> datetime:
+    """Beijing time — explicit so the logic also works in UTC containers."""
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("Asia/Shanghai"))
+
+
+def take_snapshot(dry_run=False, user_id: str = "local"):
+    """Fetch all prices, compute NAV, write snapshot (per user)."""
+    now_cn = _now_cn()
     # Skip Sun/Mon — US market closed Sat/Sun, Beijing time is +1 day
-    if datetime.now().weekday() in (6, 0):  # 6=Sun, 0=Mon
-        print(f"[{datetime.now():%Y-%m-%d %H:%M}] No trading day (Sun/Mon), skipping.")
+    if now_cn.weekday() in (6, 0):  # 6=Sun, 0=Mon
+        print(f"[{now_cn:%Y-%m-%d %H:%M}] No trading day (Sun/Mon), skipping.")
         return None
 
     init_db()
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ts = now_cn.strftime("%Y-%m-%d %H:%M:%S")
     print(f"\n{'='*55}")
-    print(f"Portfolio Snapshot  {ts}")
+    print(f"Portfolio Snapshot  {ts}  (user: {user_id})")
     print(f"{'='*55}")
 
     conn = get_conn()
@@ -81,8 +88,8 @@ def take_snapshot(dry_run=False):
     # ── Positions ──
     positions = conn.execute("""
         SELECT ticker, name, market, broker, currency, quantity, cost_price
-        FROM positions WHERE status='open'
-    """).fetchall()
+        FROM positions WHERE status='open' AND user_id=?
+    """, (user_id,)).fetchall()
 
     equity_mv = 0.0
     total_cost_cny = 0.0
@@ -137,14 +144,14 @@ def take_snapshot(dry_run=False):
 
     # ── Cash ──
     cash_cny = 0.0
-    for row in conn.execute("SELECT currency, balance FROM cash_balances"):
+    for row in conn.execute("SELECT currency, balance FROM cash_balances WHERE user_id=?", (user_id,)):
         cash_cny += row["balance"] * fx.get(row["currency"], 1.0)
     print(f"Cash:       ¥{_fmt(cash_cny)}")
 
     # ── Leverage ──
     in_house = 0.0
     off_exchange = 0.0
-    for row in conn.execute("SELECT category, currency, amount FROM margin_balances"):
+    for row in conn.execute("SELECT category, currency, amount FROM margin_balances WHERE user_id=?", (user_id,)):
         rate = fx.get(row["currency"], 1.0)
         amt_cny = row["amount"] * rate
         if row["category"] == "in_house":
@@ -164,11 +171,11 @@ def take_snapshot(dry_run=False):
     print(f"Unrealized:   ¥{_fmt(total_pnl_cny)} ({pnl_pct:+.1f}%)")
 
     # ── Capital ──
-    capital = compute_capital(conn, fx)
+    capital = compute_capital(conn, fx, user_id=user_id)
     print(f"Capital:      ¥{_fmt(capital)}")
 
     # ── Write snapshot ──
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = now_cn.strftime("%Y-%m-%d")
     market_json = json.dumps(market_mv, ensure_ascii=False)
     print(f"Market MV:    {market_json}")
 
@@ -179,12 +186,12 @@ def take_snapshot(dry_run=False):
         upsert_snapshot(conn, today, total_assets, net_assets,
                         equity_mv, cash_cny, total_leverage, total_pnl_cny,
                         market_data=market_json, capital=capital,
-                        market_pnl=market_pnl_json)
+                        market_pnl=market_pnl_json, user_id=user_id)
 
         # Auto-create YTD baselines if none exist for current year
         from backend.services.portfolio_db import get_ytd_baselines, record_ytd_baselines
-        current_year = datetime.now().year
-        existing = get_ytd_baselines(conn, current_year)
+        current_year = now_cn.year
+        existing = get_ytd_baselines(conn, current_year, user_id=user_id)
         if not existing and positions:
             ticker_data = {}
             for i, pos in enumerate(positions):
@@ -194,7 +201,7 @@ def take_snapshot(dry_run=False):
                 ticker_data[(pos["ticker"], pos["broker"])] = (
                     p, pos["currency"], pos["quantity"], pos["cost_price"]
                 )
-            record_ytd_baselines(conn, current_year, ticker_data, today)
+            record_ytd_baselines(conn, current_year, ticker_data, today, user_id=user_id)
             print(f"  Auto-recorded YTD baselines for {current_year} ({len(ticker_data)} tickers)")
 
         conn.commit()

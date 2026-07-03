@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import PortfolioPreview from "@/components/PortfolioPreview";
 import { useSettings } from "@/lib/settings";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth-context";
@@ -3048,26 +3049,12 @@ export default function PortfolioPage() {
   }, [data]);
 
   if (needsLogin) {
+    // Product preview instead of a bare lock — visitors see what the
+    // tracker does (sample data) before being asked to register
     return (
       <>
         <Navbar />
-        <main className="max-w-7xl mx-auto px-4 py-20 text-center">
-          <div className="max-w-md mx-auto">
-            <div className="text-5xl mb-4">🔒</div>
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-              {t.authLoginRequired}
-            </h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-              {t.authLoginRequiredDesc}
-            </p>
-            <Link
-              href="/auth"
-              className="inline-block px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              {t.authLogin}
-            </Link>
-          </div>
-        </main>
+        <PortfolioPreview />
       </>
     );
   }

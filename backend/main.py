@@ -54,6 +54,11 @@ def _prewarm_imports():
     except ImportError:
         pass
 threading.Thread(target=_prewarm_imports, daemon=True).start()
+# Daily portfolio snapshot for web users — cloud only (local Mac uses cron)
+if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("SNAPSHOT_SCHEDULER") == "1":
+    from backend.services.snapshot_scheduler import start_scheduler
+    start_scheduler()
+
 # Pre-warm forex and market risk premium caches (FMP API, ~3s total)
 _fmp_key = os.environ.get("FMP_API_KEY", "")
 if _fmp_key:
