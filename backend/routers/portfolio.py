@@ -77,6 +77,7 @@ class AccountSettingIn(BaseModel):
     deposit_fx: float = 1.0
     notes: str = ""
     cost_method: str = "diluted"  # 'diluted' (re-avg on sell) or 'average' (IBKR)
+    hk_connect: bool = False  # 港股通: HK sale proceeds settle in CNY
 
 
 class DepositRecordIn(BaseModel):
@@ -292,6 +293,7 @@ def upsert_account_setting_api(setting: AccountSettingIn, user_id: str = Depends
             conn, broker=setting.broker, capital_mode=setting.capital_mode,
             deposit_cny=setting.deposit_cny, deposit_fx=setting.deposit_fx,
             notes=setting.notes, cost_method=setting.cost_method, user_id=user_id,
+            hk_connect=setting.hk_connect,
         )
         conn.commit()
     return {"ok": True}
@@ -393,6 +395,18 @@ def merge_accounts(req: MergeAccountRequest, user_id: str = Depends(get_current_
         "merged": counts,
         "message": f"Merged '{req.source}' into '{req.target}'",
     }
+
+
+@router.get("/flows")
+def list_all_flows(limit: int = Query(200, ge=1, le=1000),
+                   user_id: str = Depends(get_current_user)):
+    """All cash-flow records across brokers, newest first (Flows tab)."""
+    path = _require_db()
+    return _query(path, """
+        SELECT * FROM deposit_history WHERE user_id=?
+        ORDER BY COALESCE(deposit_date, substr(created_at, 1, 10)) DESC, id DESC
+        LIMIT ?
+    """, (user_id, limit))
 
 
 @router.get("/deposit-history/{broker}")
@@ -696,11 +710,14 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
             conn.commit()
         # Re-fetch after insert
         cash_rows = _query(path, "SELECT * FROM cash_balances WHERE user_id=? ORDER BY account", (user_id,))
-    cash_cny = sum(r['balance'] * fx.get(r['currency'], 1.0) for r in cash_rows)
+    # IBKR-style: negative balances are margin loans, counted as leverage
+    _cash_vals = [r['balance'] * fx.get(r['currency'], 1.0) for r in cash_rows]
+    cash_cny = sum(v for v in _cash_vals if v >= 0)
+    neg_cash_cny = sum(-v for v in _cash_vals if v < 0)
 
-    # Margin / leverage
+    # Margin / leverage (legacy in_house rows + negative cash + off-exchange)
     margin_rows = _query(path, "SELECT * FROM margin_balances WHERE user_id=?", (user_id,))
-    leverage_cny = sum(r['amount'] * fx.get(r['currency'], 1.0) for r in margin_rows)
+    leverage_cny = neg_cash_cny + sum(r['amount'] * fx.get(r['currency'], 1.0) for r in margin_rows)
 
     total_assets = total_equity_cny + cash_cny
     net_assets = total_assets - leverage_cny

@@ -28,6 +28,7 @@ import {
   getDepositHistory,
   addDepositRecord,
   deleteDepositRecord,
+  getAllFlows,
   type PortfolioData,
   type PortfolioHolding,
   type ClosedTrade,
@@ -105,14 +106,20 @@ function sortMarkets(keys: string[]) {
 /** Shared fields for dated cash-flow entry (deposit/withdrawal). The date is
  *  mandatory because the TWR unit engine prices flows at that day's NAV. */
 function FlowFields({ zh, inputCls, flowDirection, setFlowDirection, flowCurrency, setFlowCurrency,
-  flowUpdateCash, setFlowUpdateCash, depositDate, setDepositDate, depositNotes, setDepositNotes }: {
+  flowUpdateCash, setFlowUpdateCash, depositDate, setDepositDate, depositNotes, setDepositNotes,
+  amountCny, fxRate }: {
   zh: boolean; inputCls: string;
   flowDirection: "in" | "out"; setFlowDirection: (d: "in" | "out") => void;
   flowCurrency: string; setFlowCurrency: (c: string) => void;
   flowUpdateCash: boolean; setFlowUpdateCash: (b: boolean) => void;
   depositDate: string; setDepositDate: (d: string) => void;
   depositNotes: string; setDepositNotes: (n: string) => void;
+  amountCny?: string; fxRate?: string;
 }) {
+  // Original-currency preview: what the cash balance will actually move by
+  const _amt = parseFloat(amountCny || "") || 0;
+  const _fx = flowCurrency === "CNY" ? 1 : parseFloat(fxRate || "") || 0;
+  const _orig = _fx > 0 ? _amt / _fx : 0;
   return (
     <>
       <div className="flex rounded overflow-hidden border border-gray-300 dark:border-gray-700">
@@ -141,6 +148,12 @@ function FlowFields({ zh, inputCls, flowDirection, setFlowDirection, flowCurrenc
         <input type="checkbox" checked={flowUpdateCash} onChange={(e) => setFlowUpdateCash(e.target.checked)} />
         {zh ? "同步更新该账户现金余额（推荐）" : "Also update this account's cash balance (recommended)"}
       </label>
+      {flowUpdateCash && _amt > 0 && flowCurrency !== "CNY" && _orig > 0 && (
+        <div className="text-[10px] font-mono text-blue-600 dark:text-blue-400">
+          {zh ? "将计入现金：" : "Cash will move by: "}
+          {flowDirection === "in" ? "+" : "−"}{_orig.toLocaleString(undefined, { maximumFractionDigits: 2 })} {flowCurrency}
+        </div>
+      )}
       <div className="text-[10px] text-gray-400 leading-relaxed">
         {zh ? "注意：股息、利息到账不是入金——直接改现金余额即可，它们会体现为收益。" : "Note: dividends/interest are NOT deposits — just edit the cash balance; they count as returns."}
       </div>
@@ -1375,7 +1388,7 @@ function ClosedTradesSection({ locale }: { locale: string }) {
 // Onboarding — Simplified empty state for new users (1-step)
 // ══════════════════════════════════════════
 
-function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; onRefresh: () => void; onOpenPanel: (tab?: "edit" | "close" | "cash" | "settings") => void }) {
+function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; onRefresh: () => void; onOpenPanel: (tab?: "edit" | "close" | "cash" | "flows" | "settings") => void }) {
   const zh = locale === "zh";
   const [importing, setImporting] = useState(false);
   const fileRef = React.useRef<HTMLInputElement>(null);
@@ -1649,9 +1662,9 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
   holdings: PortfolioHolding[]; data: PortfolioData | null; locale: string;
   onRefresh: () => void; open: boolean; onClose: () => void;
   editHolding?: PortfolioHolding | null;
-  initialTab?: "edit" | "close" | "cash" | "settings";
+  initialTab?: "edit" | "close" | "cash" | "flows" | "settings";
 }) {
-  const [tab, setTab] = useState<"edit" | "close" | "cash" | "settings">(initialTab);
+  const [tab, setTab] = useState<"edit" | "close" | "cash" | "flows" | "settings">(initialTab);
 
   // Sync tab when panel opens with a specific initialTab
   useEffect(() => {
@@ -1693,6 +1706,7 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
   const [isNewAcct, setIsNewAcct] = useState(false);
   const [acctMode, setAcctMode] = useState<"cost" | "deposit">("cost");
   const [acctCostMethod, setAcctCostMethod] = useState<"diluted" | "average">("diluted");
+  const [acctHkConnect, setAcctHkConnect] = useState(false);
   const [acctDeposit, setAcctDeposit] = useState("");
   const [acctFx, setAcctFx] = useState("1.0");
   const [depositAction, setDepositAction] = useState<"update" | "add">("update");
@@ -1704,6 +1718,9 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
   const [depositNotes, setDepositNotes] = useState("");
   const [depositHistory, setDepositHistory] = useState<DepositRecord[]>([]);
   const [expandedBroker, setExpandedBroker] = useState<string | null>(null);
+  // Flows tab
+  const [flowBroker, setFlowBroker] = useState("");
+  const [flowHistory, setFlowHistory] = useState<DepositRecord[]>([]);
 
   useEffect(() => {
     if (open) {
@@ -1711,6 +1728,10 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
       getMarginBalances().then(setMarginData).catch(() => {});
     }
   }, [open]);
+
+  useEffect(() => {
+    if (open && tab === "flows") getAllFlows().then(setFlowHistory).catch(() => {});
+  }, [open, tab]);
 
   const inputCls = "w-full px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-blue-500 focus:outline-none";
   const zh = locale === "zh";
@@ -1839,31 +1860,24 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
         });
       }
 
-      // ── Proceeds allocation: margin first (IBKR nets negative cash
-      //    automatically; CN margin accounts may keep the loan — user picks) ──
-      const proceeds = qty * closePnl.sellPrice;
-      const cur = closeTarget.currency;
+      // ── Proceeds auto-booking. Cash is IBKR-style signed (negative =
+      //    margin loan), so crediting cash nets any loan automatically.
+      //    港股通: HK stocks via mainland brokers settle sales in CNY. ──
+      let proceeds = qty * closePnl.sellPrice;
+      let cur = closeTarget.currency;
+      const isHkConnect = closeTarget.market === "HK"
+        && !!acctSettings.find((s) => s.broker === closeTarget.broker)?.hk_connect;
+      if (isHkConnect && cur !== "CNY") {
+        const rate = data?.fx?.[cur] || 1.0;
+        proceeds = proceeds * rate;
+        cur = "CNY";
+      }
       const autoBook = confirm(zh
-        ? `是否自动将卖出所得 ${proceeds.toFixed(2)} ${cur} 计入账目？\n（取消 = 不入账，自行手动管理现金/融资）`
-        : `Auto-book sale proceeds ${proceeds.toFixed(2)} ${cur}?\n(Cancel = manage cash/margin manually)`);
+        ? `是否自动将卖出所得 ${proceeds.toFixed(2)} ${cur} 计入现金？${isHkConnect ? "\n（港股通：已按汇率折算为人民币）" : ""}\n负余额（融资）会被自动冲抵。\n（取消 = 不入账，自行手动管理）`
+        : `Auto-credit sale proceeds ${proceeds.toFixed(2)} ${cur} to cash?${isHkConnect ? "\n(HK Connect: converted to CNY at FX)" : ""}\nNegative balances (margin) net automatically.\n(Cancel = manage manually)`);
       if (autoBook) {
-        const marginRow = marginData.find((m) => m.category === "in_house" && m.currency === cur && m.amount > 0);
-        let toCash = proceeds;
-        if (marginRow) {
-          const repay = Math.min(proceeds, marginRow.amount);
-          const repayFirst = confirm(zh
-            ? `检测到融资余额 ${marginRow.amount.toFixed(2)} ${cur}。\n确定 = 优先偿还融资 ${repay.toFixed(2)}，剩余 ${(proceeds - repay).toFixed(2)} 计入现金（盈透模式）\n取消 = 全部计入现金（保留融资）`
-            : `Outstanding margin: ${marginRow.amount.toFixed(2)} ${cur}.\nOK = repay ${repay.toFixed(2)} first, ${(proceeds - repay).toFixed(2)} to cash (IBKR-style)\nCancel = all to cash (keep the loan)`);
-          if (repayFirst) {
-            await updateMargin({ broker: marginRow.broker, category: "in_house", currency: cur, amount: marginRow.amount - repay });
-            toCash = proceeds - repay;
-          }
-        }
-        if (toCash > 0) {
-          const cashRow = (data?.cash || []).find((c) => c.account === closeTarget.broker && c.currency === cur);
-          await updateCash({ account: closeTarget.broker, currency: cur, balance: (cashRow?.balance || 0) + toCash });
-        }
-        setMarginData(await getMarginBalances());
+        const cashRow = (data?.cash || []).find((c) => c.account === closeTarget.broker && c.currency === cur);
+        await updateCash({ account: closeTarget.broker, currency: cur, balance: (cashRow?.balance || 0) + proceeds });
       }
 
       setCloseTarget(null); setCloseSearch("");
@@ -1941,14 +1955,11 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
     if (!broker) return;
     setSaving(true);
     try {
-      if (acctMode === "deposit" && depositAction === "add") {
-        // Append flow record → backend auto-recalculates totals in account_settings
-        if (!(await submitFlow(broker))) { setSaving(false); return; }
-      } else {
+      {
         // Direct update (overwrite totals)
         await upsertAccountSetting({ broker, capital_mode: acctMode,
           deposit_cny: parseFloat(acctDeposit) || 0, deposit_fx: parseFloat(acctFx) || 1.0,
-          cost_method: acctCostMethod });
+          cost_method: acctCostMethod, hk_connect: acctHkConnect });
       }
       setAcctSettings(await getAccountSettings());
       setAcctBroker(""); setNewAcctName(""); setIsNewAcct(false);
@@ -2043,6 +2054,7 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
           <div className={tabCls("edit")} onClick={() => { setTab("edit"); setMsg(null); }}>{zh ? "持仓" : "Positions"}</div>
           <div className={tabCls("close")} onClick={() => { setTab("close"); setMsg(null); }}>{zh ? "平仓" : "Close"}</div>
           <div className={tabCls("cash")} onClick={() => { setTab("cash"); setMsg(null); }}>{zh ? "现金/杠杆" : "Cash/Margin"}</div>
+          <div className={tabCls("flows")} onClick={() => { setTab("flows"); setMsg(null); }}>{zh ? "资金流" : "Flows"}</div>
           <div className={tabCls("settings")} onClick={() => { setTab("settings"); setMsg(null); }}>{zh ? "设置" : "Settings"}</div>
         </div>
 
@@ -2259,7 +2271,9 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
 
                 {/* In-house margin */}
                 <div className="mb-2 p-2 rounded bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800">
-                  <div className="text-[10px] text-gray-400 mb-1.5">{zh ? "场内融资 (券商保证金)" : "In-house Margin"}</div>
+                  <div className="text-[10px] text-gray-400 mb-1.5">
+                    {zh ? "场内融资（旧方式 —— 推荐改用负现金：把融资额记为该账户现金的负数，此处清零）" : "In-house Margin (legacy — prefer negative cash: record the loan as a negative balance, zero this out)"}
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     {["USD", "HKD", "JPY", "CNY"].map((cur) => {
                       const key = `in_house|${cur}`;
@@ -2301,6 +2315,88 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
           )}
 
           {/* ═══════ SETTINGS TAB ═══════ */}
+          {tab === "flows" && (
+            <div className="px-4 pb-4 space-y-2">
+              <div className="text-[10px] text-gray-400 leading-relaxed bg-white dark:bg-gray-950 rounded px-2 py-1 border border-gray-200 dark:border-gray-800">
+                {zh
+                  ? "入金/出金流水：净值(TWR)按流水日期折算份额。金额填人民币真实成本（外币入金 = 购汇实际花费；出金 = 结汇实际所得）。股息、利息不记这里——直接改现金余额。"
+                  : "Deposit/withdrawal ledger: TWR converts flows into units at the flow date. Enter the true CNY cost (FX deposits = actual RMB spent; withdrawals = actual RMB received). Dividends/interest don't go here — edit cash directly."}
+              </div>
+              <div>
+                <div className="text-[10px] text-gray-400 mb-0.5">{zh ? "账户" : "Account"}</div>
+                <select className={inputCls} value={flowBroker} onChange={(e) => setFlowBroker(e.target.value)}>
+                  <option value="">{zh ? "选择账户…" : "Select account…"}</option>
+                  {Array.from(new Set([
+                    ...acctSettings.map((s) => s.broker),
+                    ...(data?.cash || []).map((c) => c.account),
+                  ])).map((b) => <option key={b} value={b}>{b}</option>)}
+                </select>
+              </div>
+              <div>
+                <div className="text-[10px] text-gray-400 mb-0.5">{zh ? "金额 (人民币)" : "Amount (CNY)"}</div>
+                <input className={inputCls} inputMode="decimal" placeholder={zh ? "例如：50000" : "e.g. 50000"}
+                  value={acctDeposit} onChange={(e) => setAcctDeposit(e.target.value)} />
+              </div>
+              {flowCurrency !== "CNY" && (
+                <div>
+                  <div className="text-[10px] text-gray-400 mb-0.5">{zh ? "汇率（购汇/结汇价）" : "FX rate"}</div>
+                  <input className={inputCls} inputMode="decimal" placeholder={zh ? "例如：7.10" : "e.g. 7.10"}
+                    value={acctFx} onChange={(e) => setAcctFx(e.target.value)} />
+                </div>
+              )}
+              <FlowFields zh={zh} inputCls={inputCls}
+                flowDirection={flowDirection} setFlowDirection={setFlowDirection}
+                flowCurrency={flowCurrency} setFlowCurrency={setFlowCurrency}
+                flowUpdateCash={flowUpdateCash} setFlowUpdateCash={setFlowUpdateCash}
+                depositDate={depositDate} setDepositDate={setDepositDate}
+                depositNotes={depositNotes} setDepositNotes={setDepositNotes}
+                amountCny={acctDeposit} fxRate={acctFx} />
+              <button disabled={saving || !flowBroker || !parseFloat(acctDeposit)}
+                onClick={async () => {
+                  setSaving(true);
+                  try {
+                    if (await submitFlow(flowBroker)) {
+                      setAcctDeposit(""); setDepositDate(""); setDepositNotes("");
+                      setFlowHistory(await getAllFlows());
+                      onRefresh(); setMsg("✅ Saved");
+                    }
+                  } catch { setMsg("❌ Error"); } finally { setSaving(false); }
+                }}
+                className="w-full px-3 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                {saving ? "..." : (zh ? "记录资金流" : "Record Flow")}
+              </button>
+
+              {/* Flow history — all accounts, newest first */}
+              <div className="border-t border-gray-200 dark:border-gray-800 pt-2 mt-1">
+                <div className="text-[10px] font-medium text-gray-500 mb-1">{zh ? "流水历史" : "History"}</div>
+                {flowHistory.length === 0 ? (
+                  <div className="text-[10px] text-gray-400">{zh ? "暂无记录" : "No records yet"}</div>
+                ) : (
+                  <div className="space-y-1 max-h-64 overflow-y-auto">
+                    {flowHistory.map((r) => (
+                      <div key={r.id} className="flex items-center gap-2 text-[11px] py-1 border-b border-gray-100 dark:border-gray-900">
+                        <span className="text-gray-400 font-mono shrink-0">{r.deposit_date || r.created_at.slice(0, 10)}</span>
+                        <span className="text-gray-600 dark:text-gray-300 shrink-0">{r.broker}</span>
+                        <span className={`font-mono font-medium flex-1 text-right ${r.amount_cny >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+                          {r.amount_cny >= 0 ? "+" : ""}¥{formatNumber(r.amount_cny)}
+                          {r.currency && r.currency !== "CNY" && r.amount != null && (
+                            <span className="text-gray-400 font-normal ml-1">({r.amount >= 0 ? "+" : ""}{r.amount.toFixed(0)} {r.currency})</span>
+                          )}
+                        </span>
+                        {r.notes && <span className="text-gray-400 truncate max-w-[80px]" title={r.notes}>{r.notes}</span>}
+                        <button className="text-gray-300 hover:text-red-500 shrink-0" title={zh ? "删除（不回滚已联动的现金）" : "Delete (cash not rolled back)"}
+                          onClick={async () => {
+                            if (!confirm(zh ? `删除这笔流水？\n注意：已联动的现金余额不会自动回滚。` : "Delete this flow?\nNote: synced cash balance is NOT rolled back.")) return;
+                            try { await deleteDepositRecord(r.id); setFlowHistory(await getAllFlows()); onRefresh(); } catch { alert("Error"); }
+                          }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {tab === "settings" && (
             <>
               <div className="text-[10px] text-gray-400 mb-3 leading-relaxed space-y-1.5">
@@ -2345,7 +2441,7 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                               try { setDepositHistory(await getDepositHistory(s.broker)); } catch { setDepositHistory([]); }
                             }} className="text-gray-400 hover:text-gray-600 text-[10px]">{expandedBroker === s.broker ? "▼" : "▶"}</button>
                           )}
-                          <button onClick={() => { setAcctBroker(s.broker); setAcctMode(s.capital_mode as "cost" | "deposit"); setAcctCostMethod((s.cost_method as "diluted" | "average") || "diluted"); setAcctDeposit(s.deposit_cny > 0 ? String(s.deposit_cny) : ""); setAcctFx(String(s.deposit_fx)); setDepositAction("update"); }} className="text-blue-500 hover:text-blue-700">✎</button>
+                          <button onClick={() => { setAcctBroker(s.broker); setAcctMode(s.capital_mode as "cost" | "deposit"); setAcctCostMethod((s.cost_method as "diluted" | "average") || "diluted"); setAcctHkConnect(!!s.hk_connect); setAcctDeposit(s.deposit_cny > 0 ? String(s.deposit_cny) : ""); setAcctFx(String(s.deposit_fx)); setDepositAction("update"); }} className="text-blue-500 hover:text-blue-700">✎</button>
                           <button onClick={() => handleAcctDelete(s.broker)} className="text-red-400 hover:text-red-600">✕</button>
                         </div>
                       </div>
@@ -2421,10 +2517,11 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                       if (existing) {
                         setAcctMode(existing.capital_mode as "cost" | "deposit");
                         setAcctCostMethod((existing.cost_method as "diluted" | "average") || "diluted");
+                        setAcctHkConnect(!!existing.hk_connect);
                         setAcctDeposit(existing.deposit_cny > 0 ? String(existing.deposit_cny) : "");
                         setAcctFx(String(existing.deposit_fx));
                       } else {
-                        setAcctMode("cost"); setAcctCostMethod("diluted"); setAcctDeposit(""); setAcctFx("1.0");
+                        setAcctMode("cost"); setAcctCostMethod("diluted"); setAcctHkConnect(false); setAcctDeposit(""); setAcctFx("1.0");
                       }
                       setDepositAction("update");
                     }}>
@@ -2437,7 +2534,7 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                         return <option key={n} value={n}>{n}{tag}</option>;
                       })}
                     </select>
-                    <button onClick={() => { setIsNewAcct(true); setAcctBroker(""); setAcctMode("cost"); setAcctCostMethod("diluted"); setAcctDeposit(""); setAcctFx("1.0"); }}
+                    <button onClick={() => { setIsNewAcct(true); setAcctBroker(""); setAcctMode("cost"); setAcctCostMethod("diluted"); setAcctHkConnect(false); setAcctDeposit(""); setAcctFx("1.0"); }}
                       className="px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-700 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 whitespace-nowrap">
                       {zh ? "➕ 新增" : "➕ New"}
                     </button>
@@ -2497,91 +2594,34 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                           ? "摊薄成本：券商在部分卖出后自动下调持仓成本（国内券商、富途）。用「编辑」填入券商显示的新数量和新成本即可。"
                           : "Diluted: broker lowers the cost on partial sell (Chinese brokers, Futu). Use \"Edit\" to enter the new qty and cost shown by the broker.")}
                     </div>
+                    <label className="flex items-center gap-1.5 text-[10px] text-gray-500 cursor-pointer">
+                      <input type="checkbox" checked={acctHkConnect} onChange={(e) => setAcctHkConnect(e.target.checked)} />
+                      {zh ? "港股通账户（港股卖出回款按汇率折人民币）" : "HK Connect account (HK sale proceeds settle in CNY)"}
+                    </label>
                   </div>
                 )}
                 {acctMode === "deposit" && (
                   <div className="space-y-2">
-                    {/* Update vs Add toggle */}
-                    <div className="flex rounded overflow-hidden border border-gray-300 dark:border-gray-700">
-                      <button onClick={() => setDepositAction("update")}
-                        className={`flex-1 text-[10px] py-1 font-medium transition-colors ${depositAction === "update" ? "bg-blue-600 text-white" : "bg-white dark:bg-gray-900 text-gray-500 hover:bg-gray-100"}`}>
-                        {zh ? "直接更新总额" : "Update Total"}
-                      </button>
-                      <button onClick={() => setDepositAction("add")}
-                        className={`flex-1 text-[10px] py-1 font-medium transition-colors ${depositAction === "add" ? "bg-blue-600 text-white" : "bg-white dark:bg-gray-900 text-gray-500 hover:bg-gray-100"}`}>
-                        {zh ? "追加入金记录" : "Add Deposit"}
-                      </button>
-                    </div>
                     <div className="text-[10px] text-gray-400 leading-relaxed bg-white dark:bg-gray-950 rounded px-2 py-1 border border-gray-200 dark:border-gray-800">
-                      {depositAction === "update"
-                        ? (zh ? "直接覆盖该账户的入金总额和平均汇率。" : "Directly overwrite total deposit and avg FX rate.")
-                        : (zh ? "新增一笔入金记录，系统自动汇总计算入金总额和加权平均汇率。" : "Add a new deposit entry. The system auto-calculates the total and weighted avg FX rate.")}
+                      {zh
+                        ? "此处直接覆盖入金总额和平均汇率（存量修正用）。日常入金/出金请到「资金流」标签页记录。"
+                        : "Overwrites total deposit and avg FX (for corrections). For day-to-day flows use the Flows tab."}
                     </div>
                     <div>
-                      <div className="text-[10px] text-gray-400 mb-0.5">
-                        {depositAction === "add"
-                          ? (zh ? "本次入金金额 (人民币)" : "This Deposit Amount (CNY)")
-                          : (zh ? "入金总额 (人民币)" : "Total Deposit (CNY)")}
-                      </div>
+                      <div className="text-[10px] text-gray-400 mb-0.5">{zh ? "入金总额 (人民币)" : "Total Deposit (CNY)"}</div>
                       <input className={inputCls} placeholder={zh ? "例如：1029203" : "e.g. 1029203"} inputMode="decimal"
                         value={acctDeposit} onChange={(e) => setAcctDeposit(e.target.value)} />
                     </div>
                     <div>
-                      <div className="text-[10px] text-gray-400 mb-0.5">
-                        {depositAction === "add"
-                          ? (zh ? "本次购汇汇率 (1=人民币账户)" : "This FX Rate (1 = CNY account)")
-                          : (zh ? "平均购汇汇率 (1=人民币账户)" : "Avg FX Rate (1 = CNY account)")}
-                      </div>
+                      <div className="text-[10px] text-gray-400 mb-0.5">{zh ? "平均购汇汇率 (1=人民币账户)" : "Avg FX Rate (1 = CNY account)"}</div>
                       <input className={inputCls} placeholder={zh ? "例如：6.915" : "e.g. 6.915"} inputMode="decimal"
                         value={acctFx} onChange={(e) => setAcctFx(e.target.value)} />
                     </div>
-                    {depositAction === "add" && (
-                      <FlowFields zh={zh} inputCls={inputCls}
-                        flowDirection={flowDirection} setFlowDirection={setFlowDirection}
-                        flowCurrency={flowCurrency} setFlowCurrency={setFlowCurrency}
-                        flowUpdateCash={flowUpdateCash} setFlowUpdateCash={setFlowUpdateCash}
-                        depositDate={depositDate} setDepositDate={setDepositDate}
-                        depositNotes={depositNotes} setDepositNotes={setDepositNotes} />
-                    )}
-                  </div>
-                )}
-                {/* Cost-mode accounts also need dated flows — the TWR unit
-                    engine is portfolio-wide, capital stays cost-based */}
-                {acctMode === "cost" && (!isNewAcct ? !!acctBroker : !!newAcctName.trim()) && (
-                  <div className="space-y-2 border-t border-gray-200 dark:border-gray-800 pt-2">
-                    <div className="text-[10px] font-medium text-gray-500">
-                      {zh ? "记录入金 / 出金（用于净值 TWR 计算，不影响成本口径本金）" : "Record deposit / withdrawal (feeds TWR units; capital stays cost-based)"}
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-gray-400 mb-0.5">{zh ? "金额 (人民币)" : "Amount (CNY)"}</div>
-                      <input className={inputCls} inputMode="decimal" placeholder={zh ? "例如：50000" : "e.g. 50000"}
-                        value={acctDeposit} onChange={(e) => setAcctDeposit(e.target.value)} />
-                    </div>
-                    <FlowFields zh={zh} inputCls={inputCls}
-                      flowDirection={flowDirection} setFlowDirection={setFlowDirection}
-                      flowCurrency={flowCurrency} setFlowCurrency={setFlowCurrency}
-                      flowUpdateCash={flowUpdateCash} setFlowUpdateCash={setFlowUpdateCash}
-                      depositDate={depositDate} setDepositDate={setDepositDate}
-                      depositNotes={depositNotes} setDepositNotes={setDepositNotes} />
-                    <button disabled={saving || !parseFloat(acctDeposit)}
-                      onClick={async () => {
-                        const broker = isNewAcct ? newAcctName.trim() : acctBroker;
-                        setSaving(true);
-                        try {
-                          if (await submitFlow(broker)) {
-                            setAcctDeposit(""); setDepositDate(""); setDepositNotes("");
-                            onRefresh(); setMsg("✅ Saved");
-                          }
-                        } catch { setMsg("❌ Error"); } finally { setSaving(false); }
-                      }}
-                      className="w-full px-3 py-1.5 text-xs rounded bg-gray-700 dark:bg-gray-600 text-white hover:bg-gray-800 disabled:opacity-50">
-                      {saving ? "..." : (zh ? "记录资金流" : "Record Flow")}
-                    </button>
                   </div>
                 )}
                 <button onClick={handleAcctSave} disabled={saving || (isNewAcct ? !newAcctName.trim() : !acctBroker)}
                   className="w-full px-3 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
-                  {saving ? "..." : depositAction === "add" && acctMode === "deposit" ? (zh ? "追加入金" : "Add Deposit") : (zh ? "保存" : "Save")}
+                  {saving ? "..." : (zh ? "保存" : "Save")}
                 </button>
               </div>
             </>
@@ -2989,7 +3029,7 @@ export default function PortfolioPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [panelInitialTab, setPanelInitialTab] = useState<"edit" | "close" | "cash" | "settings">("edit");
+  const [panelInitialTab, setPanelInitialTab] = useState<"edit" | "close" | "cash" | "flows" | "settings">("edit");
   const [panelEditHolding, setPanelEditHolding] = useState<PortfolioHolding | null>(null);
   const [portfolios, setPortfolios] = useState<PortfolioInfo[]>([]);
   const activePortfolio = portfolios.find((p) => p.active)?.name || "";

@@ -693,6 +693,9 @@ def _migrate_twr_columns(conn):
         ("daily_snapshots", "unit_nav", "unit_nav REAL"),
         ("deposit_history", "currency", "currency TEXT NOT NULL DEFAULT 'CNY'"),
         ("deposit_history", "amount", "amount REAL"),
+        # 港股通: HK stocks bought via mainland brokers settle sales in CNY
+        # at the day's FX, not in HKD
+        ("account_settings", "hk_connect", "hk_connect INTEGER NOT NULL DEFAULT 0"),
     ]:
         try:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
@@ -819,21 +822,23 @@ def upsert_account_setting(conn: sqlite3.Connection, broker: str,
                            capital_mode: str, deposit_cny: float = 0,
                            deposit_fx: float = 1.0, notes: str = '',
                            cost_method: str = 'diluted',
-                           user_id: str = 'local') -> None:
+                           user_id: str = 'local',
+                           hk_connect: bool = False) -> None:
     """Insert or update account capital settings.
     Also ensures a CNY cash row exists for this account (balance 0 if new).
     """
     conn.execute("""
-        INSERT INTO account_settings (broker, capital_mode, deposit_cny, deposit_fx, notes, cost_method, updated_at, user_id)
-        VALUES (?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), ?)
+        INSERT INTO account_settings (broker, capital_mode, deposit_cny, deposit_fx, notes, cost_method, updated_at, user_id, hk_connect)
+        VALUES (?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), ?, ?)
         ON CONFLICT(broker, user_id) DO UPDATE SET
             capital_mode = excluded.capital_mode,
             deposit_cny = excluded.deposit_cny,
             deposit_fx = excluded.deposit_fx,
             notes = excluded.notes,
             cost_method = excluded.cost_method,
-            updated_at = excluded.updated_at
-    """, (broker, capital_mode, deposit_cny, deposit_fx, notes, cost_method, user_id))
+            updated_at = excluded.updated_at,
+            hk_connect = excluded.hk_connect
+    """, (broker, capital_mode, deposit_cny, deposit_fx, notes, cost_method, user_id, int(hk_connect)))
     # Auto-create cash row if none exists for this account
     existing = conn.execute(
         "SELECT 1 FROM cash_balances WHERE account=? AND user_id=? LIMIT 1", (broker, user_id)

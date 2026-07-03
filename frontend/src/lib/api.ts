@@ -1029,6 +1029,7 @@ export interface AccountSetting {
   deposit_fx: number;
   notes: string | null;
   cost_method?: string;  // 'diluted' | 'average'
+  hk_connect?: number;   // 1 = 港股通 (HK sale proceeds settle in CNY)
   updated_at: string;
 }
 
@@ -1039,6 +1040,7 @@ export interface AccountSettingInput {
   deposit_fx?: number;
   notes?: string;
   cost_method?: string;  // 'diluted' (re-avg on sell) | 'average' (IBKR)
+  hk_connect?: boolean;  // 港股通 account
 }
 
 export async function getAccountSettings(): Promise<AccountSetting[]> {
@@ -1064,11 +1066,18 @@ export async function deleteAccountSetting(broker: string): Promise<{ ok: boolea
 export interface DepositRecord {
   id: number;
   broker: string;
-  amount_cny: number;
+  amount_cny: number; // signed: deposit > 0, withdrawal < 0
   fx_rate: number;
   deposit_date: string | null;
   notes: string | null;
   created_at: string;
+  currency?: string;
+  amount?: number | null; // original-currency amount (signed)
+}
+
+/** All cash-flow records across brokers, newest first (Flows tab). */
+export async function getAllFlows(limit = 200): Promise<DepositRecord[]> {
+  return fetchAPI<DepositRecord[]>(`/api/portfolio/flows?limit=${limit}`);
 }
 
 export interface DepositRecordInput {

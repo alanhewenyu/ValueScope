@@ -143,13 +143,19 @@ def take_snapshot(dry_run=False, user_id: str = "local"):
         conn.close()
         return None
 
-    # ── Cash ──
-    cash_cny = 0.0
+    # ── Cash (IBKR-style: negative balance = margin loan) ──
+    pos_cash = 0.0
+    neg_cash = 0.0  # margin loans expressed as negative cash
     for row in conn.execute("SELECT currency, balance FROM cash_balances WHERE user_id=?", (user_id,)):
-        cash_cny += row["balance"] * fx.get(row["currency"], 1.0)
-    print(f"Cash:       ¥{_fmt(cash_cny)}")
+        v = row["balance"] * fx.get(row["currency"], 1.0)
+        if v >= 0:
+            pos_cash += v
+        else:
+            neg_cash += -v
+    cash_cny = pos_cash
+    print(f"Cash:       ¥{_fmt(pos_cash)}" + (f"  (margin via negative cash: ¥{_fmt(neg_cash)})" if neg_cash else ""))
 
-    # ── Leverage ──
+    # ── Leverage: legacy in_house rows + negative cash + off-exchange ──
     in_house = 0.0
     off_exchange = 0.0
     for row in conn.execute("SELECT category, currency, amount FROM margin_balances WHERE user_id=?", (user_id,)):
@@ -159,8 +165,8 @@ def take_snapshot(dry_run=False, user_id: str = "local"):
             in_house += amt_cny
         elif row["category"] == "off_exchange":
             off_exchange += amt_cny
-    total_leverage = in_house + off_exchange
-    print(f"Leverage:   ¥{_fmt(total_leverage)} (in={_fmt(in_house)}, off={_fmt(off_exchange)})")
+    total_leverage = in_house + neg_cash + off_exchange
+    print(f"Leverage:   ¥{_fmt(total_leverage)} (in={_fmt(in_house)}, neg_cash={_fmt(neg_cash)}, off={_fmt(off_exchange)})")
 
     # ── Metrics ──
     total_assets = equity_mv + cash_cny
