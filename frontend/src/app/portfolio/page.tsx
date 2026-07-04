@@ -961,8 +961,8 @@ function PerformanceChart({ navHistory, snapshots = [], locale }: {
     <>
       <SectionTitle
         note={locale === "zh"
-          ? "* Portfolio NAV = 净资产值 (资产总值 − 杠杆)。Capital = 累计投入资金。Net P&L = NAV − Capital\n* Capital = 入金账户固定额 + 成本账户(持仓成本 + 现金) − 场外杠杆 − 成本账户已平仓盈亏\n* 阴影区域 = Net P&L (NAV 与 Capital 之间差值)"
-          : "* Portfolio NAV = Net Asset Value (Total Assets − Leverage). Net P&L = NAV − Capital\n* Capital = Deposit accounts (fixed CNY) + Cost accounts (position cost + cash) − OTC leverage − cost-account realized P&L\n* Shaded area = Net P&L (gap between NAV and Capital)"}>
+          ? "* Portfolio NAV = 净资产值 (资产总值 − 杠杆)。Capital = 累计投入资金。Net P&L = NAV − Capital\n* Capital = 入金账户累计净入金 + 成本账户(持仓成本 + 带符号现金，负现金=融资自动扣减) − 场外杠杆 − 成本账户已平仓盈亏\n* 阴影区域 = Net P&L (NAV 与 Capital 之间差值)"
+          : "* Portfolio NAV = Net Asset Value (Total Assets − Leverage). Net P&L = NAV − Capital\n* Capital = Deposit accounts (net deposits) + Cost accounts (position cost + signed cash; negative cash = margin, auto-deducted) − OTC leverage − cost-account realized P&L\n* Shaded area = Net P&L (gap between NAV and Capital)"}>
         {locale === "zh" ? "业绩走势" : "Performance"}
       </SectionTitle>
 
@@ -1222,7 +1222,7 @@ function PnlJournal({ locale }: { locale: string }) {
   const display = rows.reverse();
 
   const journalNote = locale === "zh"
-    ? `* Net P&L = Net Assets − Capital。ΔNet P&L = 当日净收益变动\n* Capital = 入金账户固定额 + 成本账户(持仓成本 + 现金) − 场外杠杆 − 成本账户已平仓盈亏`
+    ? `* Net P&L = Net Assets − Capital。ΔNet P&L = 当日净收益变动\n* Capital = 入金账户累计净入金 + 成本账户(持仓成本 + 带符号现金，负现金=融资自动扣减) − 场外杠杆 − 成本账户已平仓盈亏`
     : `* Net P&L = Net Assets − Capital. ΔNet P&L = daily change in net P&L\n* Capital = Deposit accounts (fixed) + Cost accounts (cost + cash) − OTC leverage − cost-account realized P&L`;
 
   return (

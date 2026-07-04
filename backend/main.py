@@ -132,8 +132,13 @@ app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])
-def health_check():
-    """Basic liveness check for uptime monitors (UptimeRobot etc.)."""
+async def health_check():
+    """Basic liveness check for uptime monitors (UptimeRobot etc.).
+
+    async on purpose: sync endpoints run in the shared threadpool, and when
+    crawler traffic saturates it with slow upstream fetches, even health
+    checks queue and time out. The event loop answers this one directly.
+    """
     return {"status": "ok", "version": "2.0.0"}
 
 

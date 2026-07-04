@@ -7,7 +7,9 @@ from pydantic import BaseModel
 from typing import Optional, List
 import json
 import logging
+import os
 import re
+import threading
 import urllib.request
 
 logger = logging.getLogger("valuescope.stock")
@@ -81,6 +83,26 @@ def _a_share_name_zh(normalized: str) -> str:
 def _needs_fmp_key(normalized: str) -> bool:
     """US and Japan stocks are served by FMP and require an API key."""
     return not (is_a_share(normalized) or is_hk_stock(normalized))
+
+
+# Concurrency gate for cold upstream fetches (akshare/yfinance can take
+# 40-110s when sources are flaky). Without it, a crawler sweep of the 10k-URL
+# sitemap fills the 40-thread pool with slow fetches and the whole API hangs.
+# Cache hits bypass the gate; over-limit cold requests fail fast with 503 so
+# crawlers back off and retry instead of strangling the service.
+_COLD_FETCH_SEM = threading.BoundedSemaphore(int(os.environ.get("VS_MAX_COLD_FETCH", "6")))
+
+
+class _cold_fetch_slot:
+    def __enter__(self):
+        if not _COLD_FETCH_SEM.acquire(timeout=10):
+            raise HTTPException(status_code=503, detail="Busy fetching data, retry shortly",
+                                headers={"Retry-After": "20"})
+        return self
+
+    def __exit__(self, *exc):
+        _COLD_FETCH_SEM.release()
+        return False
 
 
 _FMP_KEY_REQUIRED_DETAIL = {
@@ -289,7 +311,8 @@ def get_profile(
         return cached
 
     try:
-        profile = cached_get_profile(normalized, effective_key)
+        with _cold_fetch_slot():
+            profile = cached_get_profile(normalized, effective_key)
     except HTTPException:
         raise
     except ValueError:
@@ -372,7 +395,7 @@ def get_financials(
     # (parallelized for A-shares). data_cache.get_historical_financials
     # already runs freshness check inside the cache lock.
     from concurrent.futures import ThreadPoolExecutor  # noqa: local import ok
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with _cold_fetch_slot(), ThreadPoolExecutor(max_workers=2) as executor:
         fut_fin = executor.submit(
             get_historical_financials, normalized, "annual", apikey, HISTORICAL_DATA_PERIODS_ANNUAL
         )

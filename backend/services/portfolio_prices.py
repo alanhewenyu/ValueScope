@@ -262,6 +262,17 @@ def _fetch_us_extended(t, currency):
     else:
         price = info.get('preMarketPrice') or info.get('postMarketPrice') or reg_price
         prev_close = reg_price
+        # No session today in the exchange's timezone (weekend/holiday):
+        # zero the daily P&L instead of showing Friday's move / stale
+        # after-hours drift as "today"
+        try:
+            from zoneinfo import ZoneInfo
+            ts = info.get('regularMarketTime')
+            tz = ZoneInfo(info.get('exchangeTimezoneName') or 'America/New_York')
+            if ts and datetime.datetime.fromtimestamp(int(ts), tz).date() < datetime.datetime.now(tz).date():
+                prev_close = price
+        except Exception:
+            pass
 
     if price is not None:
         price = float(price)
@@ -304,6 +315,17 @@ def _fetch_yfinance(ticker, currency, regular_only=False):
                 prev_close = float(pc)
         except Exception:
             pass
+        # Weekend in the exchange's timezone: no session today, so last_price
+        # is Friday's close and previous_close is THURSDAY's — the pair would
+        # show Friday's whole move as "today". Zero it instead.
+        if prev_close is not None:
+            try:
+                from zoneinfo import ZoneInfo
+                tz = ZoneInfo(getattr(fi, 'timezone', None) or 'Asia/Hong_Kong')
+                if datetime.datetime.now(tz).weekday() >= 5:  # Sat/Sun
+                    prev_close = price
+            except Exception:
+                pass
         # Fall back to history if fast_info.previous_close unavailable
         if prev_close is None:
             hist = t.history(period='5d')
