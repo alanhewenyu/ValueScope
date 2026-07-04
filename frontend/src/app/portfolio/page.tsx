@@ -1787,6 +1787,9 @@ function SetupWizard({ locale, onRefresh }: { locale: string; onRefresh: () => v
           <div className="text-xs text-gray-500 leading-relaxed max-w-xs mx-auto">
             {zh ? "从明天起每日自动更新净值曲线。入金出金请用「资金流」记录，日常盈亏无需任何操作。" : "The NAV curve updates daily from tomorrow. Record deposits/withdrawals in Flows; daily P&L needs nothing from you."}
           </div>
+          <Link href="/portfolio/guide" className="inline-block mt-3 text-xs text-blue-500 hover:underline">
+            {zh ? "📖 阅读记账指南（净值、本金、资金流的完整说明）" : "📖 Read the accounting guide"}
+          </Link>
         </div>
       )}
     </div>
@@ -3812,6 +3815,9 @@ export default function PortfolioPage() {
           <span className="text-xs text-gray-400 font-mono">{new Date().toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" }).slice(0, 16)}</span>
           {data && data.fx && <FxBanner fx={data.fx} />}
           <div className="ml-auto flex gap-2">
+            <Link href="/portfolio/guide" className="px-3 py-1 text-xs border border-gray-300 dark:border-gray-700 rounded hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-gray-600 dark:text-gray-300">
+              {locale === "zh" ? "📖 指南" : "📖 Guide"}
+            </Link>
             <button onClick={() => { setPanelEditHolding(null); setPanelOpen(true); }} className="px-3 py-1 text-xs border border-gray-300 dark:border-gray-700 rounded hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
               {locale === "zh" ? "管理" : "Manage"}
             </button>

@@ -1,0 +1,204 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+
+export const metadata: Metadata = {
+  title: "记账指南 — 净值法个人组合记账 | ValueScope Portfolio Tracker",
+  description:
+    "用基金净值法管理个人投资组合：单位净值(TWR)、实收资本、资金流水、杠杆与负现金、三种收益率口径的完整说明与常见疑问解答。",
+  alternates: { canonical: "https://valuescope.app/portfolio/guide" },
+};
+
+/* 长文档：中文为主（目标用户），结构即 FAQ。服务端渲染，天然可收录。 */
+
+function H2({ id, children }: { id: string; children: React.ReactNode }) {
+  return <h2 id={id} className="text-lg font-bold text-gray-900 dark:text-white mt-10 mb-3 scroll-mt-20">{children}</h2>;
+}
+function H3({ children }: { children: React.ReactNode }) {
+  return <h3 className="text-base font-semibold text-gray-800 dark:text-gray-200 mt-6 mb-2">{children}</h3>;
+}
+function P({ children }: { children: React.ReactNode }) {
+  return <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed mb-3">{children}</p>;
+}
+function Code({ children }: { children: React.ReactNode }) {
+  return <pre className="text-xs bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-3 mb-3 overflow-x-auto font-mono text-gray-700 dark:text-gray-300">{children}</pre>;
+}
+function Tbl({ head, rows }: { head: string[]; rows: string[][] }) {
+  return (
+    <div className="overflow-x-auto mb-4">
+      <table className="min-w-full text-sm border-collapse">
+        <thead>
+          <tr>{head.map((h) => <th key={h} className="text-left px-3 py-2 border-b-2 border-gray-200 dark:border-gray-700 text-xs text-gray-500 font-medium">{h}</th>)}</tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i} className="border-b border-gray-100 dark:border-gray-800/60">
+              {r.map((c, j) => <td key={j} className={`px-3 py-2 text-xs ${j === 0 ? "font-medium text-gray-800 dark:text-gray-200" : "text-gray-600 dark:text-gray-400"}`}>{c}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+const TOC = [
+  ["model", "一、核心模型：你的组合是一只「个人基金」"],
+  ["identity", "二、三条永真的恒等式"],
+  ["nav", "三、单位净值与份额（TWR）"],
+  ["capital", "四、本金（Capital）"],
+  ["flows", "五、什么算资金流水"],
+  ["leverage", "六、杠杆与负现金"],
+  ["returns", "七、三种收益率，各自回答什么"],
+  ["ops", "八、日常操作对照表"],
+  ["faq", "九、常见疑问"],
+];
+
+export default function GuidePage() {
+  return (
+    <main className="max-w-3xl mx-auto px-4 py-10">
+      <div className="mb-2">
+        <Link href="/portfolio" className="text-xs text-blue-500 hover:underline">← 返回 Portfolio</Link>
+      </div>
+      <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">记账指南：净值法个人组合记账</h1>
+      <p className="text-sm text-gray-500 mb-6">
+        Portfolio Tracker 采用与公募基金相同的净值法核算。这份指南解释它的记账模型、操作规则，以及那些「一开始想不通、想通了就再也不会忘」的问题。
+      </p>
+
+      {/* TOC */}
+      <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 p-4 mb-4">
+        <div className="text-xs text-gray-400 mb-2 font-medium">目录</div>
+        <ul className="space-y-1">
+          {TOC.map(([id, t]) => (
+            <li key={id}><a href={`#${id}`} className="text-sm text-blue-600 dark:text-blue-400 hover:underline">{t}</a></li>
+          ))}
+        </ul>
+      </div>
+
+      <H2 id="model">一、核心模型：你的组合是一只「个人基金」</H2>
+      <P>
+        把你的投资组合想象成一个独立的记账实体——一只只有你一个持有人的基金。你本人是股东，券商账户里的一切（股票、现金、融资负债）属于这只基金；你的银行卡、支付宝、生活开销属于你个人，在基金边界之外。所有概念由此一一对应：
+      </P>
+      <Tbl
+        head={["Tracker 里的概念", "基金/公司会计对应", "含义"]}
+        rows={[
+          ["净资产 (Net Assets)", "所有者权益", "资产 − 负债，每日快照核算"],
+          ["本金 (Capital)", "实收资本", "只随入金/出金变动"],
+          ["净资产 − 本金", "累计盈亏", "图表上的阴影区，含已取走消费的利润"],
+          ["份额 / 单位净值", "股本 / 每股净资产", "入金=按净值申购，出金=按净值赎回"],
+          ["资金流水", "股东出入资", "钱跨越基金边界的唯一通道"],
+          ["你本人", "唯一股东", "个人总净资产 = 组合权益 + 组合外资产，是另一张报表"],
+        ]}
+      />
+      <P>
+        边界带来的最大好处：<strong className="text-gray-800 dark:text-gray-200">生活消费不再污染投资收益</strong>。取钱生活是「股东赎回」，不是「投资亏损」；收益率（净值）只反映投资本身的好坏。
+      </P>
+
+      <H2 id="identity">二、三条永真的恒等式</H2>
+      <Code>{`份额 × 单位净值 = 净资产          （每天精确成立）
+本金 = 期初冻结值 + 累计净入金流水  （实收资本的定义）
+净资产 − 本金 = 累计总盈亏          （含已消费的利润）`}</Code>
+      <P>任何时候怀疑账目，先检查这三条。它们对不上才是 bug；份额不等于本金金额、净值和资金收益率不相等，都不是 bug（原因见下文）。</P>
+
+      <H2 id="nav">三、单位净值与份额（TWR）</H2>
+      <H3>净值每天怎么滚动</H3>
+      <Code>{`当日单位净值 = (当日净资产 − 当日净入金) ÷ 昨日份额
+当日份额     = 昨日份额 + 当日净入金 ÷ 当日单位净值`}</Code>
+      <P>
+        这就是公募基金的申购机制：先用「老钱的表现」给份额定价，新钱再按这个价买入份额。所以<strong className="text-gray-800 dark:text-gray-200">入金出金永远不改变净值</strong>——净值只归投资收益管。
+      </P>
+      <H3>为什么公式里要「减掉当日入金」？</H3>
+      <P>
+        那不是减少资产，而是定价步骤。今天锅里的钱有一部分是刚进门的，它没参与投资、不算老份额的业绩。减掉它给老份额定价后，新钱立刻按新价买成份额，一分不少（份额 × 净值 = 净资产 恒等式随即闭合）。如果不减，你存钱的动作本身会把净值凭空推高——那才是错的。
+      </P>
+      <H3>盘中估算 vs 正式净值</H3>
+      <P>
+        正式净值每天快照时核算一次（收盘口径）；盘中看到的「盘中估算」= (实时净资产 − 当日流水) ÷ 份额，相当于基金 App 的盘中估值，仅供参考。周末两者可能有小差异：正式净值停在收盘价，估算含美股盘后成交价——都是冻结的，只是冻结时刻不同。
+      </P>
+      <H3>份额为什么不等于本金金额？</H3>
+      <P>
+        起始日两者恰好相等（每份实收资本 1 元）是一次性巧合。此后入金 10 万买到的是「10 万 ÷ 当日净值」份——就像花 10 万申购净值 2.5 元的基金得到 4 万份，份数与金额本来就是两个维度。
+      </P>
+
+      <H2 id="capital">四、本金（Capital）</H2>
+      <P>本金 = 期初冻结值 + 此后累计净入金流水。只有两类事件能动它：入金（+全额）、出金（−全额）。</P>
+      <H3>股息、利息为什么不进本金</H3>
+      <P>它们是收益，直接落在「净资产 − 本金」的累计盈亏里。把分红记成入金会低估你的收益率、虚增你的本金——这是记账最常见的错误。</P>
+      <H3>出金为什么全额扣本金（而不是按份额折算）</H3>
+      <P>
+        严格的基金会计会把赎回款拆成「退本」和「分利」两部分，只有退本减实收资本。本 Tracker 刻意采用<strong className="text-gray-800 dark:text-gray-200">全额扣减</strong>：这样「净资产 − 本金」始终等于你<em>这些年总共赚了多少（包括已经取出来花掉的）</em>——对靠组合生活或经常支取的人，这才是有意义的人生级数字。若某天本金变成负数，含义是「原始投入已全部收回，账上剩的全是利润」。
+      </P>
+      <P>无论选哪种口径，收益率（TWR）完全不受影响——份额永远按净值赎回，本金不进净值公式。</P>
+
+      <H2 id="flows">五、什么算资金流水</H2>
+      <P>唯一判断标准，比背任何规则都好用：</P>
+      <Code>{`这笔操作让净资产变了吗？  变了 → 记流水；没变 → 不记。`}</Code>
+      <Tbl
+        head={["事件", "记流水吗", "原因"]}
+        rows={[
+          ["从银行转钱进券商", "入金 ✓", "净资产增加了权益"],
+          ["取钱付生活费", "出金 ✓", "净资产减少（股东赎回），不是投资亏损"],
+          ["股息 / 利息到账", "✗（直接改现金余额）", "是收益不是本金，净值自然上涨"],
+          ["买入 / 卖出股票", "✗", "现金↔股票的内部腾挪，净资产瞬时不变"],
+          ["自己账户间转仓", "✗", "钱没出边界"],
+          ["以组合名义借款入账", "✗（现金+、杠杆+）", "资产负债同增，净资产不变"],
+          ["以个人名义借款后注入", "入金 ✓（组合不记这笔负债）", "对组合而言就是股东增资"],
+          ["用券商现金偿还组合负债", "✗（现金−、杠杆−）", "资产负债同减，净资产不变"],
+        ]}
+      />
+      <P>
+        警惕双重记账：「借款入账 + 记杠杆 + 又记入金」会让净值凭空暴跌——同一笔钱记了两次，引擎会认为资产亏掉了入金那么多。负债跟着「谁偿还、为谁融资」走：由组合偿还的债留在组合内且不产生流水；纯个人用途的借款别进组合的杠杆表。
+      </P>
+
+      <H2 id="leverage">六、杠杆与负现金</H2>
+      <P>
+        采用盈透（IBKR）式约定：<strong className="text-gray-800 dark:text-gray-200">现金余额可以为负，负余额就是场内融资</strong>，自动计入杠杆。卖出所得直接加进带符号的现金——有融资时自动冲抵，无需单独操作。场外借款（组合名义）单独记在「场外杠杆」，其利息从券商现金支付，自动体现为净值拖累——你的收益率是含融资成本的真实水平。
+      </P>
+
+      <H2 id="returns">七、三种收益率，各自回答什么</H2>
+      <Tbl
+        head={["口径", "回答的问题", "特点"]}
+        rows={[
+          ["单位净值涨幅（TWR）", "「我的操作水平如何？」", "时间加权，入金出金完全免疫，可与基金/指数直接对比"],
+          ["资金加权（Modified Dietz）", "「我的钱实际赚了多少？」", "受出入金时机影响；期间口径，与 TWR 并排看"],
+          ["个股 YTD 归因", "「钱是哪几只票赚/亏的？」", "本币价差逐股加总，不含现金和汇率路径"],
+        ]}
+      />
+      <P>
+        三个数字不相等是正常的，各有各的用途。典型例子：本币选股 +14%，但美元贬值拖累人民币计价的净值只 +10%——差额就是汇率的贡献。频繁出金的人 Dietz 会明显偏离 TWR，那正是它想告诉你的信息（钱在场时间不同）。
+      </P>
+
+      <H2 id="ops">八、日常操作对照表</H2>
+      <Tbl
+        head={["场景", "在哪操作", "要点"]}
+        rows={[
+          ["加仓（用账内的钱）", "交易 → 买入，或 持仓 → 直接编辑", "新成本自动加权（可改成券商精确值），现金自动扣减"],
+          ["减仓（摊薄口径账户）", "交易 → 卖出（摊薄减仓分支）", "手续费可摊入，成本可改，收益摊入成本、不记已实现——与券商屏幕一致"],
+          ["减仓 / 清仓（平均口径）", "交易 → 卖出", "记已实现盈亏，回款自动入账（港股通自动折人民币）"],
+          ["入金 / 出金", "资金流 标签页", "日期必填（净值按流水日折份额）；勾「同步现金」一步到位"],
+          ["每月生活费支取", "资金流 → 出金", "一两笔/月，这是净值精确的唯一纪律要求"],
+          ["股息 / 利息到账", "现金/杠杆 → 直接改余额", "别记成入金"],
+          ["组合借款 / 还款", "现金与场外杠杆同增/同减", "不记流水"],
+          ["日常涨跌", "什么都不用做", "每日快照自动记录"],
+        ]}
+      />
+
+      <H2 id="faq">九、常见疑问</H2>
+      <H3>Q: 入金 10 万后净值纹丝不动，钱去哪了？</H3>
+      <P>变成了新增份额（10 万 ÷ 当日净值）。份额 × 净值 = 净资产，一分不少。从明天起这笔钱开始参与赚亏。</P>
+      <H3>Q: 周六为什么所有 Daily P&L 都是 0？</H3>
+      <P>各市场按交易所时区判断「今天没开盘 → 当日盈亏归零」。否则周五的涨跌会被冒充成「今天」。</P>
+      <H3>Q: 单位净值和「YTD 盈亏」的百分比对不上？</H3>
+      <P>见第七节——一个是净值法、一个是资金/归因口径，回答不同问题，本就不该相等。</P>
+      <H3>Q: 借了钱进券商，要记入金吗？</H3>
+      <P>看谁的名义（第五节矩阵）：组合名义 → 现金+杠杆+，不记流水；个人名义注入 → 记入金，组合无负债。两样都记 = 双重记账，净值会假跌。</P>
+      <H3>Q: 历史上没记的出入金怎么办？</H3>
+      <P>净值法从启用日（T0）起精确；之前的历史以启用时的净值为起点延续，无需重建。想提高历史精度，可按月估算补录带日期的流水。</P>
+      <H3>Q: 我的个人总净资产在哪看？</H3>
+      <P>Tracker 只核算组合这只「基金」。个人总净资产 = 组合净资产 + 银行/其他资产 − 个人负债，是另一张报表——把它们分开，正是这套账干净的原因。</P>
+
+      <div className="mt-10 pt-4 border-t border-gray-200 dark:border-gray-800 text-xs text-gray-400">
+        本指南与 Tracker 的实际计算逻辑保持同步。有其他疑问，欢迎通过页脚联系方式反馈。
+      </div>
+    </main>
+  );
+}
