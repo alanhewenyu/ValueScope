@@ -3170,22 +3170,10 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                   </div>
                 )}
                 {acctMode === "deposit" && (
-                  <div className="space-y-2">
-                    <div className="text-[10px] text-gray-400 leading-relaxed bg-white dark:bg-gray-950 rounded px-2 py-1 border border-gray-200 dark:border-gray-800">
-                      {zh
-                        ? "此处直接覆盖入金总额和平均汇率（存量修正用）。日常入金/出金请到「资金流」标签页记录。"
-                        : "Overwrites total deposit and avg FX (for corrections). For day-to-day flows use the Flows tab."}
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-gray-400 mb-0.5">{zh ? "入金总额 (人民币)" : "Total Deposit (CNY)"}</div>
-                      <input className={inputCls} placeholder={zh ? "例如：1029203" : "e.g. 1029203"} inputMode="decimal"
-                        value={acctDeposit} onChange={(e) => setAcctDeposit(e.target.value)} />
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-gray-400 mb-0.5">{zh ? "平均购汇汇率 (1=人民币账户)" : "Avg FX Rate (1 = CNY account)"}</div>
-                      <input className={inputCls} placeholder={zh ? "例如：6.915" : "e.g. 6.915"} inputMode="decimal"
-                        value={acctFx} onChange={(e) => setAcctFx(e.target.value)} />
-                    </div>
+                  <div className="text-[10px] text-gray-400 leading-relaxed bg-white dark:bg-gray-950 rounded px-2 py-1 border border-gray-200 dark:border-gray-800">
+                    {zh
+                      ? "本金已统一为「期初冻结值 + 资金流水」自动计算，入金总额字段仅作历史记录，不再影响本金。日常入金/出金请到「资金流」标签页记录。"
+                      : "Capital is now frozen opening value + recorded flows. The deposit-total field is historical metadata only. Use the Flows tab for day-to-day flows."}
                   </div>
                 )}
                 <button onClick={handleAcctSave} disabled={saving || (isNewAcct ? !newAcctName.trim() : !acctBroker)}

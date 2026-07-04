@@ -957,7 +957,51 @@ def delete_deposit_record(conn: sqlite3.Connection, record_id: int,
 
 def compute_capital(conn: sqlite3.Connection, fx: dict[str, float],
                     user_id: str = 'local') -> float:
-    """Compute total invested capital (CNY).
+    """Paid-in capital (实收资本), fund-entity convention:
+
+        Capital = frozen opening value (capital_base, set once from the
+                  legacy formula) + net dated flows recorded after it.
+
+    Capital moves ONLY on deposits/withdrawals — dividends, interest, fees
+    and cost-method quirks land in retained earnings (NAV − Capital) where
+    they belong, instead of leaking into "本金" via the cash term as the
+    legacy cost-mode formula allowed. capital_mode is legacy metadata now.
+
+    Edge: flows dated the same day as the freeze are excluded (assumed
+    already inside the frozen value) — enter same-day flows after freezing
+    with the next day's date if they happen post-freeze.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS capital_base (
+            user_id   TEXT PRIMARY KEY,
+            base_cny  REAL NOT NULL,
+            base_date TEXT NOT NULL
+        )
+    """)
+    row = conn.execute(
+        "SELECT base_cny, base_date FROM capital_base WHERE user_id=?", (user_id,)
+    ).fetchone()
+    if row is None:
+        # One-time freeze: the legacy dual-mode value becomes the opening
+        # paid-in capital (same continuity trick as the TWR unit seed)
+        from zoneinfo import ZoneInfo
+        base = _compute_capital_legacy(conn, fx, user_id)
+        today = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d")
+        conn.execute("INSERT OR IGNORE INTO capital_base (user_id, base_cny, base_date) VALUES (?, ?, ?)",
+                     (user_id, base, today))
+        return base
+    base_cny, base_date = row[0], row[1]
+    flows = conn.execute(
+        "SELECT COALESCE(SUM(amount_cny), 0) FROM deposit_history "
+        "WHERE user_id=? AND deposit_date IS NOT NULL AND deposit_date > ?",
+        (user_id, base_date)).fetchone()[0]
+    return base_cny + flows
+
+
+def _compute_capital_legacy(conn: sqlite3.Connection, fx: dict[str, float],
+                            user_id: str = 'local') -> float:
+    """Legacy dual-mode capital — used exactly once per user to freeze the
+    opening capital_base, then never again.
 
     Every account must be registered in account_settings with a capital_mode:
       - 'deposit': use fixed deposit_cny (ignores position cost, cash, realized P&L)

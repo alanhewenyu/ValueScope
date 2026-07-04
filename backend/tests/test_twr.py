@@ -8,6 +8,7 @@ import pytest
 
 from backend.services.portfolio_db import (
     init_db, get_conn, upsert_snapshot, add_deposit_record, roll_units,
+    compute_capital, upsert_cash,
 )
 
 
@@ -154,3 +155,27 @@ class TestCashCoupling:
             "SELECT balance FROM cash_balances WHERE account='IBKR' AND currency='USD' AND user_id='u1'"
         ).fetchone()
         assert row[0] == pytest.approx(5000)
+
+
+class TestCapitalBase:
+    """Unified capital: frozen opening value + net dated flows."""
+
+    def test_freeze_then_flows(self, db):
+        assert compute_capital(db, {}, 'u1') == 0  # freeze at 0 (empty accounts)
+        add_deposit_record(db, 'IBKR', 100000, deposit_date='2099-01-02', user_id='u1')
+        assert compute_capital(db, {}, 'u1') == pytest.approx(100000)
+        add_deposit_record(db, 'IBKR', -30000, deposit_date='2099-01-03', user_id='u1')
+        assert compute_capital(db, {}, 'u1') == pytest.approx(70000)
+
+    def test_cash_edits_no_longer_move_capital(self, db):
+        # Legacy cost-mode let dividends/fees leak into 本金 via the cash
+        # term; frozen-base capital only moves on flows
+        compute_capital(db, {}, 'u1')
+        upsert_cash(db, 'IBKR', 'USD', 99999, user_id='u1')
+        assert compute_capital(db, {}, 'u1') == 0
+
+    def test_users_frozen_independently(self, db):
+        compute_capital(db, {}, 'u1')
+        add_deposit_record(db, 'IBKR', 50000, deposit_date='2099-01-02', user_id='u2')
+        assert compute_capital(db, {}, 'u1') == 0
+        assert compute_capital(db, {}, 'u2') == pytest.approx(50000)
