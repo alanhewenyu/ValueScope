@@ -809,20 +809,31 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
 
     total_ytd_pnl_cny += ytd_realized_total
 
-    # Latest TWR unit NAV (from snapshots) so the KPI row can show it
+    # Latest TWR unit NAV (official, from snapshots) + a live intraday
+    # estimate: (live NAV − flows since the snapshot) / latest units.
+    # The official series only advances at the daily snapshot; the estimate
+    # is display-level convenience, like a fund's 盘中估值.
     unit_nav = None
     unit_nav_date = None
+    unit_nav_est = None
     with get_conn() as conn:
         _r = conn.execute(
-            "SELECT unit_nav, date FROM daily_snapshots "
-            "WHERE user_id=? AND unit_nav IS NOT NULL ORDER BY date DESC LIMIT 1",
+            "SELECT unit_nav, units, date FROM daily_snapshots "
+            "WHERE user_id=? AND unit_nav IS NOT NULL AND units > 0 "
+            "ORDER BY date DESC LIMIT 1",
             (user_id,)).fetchone()
         if _r:
-            unit_nav, unit_nav_date = _r[0], _r[1]
+            unit_nav, _units, unit_nav_date = _r[0], _r[1], _r[2]
+            _flows = conn.execute(
+                "SELECT COALESCE(SUM(amount_cny), 0) FROM deposit_history "
+                "WHERE user_id=? AND deposit_date IS NOT NULL AND deposit_date > ?",
+                (user_id, unit_nav_date)).fetchone()[0]
+            unit_nav_est = (net_assets - _flows) / _units
 
     summary = {
         "unit_nav": round(unit_nav, 4) if unit_nav else None,
         "unit_nav_date": unit_nav_date,
+        "unit_nav_est": round(unit_nav_est, 4) if unit_nav_est else None,
         "equity_cny": round(total_equity_cny, 2),
         "cash_cny": round(cash_cny, 2),
         "leverage_cny": round(leverage_cny, 2),
