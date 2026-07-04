@@ -3802,7 +3802,7 @@ export default function PortfolioPage() {
                   )}
                   <KpiCard label={locale === "zh" ? "YTD 盈亏" : "YTD P&L"} value={`¥${pnlSign(data.summary.ytd_pnl_cny)}`}
                     sub={data.summary.ytd_mwr != null
-                      ? `${pctStr(data.summary.ytd_mwr)} ${locale === "zh" ? "资金加权" : "money-wt."} · ${(data.summary.ytd_mwr_start || "").slice(5)}${locale === "zh" ? " 起" : "+"}`
+                      ? `${pctStr(data.summary.ytd_mwr)} ${locale === "zh" ? "资金加权 (Dietz)" : "money-wt. (Dietz)"} · ${(data.summary.ytd_mwr_start || "").slice(5)}${locale === "zh" ? " 起" : "+"}`
                       : undefined}
                     subColor={pnlColor(data.summary.ytd_pnl_cny)} />
                 </div>
