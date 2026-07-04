@@ -165,6 +165,78 @@ function FlowFields({ zh, inputCls, flowDirection, setFlowDirection, flowCurrenc
   );
 }
 
+/** Hero: the 3-second answer — one sentence + one clean YTD curve vs CSI 300.
+ *  Details live in the Performance tab; clicking the hero jumps there. */
+function HeroSummary({ locale, onGoPerformance }: { locale: string; onGoPerformance: () => void }) {
+  const zh = locale === "zh";
+  const [series, setSeries] = useState<{ date: string; val: number }[]>([]);
+  const [bench, setBench] = useState<{ date: string; val: number }[]>([]);
+
+  useEffect(() => {
+    const ytdStart = `${new Date().getFullYear()}-01-01`;
+    getSnapshots(400).then((snaps) => {
+      const pts = [...snaps]
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .filter((s) => s.date >= ytdStart)
+        .map((s) => ({
+          date: s.date,
+          // TWR unit NAV after T0; legacy NAV/Capital ratio before (seed
+          // makes them continuous, same convention as PerformanceChart)
+          val: s.unit_nav != null && s.unit_nav > 0 ? s.unit_nav
+            : (s.capital && s.capital > 0 && s.net_assets != null ? s.net_assets / s.capital : NaN),
+        }))
+        .filter((p) => Number.isFinite(p.val));
+      setSeries(pts);
+      if (pts.length >= 2) {
+        getBenchmarks(pts[0].date).then((b) => {
+          const csi = b["CSI 300"] || [];
+          setBench(csi.filter((p) => p.date >= pts[0].date).map((p) => ({ date: p.date, val: p.close })));
+        }).catch(() => {});
+      }
+    }).catch(() => {});
+  }, []);
+
+  if (series.length < 2) return null;
+
+  const portRet = (series[series.length - 1].val / series[0].val - 1) * 100;
+  const benchRet = bench.length >= 2 ? (bench[bench.length - 1].val / bench[0].val - 1) * 100 : null;
+  const diff = benchRet != null ? portRet - benchRet : null;
+
+  // Indexed to 100 for the mini chart
+  const norm = (pts: { val: number }[]) => pts.map((p) => (p.val / pts[0].val) * 100);
+  const pv = norm(series);
+  const bv = bench.length >= 2 ? norm(bench) : [];
+  const all = [...pv, ...bv];
+  const yMin = Math.min(...all), yMax = Math.max(...all), yr = yMax - yMin || 1;
+  const W = 800, H = 120, PAD = 4;
+  const line = (vals: number[]) => vals.map((v, i) =>
+    `${(PAD + (i / (vals.length - 1)) * (W - 2 * PAD)).toFixed(1)},${(H - PAD - ((v - yMin) / yr) * (H - 2 * PAD)).toFixed(1)}`).join(" ");
+
+  return (
+    <div onClick={onGoPerformance}
+      className="mb-4 p-4 rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 cursor-pointer hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
+      <div className="flex items-baseline justify-between mb-2 flex-wrap gap-1">
+        <div className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">
+          {zh ? "今年 " : "YTD "}
+          <span className={pnlColor(portRet)}>{portRet >= 0 ? "+" : ""}{portRet.toFixed(1)}%</span>
+          {diff != null && (
+            <span className="text-gray-500 dark:text-gray-400 font-normal text-sm sm:text-base">
+              {zh
+                ? `，${diff >= 0 ? "跑赢" : "跑输"}沪深300 ${Math.abs(diff).toFixed(1)} 个百分点`
+                : `, ${diff >= 0 ? "beating" : "trailing"} CSI 300 by ${Math.abs(diff).toFixed(1)}pp`}
+            </span>
+          )}
+        </div>
+        <span className="text-[10px] text-gray-400">{zh ? "净值 (TWR) · 点击查看详情 →" : "Unit NAV (TWR) · details →"}</span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-24" preserveAspectRatio="none" aria-hidden>
+        {bv.length >= 2 && <polyline points={line(bv)} fill="none" stroke="#9ca3af" strokeWidth="1.5" strokeDasharray="4 3" />}
+        <polyline points={line(pv)} fill="none" stroke="#3b82f6" strokeWidth="2" />
+      </svg>
+    </div>
+  );
+}
+
 function KpiCard({ label, value, sub, subColor }: {
   label: string; value: string; sub?: string; subColor?: string;
 }) {
@@ -286,9 +358,10 @@ function SectionTitle({ children, note }: { children: React.ReactNode; note?: st
 // Holdings Table
 // ══════════════════════════════════════════
 
-function HoldingsTable({ holdings, summary, locale, onEdit, compact, onShowAll }: {
+function HoldingsTable({ holdings, summary, locale, onEdit, onTrade, compact, onShowAll }: {
   holdings: PortfolioHolding[]; summary: PortfolioData["summary"]; locale: string;
   onEdit?: (h: PortfolioHolding) => void;
+  onTrade?: (h: PortfolioHolding, dir: "buy" | "sell") => void;
   compact?: boolean;
   onShowAll?: () => void;
 }) {
@@ -470,7 +543,11 @@ function HoldingsTable({ holdings, summary, locale, onEdit, compact, onShowAll }
                       {h.mos_pct != null ? `${h.mos_pct > 0 ? "+" : ""}${h.mos_pct.toFixed(1)}%` : "—"}
                     </td>
                   </>}
-                  {onEdit && <td className="px-1 py-1.5 text-center"><button onClick={() => onEdit(h)} className="text-gray-400 hover:text-blue-500 text-[10px]">✎</button></td>}
+                  {onEdit && <td className="px-1 py-1.5 text-center whitespace-nowrap">
+                    {onTrade && <button onClick={() => onTrade(h, "buy")} title={locale === "zh" ? "买入/加仓" : "Buy"} className="text-gray-400 hover:text-red-500 text-[10px] mr-1.5">买</button>}
+                    {onTrade && <button onClick={() => onTrade(h, "sell")} title={locale === "zh" ? "卖出/减仓" : "Sell"} className="text-gray-400 hover:text-green-600 text-[10px] mr-1.5">卖</button>}
+                    <button onClick={() => onEdit(h)} className="text-gray-400 hover:text-blue-500 text-[10px]">✎</button>
+                  </td>}
                   {hasIndustry && <td className="px-2 py-1.5 text-gray-400 truncate max-w-[90px]" title={h.industry}>{h.industry || "—"}</td>}
                 </tr>
               ))}
@@ -663,6 +740,7 @@ function PerformanceSection({ locale, hideChart, hideRisk }: { locale: string; h
     <>
       {/* Performance Chart (NAV + Capital) */}
       {!hideChart && navSorted.length > 2 && <PerformanceChart navHistory={navSorted} snapshots={snapshotsSorted} locale={locale} />}
+      {!hideChart && <MonthlyHeatmap snapshots={snapshotsSorted} locale={locale} />}
 
       {/* Risk Analytics */}
       {!hideRisk && (<>
@@ -694,6 +772,84 @@ function PerformanceSection({ locale, hideChart, hideRisk }: { locale: string; h
         ))}
       </div></>)}
     </>
+  );
+}
+
+/** Monthly returns heatmap — years × months grid from the TWR/ratio series.
+ *  The single most professional-feeling component per tracker reviews
+ *  (Sharesight/Snowball both ship it); grows richer every month. */
+function MonthlyHeatmap({ snapshots, locale }: { snapshots: Snapshot[]; locale: string }) {
+  const zh = locale === "zh";
+  const cells = useMemo(() => {
+    const pts = snapshots
+      .filter((s) => (s.unit_nav != null && s.unit_nav > 0) || (s.capital && s.capital > 0 && s.net_assets != null))
+      .map((s) => ({
+        date: s.date,
+        val: s.unit_nav != null && s.unit_nav > 0 ? s.unit_nav : (s.net_assets as number) / (s.capital as number),
+      }));
+    if (pts.length < 2) return null;
+    // Last value per month, in date order
+    const monthEnd = new Map<string, number>();
+    for (const p of pts) monthEnd.set(p.date.slice(0, 7), p.val);
+    const months = [...monthEnd.keys()].sort();
+    const out: { ym: string; ret: number }[] = [];
+    let prev = pts[0].val;
+    for (const ym of months) {
+      const v = monthEnd.get(ym)!;
+      out.push({ ym, ret: (v / prev - 1) * 100 });
+      prev = v;
+    }
+    return out;
+  }, [snapshots]);
+
+  if (!cells || cells.length === 0) return null;
+
+  const years = [...new Set(cells.map((c) => c.ym.slice(0, 4)))].sort().reverse();
+  const byYm = new Map(cells.map((c) => [c.ym, c.ret]));
+  const maxAbs = Math.max(...cells.map((c) => Math.abs(c.ret)), 1);
+  const cellStyle = (ret: number | undefined) => {
+    if (ret == null) return {};
+    const alpha = Math.min(0.85, 0.15 + (Math.abs(ret) / maxAbs) * 0.6);
+    // CN convention: red = gain, green = loss (matches pnlColor)
+    return { backgroundColor: ret >= 0 ? `rgba(239,68,68,${alpha})` : `rgba(34,197,94,${alpha})` };
+  };
+
+  return (
+    <div className="mt-4 mb-2">
+      <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">
+        {zh ? "月度收益 (%)" : "Monthly Returns (%)"}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="text-[10px] font-mono border-collapse">
+          <thead>
+            <tr>
+              <th className="pr-2 text-gray-400 font-normal" />
+              {Array.from({ length: 12 }, (_, i) => (
+                <th key={i} className="px-1 py-0.5 text-gray-400 font-normal text-center w-12">{i + 1}{zh ? "月" : ""}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {years.map((y) => (
+              <tr key={y}>
+                <td className="pr-2 text-gray-500">{y}</td>
+                {Array.from({ length: 12 }, (_, i) => {
+                  const ym = `${y}-${String(i + 1).padStart(2, "0")}`;
+                  const ret = byYm.get(ym);
+                  return (
+                    <td key={ym} className="px-1 py-1 text-center rounded" style={cellStyle(ret)}>
+                      <span className={ret != null ? "text-gray-900 dark:text-white" : "text-gray-200 dark:text-gray-800"}>
+                        {ret != null ? `${ret >= 0 ? "+" : ""}${ret.toFixed(1)}` : "·"}
+                      </span>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -1661,11 +1817,14 @@ function SetupTipsBanner({ locale, data, onOpenPanel }: {
 // Sidebar — Data Management (slide-out panel)
 // ══════════════════════════════════════════
 
-function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHolding, initialTab = "edit" }: {
+function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHolding, initialTab = "edit", tradeTarget, tradeDir, flowDir }: {
   holdings: PortfolioHolding[]; data: PortfolioData | null; locale: string;
   onRefresh: () => void; open: boolean; onClose: () => void;
   editHolding?: PortfolioHolding | null;
   initialTab?: "edit" | "close" | "cash" | "flows" | "settings";
+  tradeTarget?: PortfolioHolding | null;
+  tradeDir?: "buy" | "sell" | null;
+  flowDir?: "in" | "out" | null;
 }) {
   const [tab, setTab] = useState<"edit" | "close" | "cash" | "flows" | "settings">(initialTab);
 
@@ -1749,6 +1908,11 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
 
   // ── Pre-fill from external edit request ──
   useEffect(() => {
+    if (open && tradeTarget) {
+      selectCloseTarget(tradeTarget);
+      if (tradeDir) setTradeDirection(tradeDir);
+    }
+    if (open && flowDir) setFlowDirection(flowDir);
     if (editHolding && open) {
       setTab("edit");
       fillForm(editHolding);
@@ -3190,6 +3354,16 @@ export default function PortfolioPage() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelInitialTab, setPanelInitialTab] = useState<"edit" | "close" | "cash" | "flows" | "settings">("edit");
   const [panelEditHolding, setPanelEditHolding] = useState<PortfolioHolding | null>(null);
+  const [panelTradeTarget, setPanelTradeTarget] = useState<PortfolioHolding | null>(null);
+  const [panelTradeDir, setPanelTradeDir] = useState<"buy" | "sell" | null>(null);
+  const [panelFlowDir, setPanelFlowDir] = useState<"in" | "out" | null>(null);
+  const [fabOpen, setFabOpen] = useState(false);
+  const openTrade = (h: PortfolioHolding | null, dir: "buy" | "sell") => {
+    setPanelTradeTarget(h); setPanelTradeDir(dir); setPanelInitialTab("close"); setPanelOpen(true); setFabOpen(false);
+  };
+  const openFlow = (dir: "in" | "out") => {
+    setPanelFlowDir(dir); setPanelInitialTab("flows"); setPanelOpen(true); setFabOpen(false);
+  };
   const [portfolios, setPortfolios] = useState<PortfolioInfo[]>([]);
   const activePortfolio = portfolios.find((p) => p.active)?.name || "";
   const [refreshKey, setRefreshKey] = useState(0);
@@ -3499,6 +3673,7 @@ export default function PortfolioPage() {
             {/* ════════ OVERVIEW TAB ════════ */}
             {pageTab === "overview" && (
               <>
+                <HeroSummary locale={locale} onGoPerformance={() => setPageTab("performance")} />
                 {/* ── KPI Row 1: Asset Overview ── */}
                 <div className="flex flex-wrap gap-2 mb-2">
                   {data.summary.unit_nav != null && (() => {
@@ -3599,7 +3774,8 @@ export default function PortfolioPage() {
             {pageTab === "holdings" && (
               <>
                 <HoldingsTable holdings={data.holdings} summary={data.summary} locale={locale}
-                  onEdit={(h) => { setPanelEditHolding(h); setPanelOpen(true); }} />
+                  onEdit={(h) => { setPanelEditHolding(h); setPanelOpen(true); }}
+                  onTrade={(h, dir) => openTrade(h, dir)} />
                 <CashTable cash={data.cash} fx={data.fx} locale={locale} />
               </>
             )}
@@ -3628,7 +3804,33 @@ export default function PortfolioPage() {
         )}
 
         {/* ── Data Management Panel (sidebar) — always available when data loaded ── */}
-        {data && <DataPanel holdings={data.holdings} data={data} locale={locale} onRefresh={silentRefresh} open={panelOpen} onClose={() => { setPanelOpen(false); setPanelEditHolding(null); }} editHolding={panelEditHolding} initialTab={panelInitialTab} />}
+        {/* ── "+ 记一笔" floating quick-action button ── */}
+        {data && data.holdings.length > 0 && (
+          <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2">
+            {fabOpen && (
+              <div className="flex flex-col gap-1.5 mb-1">
+                {([
+                  { label: locale === "zh" ? "买入" : "Buy", act: () => openTrade(null, "buy"), cls: "bg-red-600 hover:bg-red-700" },
+                  { label: locale === "zh" ? "卖出" : "Sell", act: () => openTrade(null, "sell"), cls: "bg-green-600 hover:bg-green-700" },
+                  { label: locale === "zh" ? "入金" : "Deposit", act: () => openFlow("in"), cls: "bg-blue-600 hover:bg-blue-700" },
+                  { label: locale === "zh" ? "出金" : "Withdraw", act: () => openFlow("out"), cls: "bg-gray-600 hover:bg-gray-700" },
+                ]).map((b) => (
+                  <button key={b.label} onClick={b.act}
+                    className={`px-4 py-2 rounded-full text-white text-sm font-medium shadow-lg transition-colors ${b.cls}`}>
+                    {b.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button onClick={() => setFabOpen(!fabOpen)}
+              className={`w-12 h-12 rounded-full text-white text-2xl leading-none shadow-lg transition-all ${fabOpen ? "bg-gray-500 rotate-45" : "bg-blue-600 hover:bg-blue-700"}`}
+              title={locale === "zh" ? "记一笔" : "Quick action"}>
+              +
+            </button>
+          </div>
+        )}
+
+        {data && <DataPanel holdings={data.holdings} data={data} locale={locale} onRefresh={silentRefresh} open={panelOpen} onClose={() => { setPanelOpen(false); setPanelEditHolding(null); setPanelTradeTarget(null); setPanelTradeDir(null); setPanelFlowDir(null); }} editHolding={panelEditHolding} initialTab={panelInitialTab} tradeTarget={panelTradeTarget} tradeDir={panelTradeDir} flowDir={panelFlowDir} />}
       </main>
     </>
   );

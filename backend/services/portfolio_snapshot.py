@@ -201,7 +201,8 @@ def take_snapshot(dry_run=False, user_id: str = "local"):
                         equity_mv, cash_cny, total_leverage, total_pnl_cny,
                         market_data=market_json, capital=capital,
                         market_pnl=market_pnl_json, user_id=user_id,
-                        units=units, unit_nav=unit_nav)
+                        units=units, unit_nav=unit_nav,
+                        fx_json=json.dumps(fx))
 
         # Auto-create YTD baselines if none exist for current year
         from backend.services.portfolio_db import get_ytd_baselines, record_ytd_baselines
