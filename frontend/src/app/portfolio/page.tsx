@@ -1202,8 +1202,8 @@ function PerformanceChart({ navHistory, snapshots = [], locale }: {
     <>
       <SectionTitle
         note={locale === "zh"
-          ? "* Portfolio NAV = 净资产值 (资产总值 − 杠杆)。Capital = 累计投入资金。Net P&L = NAV − Capital\n* Capital = 入金账户累计净入金 + 成本账户(持仓成本 + 带符号现金，负现金=融资自动扣减) − 场外杠杆 − 成本账户已平仓盈亏\n* 阴影区域 = Net P&L (NAV 与 Capital 之间差值)"
-          : "* Portfolio NAV = Net Asset Value (Total Assets − Leverage). Net P&L = NAV − Capital\n* Capital = Deposit accounts (net deposits) + Cost accounts (position cost + signed cash; negative cash = margin, auto-deducted) − OTC leverage − cost-account realized P&L\n* Shaded area = Net P&L (gap between NAV and Capital)"}>
+          ? "* Portfolio NAV = 净资产值 (资产总值 − 杠杆)。Net P&L = NAV − Capital\n* Capital = 实收资本 = 期初冻结值 + 累计净入金流水（出金全额扣减，含已消费利润的累计盈亏保留在 Net P&L 中）\n* 阴影区域 = Net P&L (NAV 与 Capital 之间差值)"
+          : "* Portfolio NAV = Net Asset Value (Total Assets − Leverage). Net P&L = NAV − Capital\n* Capital = paid-in capital: frozen opening value + net recorded flows (withdrawals deduct in full, so Net P&L keeps lifetime profit incl. consumed)\n* Shaded area = Net P&L (gap between NAV and Capital)"}>
         {locale === "zh" ? "业绩走势" : "Performance"}
       </SectionTitle>
 
@@ -1463,8 +1463,8 @@ function PnlJournal({ locale }: { locale: string }) {
   const display = rows.reverse();
 
   const journalNote = locale === "zh"
-    ? `* Net P&L = Net Assets − Capital。ΔNet P&L = 当日净收益变动\n* Capital = 入金账户累计净入金 + 成本账户(持仓成本 + 带符号现金，负现金=融资自动扣减) − 场外杠杆 − 成本账户已平仓盈亏`
-    : `* Net P&L = Net Assets − Capital. ΔNet P&L = daily change in net P&L\n* Capital = Deposit accounts (fixed) + Cost accounts (cost + cash) − OTC leverage − cost-account realized P&L`;
+    ? `* Net P&L = Net Assets − Capital。ΔNet P&L = 当日净收益变动\n* Capital = 实收资本 = 期初冻结值 + 累计净入金流水`
+    : `* Net P&L = Net Assets − Capital. ΔNet P&L = daily change\n* Capital = paid-in capital: frozen opening value + net recorded flows`;
 
   return (
     <>
@@ -1987,7 +1987,7 @@ function SetupTipsBanner({ locale, data, onOpenPanel }: {
   const showCash = !dismissedCash && data.summary.cash_cny === 0;
   // Show mode tip only right after an import (sessionStorage flag), not for returning users
   const justImported = typeof window !== "undefined" && sessionStorage.getItem("vs_just_imported") === "1";
-  const showMode = !dismissedMode && justImported;
+  const showMode = false; // capital_mode retired — unified capital needs no mode choice
   // Show import warnings (similar account names)
   const showWarnings = !dismissedWarnings && importWarnings.length > 0;
 
@@ -2970,11 +2970,8 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
             <>
               <div className="text-[10px] text-gray-400 mb-3 leading-relaxed space-y-1.5">
                 <p>{zh
-                  ? "💰 入金模式：适合封闭/跨币种账户，用固定人民币金额替代该账户的持仓成本和现金，避免汇率波动影响 Capital。该账户的已实现盈亏也不参与 Capital 计算。"
-                  : "💰 Deposit mode: Replace this account's position costs, cash and realized P&L with a fixed CNY deposit amount. Suitable for closed or cross-currency accounts to avoid FX fluctuation on Capital."}</p>
-                <p>{zh
-                  ? "📊 成本模式：Capital = 持仓成本 + 现金 − 已平仓盈亏。Capital 始终等于原始投入金额。"
-                  : "📊 Cost mode: Capital = position cost + cash − realized P&L. Capital always equals original invested amount."}</p>
+                  ? "💰 本金（Capital）= 期初冻结值 + 累计净入金流水，全组合统一自动计算，无需按账户配置。"
+                  : "💰 Capital = frozen opening value + net recorded flows — unified across the portfolio, no per-account setup."}</p>
                 <p>{zh
                   ? "ℹ️ 所有账户都需要在此注册。新增持仓时，账户选项来自此列表。"
                   : "ℹ️ All accounts must be registered here. The account dropdown in Positions tab is sourced from this list."}</p>
@@ -3113,37 +3110,11 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                   <div className="flex gap-2">
                     <input className={`${inputCls} flex-1`} placeholder={zh ? "输入账户名称" : "Enter account name"} autoFocus
                       value={newAcctName} onChange={(e) => setNewAcctName(e.target.value)} />
-                    <select className={inputCls} style={{ width: 90 }} value={acctMode}
-                      onChange={(e) => setAcctMode(e.target.value as "cost" | "deposit")}>
-                      <option value="cost">{zh ? "成本" : "Cost"}</option>
-                      <option value="deposit">{zh ? "入金" : "Deposit"}</option>
-                    </select>
                     <button onClick={() => { setIsNewAcct(false); setNewAcctName(""); }}
                       className="px-2 py-1.5 text-xs text-gray-400 hover:text-gray-600">✕</button>
                   </div>
                 )}
 
-                {/* Mode badge for selected existing account */}
-                {!isNewAcct && acctBroker && existingMode && (
-                  <div className="text-[10px] text-gray-500 flex items-center gap-1.5">
-                    <span className={`px-1.5 py-0.5 rounded font-semibold ${existingMode === "deposit" ? "bg-amber-100 text-amber-700" : "bg-gray-200 text-gray-600"}`}>
-                      {existingMode === "deposit" ? (zh ? "入金模式" : "Deposit mode") : (zh ? "成本模式" : "Cost mode")}
-                    </span>
-                    {existingMode === "cost" && <span className="text-gray-400">{zh ? "此模式不需要配置入金参数" : "No deposit config needed"}</span>}
-                  </div>
-                )}
-
-                {/* Mode selector for existing account without settings yet */}
-                {!isNewAcct && acctBroker && !existingMode && (
-                  <div className="flex gap-2 items-center">
-                    <span className="text-[10px] text-gray-400 whitespace-nowrap">{zh ? "模式" : "Mode"}</span>
-                    <select className={inputCls} style={{ width: 100 }} value={acctMode}
-                      onChange={(e) => setAcctMode(e.target.value as "cost" | "deposit")}>
-                      <option value="cost">{zh ? "成本" : "Cost"}</option>
-                      <option value="deposit">{zh ? "入金" : "Deposit"}</option>
-                    </select>
-                  </div>
-                )}
                 {(!isNewAcct ? !!acctBroker : !!newAcctName.trim()) && (
                   <div className="space-y-1.5">
                     <div className="flex gap-2 items-center">
