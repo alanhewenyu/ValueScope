@@ -170,7 +170,9 @@ function FlowFields({ zh, inputCls, flowDirection, setFlowDirection, flowCurrenc
 function HeroSummary({ locale, onGoPerformance }: { locale: string; onGoPerformance: () => void }) {
   const zh = locale === "zh";
   const [series, setSeries] = useState<{ date: string; val: number }[]>([]);
-  const [bench, setBench] = useState<{ date: string; val: number }[]>([]);
+  const [benchData, setBenchData] = useState<Record<string, BenchmarkPoint[]>>({});
+  const [benchName, setBenchName] = useState<string>(() =>
+    (typeof window !== "undefined" && localStorage.getItem("vs_hero_bench")) || "CSI 300");
 
   useEffect(() => {
     const ytdStart = `${new Date().getFullYear()}-01-01`;
@@ -188,15 +190,19 @@ function HeroSummary({ locale, onGoPerformance }: { locale: string; onGoPerforma
         .filter((p) => Number.isFinite(p.val));
       setSeries(pts);
       if (pts.length >= 2) {
-        getBenchmarks(pts[0].date).then((b) => {
-          const csi = b["CSI 300"] || [];
-          setBench(csi.filter((p) => p.date >= pts[0].date).map((p) => ({ date: p.date, val: p.close })));
-        }).catch(() => {});
+        getBenchmarks(pts[0].date).then(setBenchData).catch(() => {});
       }
     }).catch(() => {});
   }, []);
 
   if (series.length < 2) return null;
+
+  const benchLabels: Record<string, string> = zh
+    ? { "CSI 300": "沪深300", "S&P 500": "标普500", "Hang Seng": "恒生" }
+    : { "CSI 300": "CSI 300", "S&P 500": "S&P 500", "Hang Seng": "HSI" };
+  const bench = (benchData[benchName] || [])
+    .filter((p) => p.date >= series[0].date)
+    .map((p) => ({ date: p.date, val: p.close }));
 
   const portRet = (series[series.length - 1].val / series[0].val - 1) * 100;
   const benchRet = bench.length >= 2 ? (bench[bench.length - 1].val / bench[0].val - 1) * 100 : null;
@@ -217,22 +223,35 @@ function HeroSummary({ locale, onGoPerformance }: { locale: string; onGoPerforma
       className="mb-4 p-4 rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 cursor-pointer hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
       <div className="flex items-baseline justify-between mb-2 flex-wrap gap-1">
         <div className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">
-          {zh ? "今年 " : "YTD "}
+          {zh ? `今年 ` : "YTD "}
           <span className={pnlColor(portRet)}>{portRet >= 0 ? "+" : ""}{portRet.toFixed(1)}%</span>
           {diff != null && (
             <span className="text-gray-500 dark:text-gray-400 font-normal text-sm sm:text-base">
               {zh
-                ? `，${diff >= 0 ? "跑赢" : "跑输"}沪深300 ${Math.abs(diff).toFixed(1)} 个百分点`
-                : `, ${diff >= 0 ? "beating" : "trailing"} CSI 300 by ${Math.abs(diff).toFixed(1)}pp`}
+                ? `，${diff >= 0 ? "跑赢" : "跑输"}${benchLabels[benchName]} ${Math.abs(diff).toFixed(1)} 个百分点`
+                : `, ${diff >= 0 ? "beating" : "trailing"} ${benchLabels[benchName]} by ${Math.abs(diff).toFixed(1)}pp`}
             </span>
           )}
         </div>
-        <span className="text-[10px] text-gray-400">{zh ? "净值 (TWR) · 点击查看详情 →" : "Unit NAV (TWR) · details →"}</span>
+        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+          {Object.keys(benchLabels).map((name) => (
+            <button key={name}
+              onClick={() => { setBenchName(name); try { localStorage.setItem("vs_hero_bench", name); } catch {} }}
+              className={`px-1.5 py-0.5 text-[10px] rounded-full border transition-colors ${benchName === name ? "bg-blue-600 text-white border-blue-600" : "bg-white dark:bg-gray-900 text-gray-400 border-gray-200 dark:border-gray-700 hover:border-blue-400"}`}>
+              {benchLabels[name]}
+            </button>
+          ))}
+          <span className="text-[10px] text-gray-400">{zh ? "净值 (TWR) · 详情 →" : "Unit NAV (TWR) · details →"}</span>
+        </div>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-24" preserveAspectRatio="none" aria-hidden>
         {bv.length >= 2 && <polyline points={line(bv)} fill="none" stroke="#9ca3af" strokeWidth="1.5" strokeDasharray="4 3" />}
         <polyline points={line(pv)} fill="none" stroke="#3b82f6" strokeWidth="2" />
       </svg>
+      <div className="flex justify-between text-[10px] text-gray-400 font-mono mt-0.5">
+        <span>{series[0].date}{zh && series[0].date.slice(5, 7) !== "01" ? "（记账起点）" : ""}</span>
+        <span>{series[series.length - 1].date}</span>
+      </div>
     </div>
   );
 }
@@ -3718,8 +3737,8 @@ export default function PortfolioPage() {
                     <KpiCard label={weeklyLabel || (locale === "zh" ? "本周" : "This Week")}
                       value={`¥${pnlSign(weeklyPnl)}`} sub={pctStr(weeklyPct)} subColor={pnlColor(weeklyPnl)} />
                   )}
-                  <KpiCard label={locale === "zh" ? "年初至今" : "YTD Return"} value={`¥${pnlSign(data.summary.ytd_pnl_cny)}`}
-                    sub={pctStr((() => { const base = data.summary.net_assets - data.summary.ytd_pnl_cny; return base ? (data.summary.ytd_pnl_cny / base) * 100 : null; })())}
+                  <KpiCard label={locale === "zh" ? "YTD 盈亏" : "YTD P&L"} value={`¥${pnlSign(data.summary.ytd_pnl_cny)}`}
+                    sub={`${pctStr((() => { const base = data.summary.net_assets - data.summary.ytd_pnl_cny; return base ? (data.summary.ytd_pnl_cny / base) * 100 : null; })())} ${locale === "zh" ? "· 资金口径，净值法见顶部" : "· money-based; TWR above"}`}
                     subColor={pnlColor(data.summary.ytd_pnl_cny)} />
                 </div>
 
