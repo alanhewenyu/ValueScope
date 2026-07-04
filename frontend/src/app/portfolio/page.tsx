@@ -173,6 +173,8 @@ function HeroSummary({ locale, onGoPerformance }: { locale: string; onGoPerforma
   const [benchData, setBenchData] = useState<Record<string, BenchmarkPoint[]>>({});
   const [benchName, setBenchName] = useState<string>(() =>
     (typeof window !== "undefined" && localStorage.getItem("vs_hero_bench")) || "CSI 300");
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const heroSvgRef = React.useRef<SVGSVGElement>(null);
 
   useEffect(() => {
     const ytdStart = `${new Date().getFullYear()}-01-01`;
@@ -213,10 +215,21 @@ function HeroSummary({ locale, onGoPerformance }: { locale: string; onGoPerforma
   const pv = norm(series);
   const bv = bench.length >= 2 ? norm(bench) : [];
   const all = [...pv, ...bv];
-  const yMin = Math.min(...all), yMax = Math.max(...all), yr = yMax - yMin || 1;
-  const W = 800, H = 120, PAD = 4;
-  const line = (vals: number[]) => vals.map((v, i) =>
-    `${(PAD + (i / (vals.length - 1)) * (W - 2 * PAD)).toFixed(1)},${(H - PAD - ((v - yMin) / yr) * (H - 2 * PAD)).toFixed(1)}`).join(" ");
+  const _lo = Math.min(...all), _hi = Math.max(...all);
+  const _pad = (_hi - _lo) * 0.08 || 1;
+  const yMin = _lo - _pad, yMax = _hi + _pad, yr = yMax - yMin;
+  const W = 800, H = 220, PAD = 6;
+  const X = (i: number, n: number) => PAD + (i / Math.max(n - 1, 1)) * (W - 2 * PAD);
+  const Y = (v: number) => H - PAD - ((v - yMin) / yr) * (H - 2 * PAD);
+  const line = (vals: number[]) => vals.map((v, i) => `${X(i, vals.length).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+  const areaPath = `M${pv.map((v, i) => `${X(i, pv.length).toFixed(1)},${Y(v).toFixed(1)}`).join(" L")} L${X(pv.length - 1, pv.length).toFixed(1)},${H - PAD} L${X(0, pv.length).toFixed(1)},${H - PAD} Z`;
+  const hoverPt = hoverIdx != null && hoverIdx >= 0 && hoverIdx < series.length ? hoverIdx : null;
+  // Nearest benchmark value on/before the hovered date (different trading calendars)
+  const benchIdxFor = (date: string) => {
+    let k = -1;
+    for (let i = 0; i < bench.length; i++) { if (bench[i].date <= date) k = i; else break; }
+    return k;
+  };
 
   return (
     <div onClick={onGoPerformance}
@@ -244,10 +257,48 @@ function HeroSummary({ locale, onGoPerformance }: { locale: string; onGoPerforma
           <span className="text-[10px] text-gray-400">{zh ? "净值 (TWR) · 详情 →" : "Unit NAV (TWR) · details →"}</span>
         </div>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-24" preserveAspectRatio="none" aria-hidden>
+      <svg ref={heroSvgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-32 sm:h-36" preserveAspectRatio="none"
+        onMouseMove={(e) => {
+          const rect = heroSvgRef.current?.getBoundingClientRect();
+          if (!rect) return;
+          const frac = (e.clientX - rect.left) / rect.width;
+          setHoverIdx(Math.max(0, Math.min(series.length - 1, Math.round(frac * (series.length - 1)))));
+        }}
+        onMouseLeave={() => setHoverIdx(null)}>
+        <defs>
+          <linearGradient id="heroFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        <path d={areaPath} fill="url(#heroFill)" />
         {bv.length >= 2 && <polyline points={line(bv)} fill="none" stroke="#9ca3af" strokeWidth="1.5" strokeDasharray="4 3" />}
-        <polyline points={line(pv)} fill="none" stroke="#3b82f6" strokeWidth="2" />
+        <polyline points={line(pv)} fill="none" stroke="#3b82f6" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        {hoverPt != null && (() => {
+          const x = X(hoverPt, pv.length);
+          const bIdx = benchIdxFor(series[hoverPt].date);
+          return (
+            <g>
+              <line x1={x} y1={PAD} x2={x} y2={H - PAD} stroke="#9ca3af" strokeWidth="1" strokeDasharray="3 3" />
+              <circle cx={x} cy={Y(pv[hoverPt])} r="3.5" fill="#3b82f6" />
+              {bIdx >= 0 && <circle cx={X(bIdx, bv.length)} cy={Y(bv[bIdx])} r="3" fill="#9ca3af" />}
+            </g>
+          );
+        })()}
       </svg>
+      {hoverPt != null && (() => {
+        const pRet = pv[hoverPt] - 100;
+        const bIdx = benchIdxFor(series[hoverPt].date);
+        const bRet = bIdx >= 0 ? bv[bIdx] - 100 : null;
+        return (
+          <div className="flex items-center gap-3 text-[11px] font-mono mt-1">
+            <span className="text-gray-400">{series[hoverPt].date}</span>
+            <span className={pnlColor(pRet)}>{zh ? "组合" : "Port"} {pRet >= 0 ? "+" : ""}{pRet.toFixed(1)}%</span>
+            <span className="text-gray-500">{zh ? "净值" : "NAV"} {series[hoverPt].val.toFixed(4)}</span>
+            {bRet != null && <span className="text-gray-400">{benchLabels[benchName]} {bRet >= 0 ? "+" : ""}{bRet.toFixed(1)}%</span>}
+          </div>
+        );
+      })()}
       <div className="flex justify-between text-[10px] text-gray-400 font-mono mt-0.5">
         <span>{series[0].date}{zh && series[0].date.slice(5, 7) !== "01" ? "（记账起点）" : ""}</span>
         <span>{series[series.length - 1].date}</span>
