@@ -174,7 +174,7 @@ function HeroSummary({ locale, onGoPerformance }: { locale: string; onGoPerforma
 
   useEffect(() => {
     const ytdStart = `${new Date().getFullYear()}-01-01`;
-    getSnapshots(400).then((snaps) => {
+    getSnapshots(365).then((snaps) => {
       const pts = [...snaps]
         .sort((a, b) => a.date.localeCompare(b.date))
         .filter((s) => s.date >= ytdStart)

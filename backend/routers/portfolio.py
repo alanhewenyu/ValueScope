@@ -895,6 +895,10 @@ def get_benchmarks(start: str = "2024-01-01"):
                     hist.columns = hist.columns.droplevel(1)
                 df = hist[["Close"]].reset_index()
                 df.columns = ["date", "close"]
+                # NaN rows (suspended sessions / tz quirks) make json.dumps
+                # blow up with "Out of range float values" → 500
+                df = df.dropna(subset=["close"])
+                df["close"] = df["close"].astype(float)
                 df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
                 results[name] = df.to_dict(orient="records")
         except Exception:
