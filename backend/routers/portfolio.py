@@ -949,14 +949,18 @@ def get_benchmarks(start: str = "2024-01-01"):
 
 
 @router.post("/snapshot")
-def record_snapshot():
-    """Trigger a manual snapshot capture (EOD equivalent)."""
-    path = _require_db()
-    from backend.services.portfolio_db import init_db, upsert_snapshot
-    init_db()
-    # The actual snapshot logic would reuse the enriched holdings computation
-    # For now, return a placeholder — full implementation in Phase 4
-    raise HTTPException(status_code=501, detail="Snapshot recording via API — coming in Phase 4")
+def record_snapshot(user_id: str = Depends(get_current_user)):
+    """Day-0 snapshot: run the user's snapshot immediately after onboarding
+    so the NAV curve starts today instead of tomorrow morning. Idempotent —
+    daily_snapshots is INSERT OR IGNORE on (date, user_id)."""
+    _require_db()
+    from backend.services.portfolio_snapshot import take_snapshot
+    try:
+        res = take_snapshot(user_id=user_id, force=True)
+        return {"ok": res is not None, "snapshot": res}
+    except Exception as e:
+        logger.warning("Day-0 snapshot failed for %s: %s", user_id, e)
+        raise HTTPException(status_code=502, detail="Snapshot failed, will retry at the daily schedule")
 
 
 # ── Import / Export ─────────────────────────────────────

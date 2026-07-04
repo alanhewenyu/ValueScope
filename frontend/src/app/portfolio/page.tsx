@@ -8,6 +8,7 @@ import { useSettings } from "@/lib/settings";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth-context";
 import { formatNumber } from "@/lib/format";
+import { trackEvent } from "@/lib/gtag";
 import {
   getPortfolioStatus,
   getPortfolioHoldings,
@@ -29,6 +30,8 @@ import {
   addDepositRecord,
   deleteDepositRecord,
   getAllFlows,
+  triggerSnapshot,
+  searchStocks,
   type PortfolioData,
   type PortfolioHolding,
   type ClosedTrade,
@@ -1629,6 +1632,167 @@ function ClosedTradesSection({ locale }: { locale: string }) {
 // Onboarding — Simplified empty state for new users (1-step)
 // ══════════════════════════════════════════
 
+/** 3-step setup wizard — the golden five minutes. Broker presets carry the
+ *  cost-method / HK-Connect configuration so new users never have to learn
+ *  what 摊薄成本 means; finishing triggers a day-0 snapshot so the NAV curve
+ *  starts today instead of tomorrow morning. */
+const BROKER_PRESETS: { name: string; cost: "diluted" | "average"; hk: boolean }[] = [
+  { name: "华泰证券", cost: "diluted", hk: true },
+  { name: "中信证券", cost: "diluted", hk: true },
+  { name: "招商证券", cost: "diluted", hk: true },
+  { name: "东方财富", cost: "diluted", hk: true },
+  { name: "富途", cost: "diluted", hk: false },
+  { name: "盈透 IBKR", cost: "average", hk: false },
+];
+
+function _normalizeTicker(raw: string): { ticker: string; market: string; currency: string } | null {
+  const t = raw.trim().toUpperCase();
+  if (!t) return null;
+  if (/^\d{6}$/.test(t)) {
+    const ss = ["600", "601", "603", "605", "688"].some((p) => t.startsWith(p));
+    return { ticker: t + (ss ? ".SS" : ".SZ"), market: "A股", currency: "CNY" };
+  }
+  if (/^\d{1,5}$/.test(t)) return { ticker: t.padStart(4, "0") + ".HK", market: "港股", currency: "HKD" };
+  if (t.endsWith(".HK")) return { ticker: t, market: "港股", currency: "HKD" };
+  if (t.endsWith(".T")) return { ticker: t, market: "日股", currency: "JPY" };
+  if (t.endsWith(".SS") || t.endsWith(".SZ")) return { ticker: t, market: "A股", currency: "CNY" };
+  if (/^[A-Z.\-]{1,6}$/.test(t)) return { ticker: t, market: "美股", currency: "USD" };
+  return { ticker: t, market: "美股", currency: "USD" };
+}
+
+function SetupWizard({ locale, onRefresh }: { locale: string; onRefresh: () => void }) {
+  const zh = locale === "zh";
+  const [step, setStep] = useState(1);
+  const [broker, setBroker] = useState<string>("");
+  const [customBroker, setCustomBroker] = useState("");
+  const [rows, setRows] = useState<{ code: string; qty: string; cost: string }[]>(
+    [{ code: "", qty: "", cost: "" }, { code: "", qty: "", cost: "" }, { code: "", qty: "", cost: "" }]);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState("");
+
+  const preset = BROKER_PRESETS.find((b) => b.name === broker);
+  const brokerName = broker === "__custom__" ? customBroker.trim() : broker;
+  const inputCls = "w-full px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-blue-500 focus:outline-none";
+
+  async function finish() {
+    const valid = rows
+      .map((r) => ({ norm: _normalizeTicker(r.code), qty: parseFloat(r.qty), cost: parseFloat(r.cost) }))
+      .filter((r) => r.norm && r.qty > 0 && r.cost > 0) as { norm: NonNullable<ReturnType<typeof _normalizeTicker>>; qty: number; cost: number }[];
+    if (valid.length === 0) { alert(zh ? "请至少填写一行有效持仓（代码/数量/成本）" : "Enter at least one valid row"); return; }
+    setBusy(true);
+    try {
+      setProgress(zh ? "创建账户…" : "Creating account…");
+      await upsertAccountSetting({
+        broker: brokerName, capital_mode: "cost",
+        cost_method: preset?.cost ?? "diluted", hk_connect: preset?.hk ?? false,
+      });
+      for (let i = 0; i < valid.length; i++) {
+        const v = valid[i];
+        setProgress(zh ? `添加持仓 ${i + 1}/${valid.length}…` : `Adding position ${i + 1}/${valid.length}…`);
+        let name = v.norm.ticker;
+        try {
+          const hits = await searchStocks(v.norm.ticker.replace(/\.(SS|SZ|HK|T)$/, ""), "");
+          const hit = hits.find((h) => h.symbol === v.norm.ticker) || hits[0];
+          if (hit?.name) name = hit.name;
+        } catch { /* name = ticker */ }
+        await upsertPosition({
+          ticker: v.norm.ticker, name, market: v.norm.market, broker: brokerName,
+          quantity: v.qty, cost_price: v.cost, currency: v.norm.currency,
+        });
+      }
+      setProgress(zh ? "生成你的第一张资产快照（约半分钟）…" : "Taking your first snapshot (~30s)…");
+      try { await triggerSnapshot(); } catch { /* daily scheduler will cover it */ }
+      trackEvent("onboarding_complete", { positions: valid.length });
+      setStep(3);
+      onRefresh();
+    } catch {
+      alert(zh ? "保存失败，请重试" : "Save failed, please retry");
+    } finally { setBusy(false); setProgress(""); }
+  }
+
+  return (
+    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-5">
+      {/* Step indicator */}
+      <div className="flex items-center justify-center gap-2 mb-4">
+        {[1, 2, 3].map((n) => (
+          <React.Fragment key={n}>
+            <span className={`w-6 h-6 rounded-full text-xs flex items-center justify-center font-medium ${step >= n ? "bg-blue-600 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-500"}`}>{n}</span>
+            {n < 3 && <span className={`w-8 h-0.5 ${step > n ? "bg-blue-600" : "bg-gray-200 dark:bg-gray-700"}`} />}
+          </React.Fragment>
+        ))}
+      </div>
+
+      {step === 1 && (
+        <>
+          <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1 text-center">{zh ? "选择你的券商" : "Pick your broker"}</div>
+          <div className="text-[11px] text-gray-400 mb-3 text-center">{zh ? "成本口径、港股通结算会自动配置好，以后可在设置中修改或添加更多账户" : "Cost method & HK-Connect are configured automatically; add more accounts later in Settings"}</div>
+          <div className="grid grid-cols-3 gap-2 mb-2">
+            {BROKER_PRESETS.map((b) => (
+              <button key={b.name} onClick={() => setBroker(b.name)}
+                className={`px-2 py-2 text-xs rounded-lg border transition-colors ${broker === b.name ? "bg-blue-600 text-white border-blue-600" : "bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-700 hover:border-blue-400"}`}>
+                {b.name}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => setBroker("__custom__")}
+            className={`w-full px-2 py-1.5 text-xs rounded-lg border mb-2 ${broker === "__custom__" ? "border-blue-500 text-blue-600" : "border-dashed border-gray-300 dark:border-gray-700 text-gray-400 hover:border-blue-400"}`}>
+            {zh ? "其他券商…" : "Other broker…"}
+          </button>
+          {broker === "__custom__" && (
+            <input className={`${inputCls} mb-2`} placeholder={zh ? "券商名称" : "Broker name"} value={customBroker} onChange={(e) => setCustomBroker(e.target.value)} />
+          )}
+          <button disabled={!brokerName} onClick={() => setStep(2)}
+            className="w-full px-4 py-2.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 font-medium">
+            {zh ? "下一步" : "Next"}
+          </button>
+        </>
+      )}
+
+      {step === 2 && (
+        <>
+          <div className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1 text-center">{zh ? `录入「${brokerName}」的持仓` : `Positions at ${brokerName}`}</div>
+          <div className="text-[11px] text-gray-400 mb-3 text-center">{zh ? "代码直接抄券商 App：600519 / 0700 / AAPL 都行，名称自动识别" : "Codes as in your broker app: 600519 / 0700 / AAPL — names auto-resolve"}</div>
+          <div className="space-y-1.5 mb-2">
+            <div className="grid grid-cols-[1fr_90px_90px_24px] gap-1.5 text-[10px] text-gray-400 px-1">
+              <span>{zh ? "代码" : "Code"}</span><span>{zh ? "数量" : "Qty"}</span><span>{zh ? "成本价" : "Cost"}</span><span />
+            </div>
+            {rows.map((r, i) => (
+              <div key={i} className="grid grid-cols-[1fr_90px_90px_24px] gap-1.5">
+                <input className={inputCls} placeholder="600519 / 0700 / AAPL" value={r.code}
+                  onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, code: e.target.value } : x))} />
+                <input className={inputCls} inputMode="decimal" placeholder="100" value={r.qty}
+                  onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} />
+                <input className={inputCls} inputMode="decimal" placeholder="10.5" value={r.cost}
+                  onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, cost: e.target.value } : x))} />
+                <button className="text-gray-300 hover:text-red-400" onClick={() => setRows(rows.filter((_, j) => j !== i))}>✕</button>
+              </div>
+            ))}
+          </div>
+          <button onClick={() => setRows([...rows, { code: "", qty: "", cost: "" }])}
+            className="text-xs text-blue-500 hover:text-blue-700 mb-3">+ {zh ? "加一行" : "Add row"}</button>
+          <div className="flex gap-2">
+            <button onClick={() => setStep(1)} className="px-4 py-2.5 text-sm rounded-lg border border-gray-300 dark:border-gray-700 text-gray-500">{zh ? "上一步" : "Back"}</button>
+            <button disabled={busy} onClick={finish}
+              className="flex-1 px-4 py-2.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 font-medium">
+              {busy ? (progress || "...") : (zh ? "完成设置" : "Finish")}
+            </button>
+          </div>
+        </>
+      )}
+
+      {step === 3 && (
+        <div className="text-center py-4">
+          <div className="text-4xl mb-3">🎉</div>
+          <div className="text-base font-semibold text-gray-900 dark:text-white mb-2">{zh ? "完成！你的第一张资产快照已生成" : "Done! Your first snapshot is in"}</div>
+          <div className="text-xs text-gray-500 leading-relaxed max-w-xs mx-auto">
+            {zh ? "从明天起每日自动更新净值曲线。入金出金请用「资金流」记录，日常盈亏无需任何操作。" : "The NAV curve updates daily from tomorrow. Record deposits/withdrawals in Flows; daily P&L needs nothing from you."}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; onRefresh: () => void; onOpenPanel: (tab?: "edit" | "close" | "cash" | "flows" | "settings") => void }) {
   const zh = locale === "zh";
   const [importing, setImporting] = useState(false);
@@ -1643,6 +1807,7 @@ function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; on
       if (result.warnings && result.warnings.length > 0) {
         sessionStorage.setItem("vs_import_warnings", JSON.stringify(result.warnings));
       }
+      try { await triggerSnapshot(); } catch { /* daily scheduler covers it */ }
       onRefresh();
     } catch (e) {
       alert(zh ? "导入失败，请检查文件格式" : "Import failed. Check file format.");
@@ -1767,21 +1932,20 @@ function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; on
         ))}
       </div>
 
-      {/* CTA */}
-      <div className="max-w-sm mx-auto space-y-3">
+      {/* CTA: 3-step wizard is the primary path */}
+      <div className="max-w-md mx-auto space-y-3">
+        <SetupWizard locale={locale} onRefresh={onRefresh} />
         <input ref={fileRef} type="file" accept=".csv" className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImport(f); }} />
-        <button onClick={() => fileRef.current?.click()} disabled={importing}
-          className="w-full px-6 py-3 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 font-medium transition-colors">
-          {importing ? (zh ? "导入中..." : "Importing...") : (zh ? "上传 CSV 开始使用" : "Upload CSV to Start")}
-        </button>
-
         <div className="flex items-center justify-center gap-4">
+          <button onClick={() => fileRef.current?.click()} disabled={importing}
+            className="text-xs text-gray-400 hover:text-blue-500 underline underline-offset-2">
+            {importing ? (zh ? "导入中..." : "Importing...") : (zh ? "或上传 CSV 批量导入" : "or bulk-import CSV")}
+          </button>
           <a href={getImportTemplateUrl("portfolio")} download
             className="text-xs text-gray-400 hover:text-blue-500 underline underline-offset-2">
-            {zh ? "下载模板" : "Download template"}
+            {zh ? "下载模板" : "Template"}
           </a>
-          <span className="text-gray-300 dark:text-gray-700">|</span>
           <button onClick={() => onOpenPanel("edit")}
             className="text-xs text-gray-400 hover:text-blue-500 underline underline-offset-2">
             {zh ? "手动添加" : "Add manually"}

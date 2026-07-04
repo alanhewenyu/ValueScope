@@ -1081,6 +1081,11 @@ export interface DepositRecord {
 }
 
 /** All cash-flow records across brokers, newest first (Flows tab). */
+/** Day-0 snapshot: run immediately after onboarding so the NAV curve starts today. */
+export async function triggerSnapshot(): Promise<{ ok: boolean }> {
+  return fetchAPI<{ ok: boolean }>("/api/portfolio/snapshot", { method: "POST", timeoutMs: 120000 });
+}
+
 export async function getAllFlows(limit = 200): Promise<DepositRecord[]> {
   return fetchAPI<DepositRecord[]>(`/api/portfolio/flows?limit=${limit}`);
 }

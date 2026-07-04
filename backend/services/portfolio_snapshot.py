@@ -49,11 +49,15 @@ def _now_cn() -> datetime:
     return datetime.now(ZoneInfo("Asia/Shanghai"))
 
 
-def take_snapshot(dry_run=False, user_id: str = "local"):
-    """Fetch all prices, compute NAV, write snapshot (per user)."""
+def take_snapshot(dry_run=False, user_id: str = "local", force: bool = False):
+    """Fetch all prices, compute NAV, write snapshot (per user).
+
+    force=True bypasses the Sun/Mon skip — used for the day-0 snapshot when
+    a new user finishes onboarding (they should see their curve start today,
+    whatever day it is; weekend prices are the weekend guard's problem)."""
     now_cn = _now_cn()
     # Skip Sun/Mon — US market closed Sat/Sun, Beijing time is +1 day
-    if now_cn.weekday() in (6, 0):  # 6=Sun, 0=Mon
+    if not force and now_cn.weekday() in (6, 0):  # 6=Sun, 0=Mon
         print(f"[{now_cn:%Y-%m-%d %H:%M}] No trading day (Sun/Mon), skipping.")
         return None
 
