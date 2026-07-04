@@ -1695,6 +1695,12 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
   const [closePrice, setClosePrice] = useState("");
   const [closeFee, setCloseFee] = useState("");       // diluted partial: fees fold into cost
   const [closeNewCost, setCloseNewCost] = useState(""); // diluted partial: computed, editable
+  // Assisted buy (加仓): same weighted-average math for both cost methods
+  const [tradeDirection, setTradeDirection] = useState<"sell" | "buy">("sell");
+  const [buyQty, setBuyQty] = useState("");
+  const [buyPrice, setBuyPrice] = useState("");
+  const [buyFee, setBuyFee] = useState("");
+  const [buyNewCost, setBuyNewCost] = useState(""); // computed, editable
 
   // ── Cash & Margin tab state ──
   const [cashEdits, setCashEdits] = useState<Record<string, string>>({});
@@ -1794,6 +1800,7 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
     setCloseQty(String(h.quantity));
     setClosePrice(h.price ? String(h.price) : "");
     setCloseFee(""); setCloseNewCost("");
+    setBuyQty(""); setBuyPrice(h.price ? String(h.price) : ""); setBuyFee(""); setBuyNewCost("");
   }
 
   const closePnl = useMemo(() => {
@@ -1833,6 +1840,54 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
     setCloseNewCost(newCost.toFixed(4));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dilutedPartial, closeQty, closePrice, closeFee, closeTarget]);
+
+  // Buying math is identical for diluted & average cost methods:
+  // new cost = (old basis + buy cost + fee) / new qty
+  useEffect(() => {
+    if (!closeTarget || tradeDirection !== "buy") return;
+    const qty = parseFloat(buyQty) || 0;
+    const price = parseFloat(buyPrice) || 0;
+    const fee = parseFloat(buyFee) || 0;
+    if (qty <= 0 || price <= 0) return;
+    const newQty = closeTarget.quantity + qty;
+    const newCost = (closeTarget.quantity * closeTarget.cost_price + qty * price + fee) / newQty;
+    setBuyNewCost(newCost.toFixed(4));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tradeDirection, buyQty, buyPrice, buyFee, closeTarget]);
+
+  async function handleBuy() {
+    if (!closeTarget) return;
+    const qty = parseFloat(buyQty) || 0;
+    const price = parseFloat(buyPrice) || 0;
+    const fee = parseFloat(buyFee) || 0;
+    const newCost = parseFloat(buyNewCost);
+    if (qty <= 0 || price <= 0 || !Number.isFinite(newCost)) return;
+    const newQty = closeTarget.quantity + qty;
+    let outlay = qty * price + fee;
+    let cur = closeTarget.currency;
+    const isHkConnect = closeTarget.market === "HK"
+      && !!acctSettings.find((s) => s.broker === closeTarget.broker)?.hk_connect;
+    if (isHkConnect && cur !== "CNY") {
+      outlay = outlay * (data?.fx?.[cur] || 1.0);
+      cur = "CNY";
+    }
+    const msg = zh
+      ? `加仓 ${closeTarget.name}\n买入: ${qty} @ ${price}${fee ? `（手续费 ${fee.toFixed(2)}）` : ""}\n新持仓: ${fmtNum(newQty, 0)} @ 新成本 ${newCost}\n将从现金扣除: ${outlay.toFixed(2)} ${cur}${isHkConnect ? "（港股通已折人民币）" : ""}\n（现金不足会记为负余额=融资）`
+      : `Buy more ${closeTarget.name}\nBuy: ${qty} @ ${price}${fee ? ` (fee ${fee.toFixed(2)})` : ""}\nNew position: ${fmtNum(newQty, 0)} @ cost ${newCost}\nCash deduction: ${outlay.toFixed(2)} ${cur}${isHkConnect ? " (HK Connect → CNY)" : ""}\n(Shortfall becomes a negative balance = margin)`;
+    if (!confirm(msg)) return;
+    setSaving(true);
+    try {
+      await upsertPosition({
+        ticker: closeTarget.ticker, name: closeTarget.name, market: closeTarget.market,
+        broker: closeTarget.broker, quantity: newQty,
+        cost_price: newCost, currency: closeTarget.currency,
+      });
+      const cashRow = (data?.cash || []).find((c) => c.account === closeTarget.broker && c.currency === cur);
+      await updateCash({ account: closeTarget.broker, currency: cur, balance: (cashRow?.balance || 0) - outlay });
+      setCloseTarget(null); setCloseSearch("");
+      setMsg(`✅ ${zh ? "已加仓" : "Bought"}`); onRefresh();
+    } catch { setMsg("❌ Error"); } finally { setSaving(false); }
+  }
 
   /** Credit sale proceeds to signed cash (negative balances net margin
    *  automatically); 港股通 HK sales convert to CNY at the day's FX. */
@@ -2104,7 +2159,7 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
         {/* Tabs */}
         <div className="flex px-4 mb-3">
           <div className={tabCls("edit")} onClick={() => { setTab("edit"); setMsg(null); }}>{zh ? "持仓" : "Positions"}</div>
-          <div className={tabCls("close")} onClick={() => { setTab("close"); setMsg(null); }}>{zh ? "平仓" : "Close"}</div>
+          <div className={tabCls("close")} onClick={() => { setTab("close"); setMsg(null); }}>{zh ? "交易" : "Trade"}</div>
           <div className={tabCls("cash")} onClick={() => { setTab("cash"); setMsg(null); }}>{zh ? "现金/杠杆" : "Cash/Margin"}</div>
           <div className={tabCls("flows")} onClick={() => { setTab("flows"); setMsg(null); }}>{zh ? "资金流" : "Flows"}</div>
           <div className={tabCls("settings")} onClick={() => { setTab("settings"); setMsg(null); }}>{zh ? "设置" : "Settings"}</div>
@@ -2221,6 +2276,50 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                     <button onClick={() => setCloseTarget(null)} className="text-xs text-blue-500 hover:text-blue-700">{zh ? "← 返回" : "← Back"}</button>
                   </div>
 
+                  {/* Direction toggle */}
+                  <div className="flex rounded overflow-hidden border border-gray-300 dark:border-gray-700 mb-3">
+                    <button type="button" onClick={() => setTradeDirection("sell")}
+                      className={`flex-1 text-xs py-1.5 font-medium transition-colors ${tradeDirection === "sell" ? "bg-red-600 text-white" : "bg-white dark:bg-gray-900 text-gray-500 hover:bg-gray-100"}`}>
+                      {zh ? "卖出 / 减仓" : "Sell / Reduce"}
+                    </button>
+                    <button type="button" onClick={() => setTradeDirection("buy")}
+                      className={`flex-1 text-xs py-1.5 font-medium transition-colors ${tradeDirection === "buy" ? "bg-green-600 text-white" : "bg-white dark:bg-gray-900 text-gray-500 hover:bg-gray-100"}`}>
+                      {zh ? "买入 / 加仓" : "Buy / Add"}
+                    </button>
+                  </div>
+
+                  {tradeDirection === "buy" ? (
+                    <>
+                      <div className="grid grid-cols-2 gap-2 mb-3">
+                        <div>
+                          <div className="text-[10px] text-gray-500 mb-1">{zh ? "买入数量" : "Buy Qty"}</div>
+                          <input className={inputCls} inputMode="decimal" value={buyQty} onChange={(e) => setBuyQty(e.target.value)} />
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-gray-500 mb-1">{zh ? "买入价格" : "Buy Price"}</div>
+                          <input className={inputCls} inputMode="decimal" value={buyPrice} onChange={(e) => setBuyPrice(e.target.value)} />
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-gray-500 mb-1">{zh ? "手续费（选填，摊入成本）" : "Fees (optional)"}</div>
+                          <input className={inputCls} inputMode="decimal" placeholder="0" value={buyFee} onChange={(e) => setBuyFee(e.target.value)} />
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-gray-500 mb-1">{zh ? "新成本（可改为券商精确值）" : "New cost (editable)"}</div>
+                          <input className={inputCls} inputMode="decimal" value={buyNewCost} onChange={(e) => setBuyNewCost(e.target.value)} />
+                        </div>
+                      </div>
+                      {parseFloat(buyQty) > 0 && parseFloat(buyPrice) > 0 && (
+                        <div className="mb-3 text-[10px] font-mono text-gray-500">
+                          {zh ? "新持仓" : "New position"} {fmtNum(closeTarget.quantity + (parseFloat(buyQty) || 0), 0)} · {zh ? "扣现金" : "cash out"} {((parseFloat(buyQty) || 0) * (parseFloat(buyPrice) || 0) + (parseFloat(buyFee) || 0)).toFixed(2)} {closeTarget.currency}
+                        </div>
+                      )}
+                      <button onClick={handleBuy} disabled={saving || !(parseFloat(buyQty) > 0) || !(parseFloat(buyPrice) > 0)}
+                        className="w-full px-3 py-2 text-sm rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 font-medium">
+                        {saving ? "..." : (zh ? "确认买入" : "Confirm Buy")}
+                      </button>
+                    </>
+                  ) : (
+                  <>
                   {/* Sell inputs */}
                   <div className="grid grid-cols-2 gap-2 mb-3">
                     <div>
@@ -2283,6 +2382,8 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                       ? (dilutedPartial ? "摊薄减仓" : closePnl && closePnl.qty < closeTarget.quantity ? "部分卖出" : "确认平仓")
                       : (dilutedPartial ? "Diluted Reduce" : closePnl && closePnl.qty < closeTarget.quantity ? "Partial Sell" : "Close Position"))}
                   </button>
+                  </>
+                  )}
                 </div>
               )}
             </>
