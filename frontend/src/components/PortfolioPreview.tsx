@@ -129,7 +129,7 @@ export default function PortfolioPreview() {
         </ul>
         <div className="text-center">
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
-            {zh ? "免费注册，导入你的持仓，第二天起自动记录净值曲线" : "Sign up free, import your holdings — NAV history starts tomorrow"}
+            {zh ? "免费注册，三步录入持仓，当天生成你的第一张资产快照" : "Sign up free, 3-step setup — your first snapshot lands the same day"}
           </p>
           <Link
             href="/auth"
