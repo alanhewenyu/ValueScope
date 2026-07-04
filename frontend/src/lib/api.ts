@@ -820,6 +820,8 @@ export interface PortfolioHolding {
 }
 
 export interface PortfolioSummary {
+  unit_nav?: number | null;      // TWR unit NAV (fund-style), null before T0
+  unit_nav_date?: string | null;
   equity_cny: number;
   cash_cny: number;
   leverage_cny: number;

@@ -3400,6 +3400,11 @@ export default function PortfolioPage() {
               <>
                 {/* ── KPI Row 1: Asset Overview ── */}
                 <div className="flex flex-wrap gap-2 mb-2">
+                  {data.summary.unit_nav != null && (
+                    <KpiCard label={locale === "zh" ? "单位净值 (TWR)" : "Unit NAV (TWR)"}
+                      value={data.summary.unit_nav.toFixed(4)}
+                      sub={`${locale === "zh" ? "累计" : "cum."} ${data.summary.unit_nav >= 1 ? "+" : ""}${((data.summary.unit_nav - 1) * 100).toFixed(1)}% · ${data.summary.unit_nav_date || ""}`} />
+                  )}
                   <KpiCard label={locale === "zh" ? "资产总值" : "Total Assets"} value={`¥${formatNumber(data.summary.equity_cny + data.summary.cash_cny)}`}
                     sub={locale === "zh" ? "权益 + 现金" : "Equity + Cash"} />
                   <KpiCard label={locale === "zh" ? "资产净值" : "Net Assets"} value={`¥${formatNumber(data.summary.net_assets)}`}

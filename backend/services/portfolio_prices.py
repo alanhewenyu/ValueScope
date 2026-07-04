@@ -271,8 +271,11 @@ def _fetch_us_extended(t, currency):
             tz = ZoneInfo(info.get('exchangeTimezoneName') or 'America/New_York')
             if ts and datetime.datetime.fromtimestamp(int(ts), tz).date() < datetime.datetime.now(tz).date():
                 prev_close = price
+            elif not ts and _exchange_weekend(getattr(t, 'ticker', '')):
+                prev_close = price
         except Exception:
-            pass
+            if _exchange_weekend(getattr(t, 'ticker', '')):
+                prev_close = price
 
     if price is not None:
         price = float(price)
@@ -280,6 +283,30 @@ def _fetch_us_extended(t, currency):
         prev_close = float(prev_close)
 
     return (price, currency, prev_close)
+
+
+_EXCHANGE_TZ_BY_SUFFIX = [
+    ('.HK', 'Asia/Hong_Kong'),
+    ('.T', 'Asia/Tokyo'),
+    ('.SS', 'Asia/Shanghai'),
+    ('.SZ', 'Asia/Shanghai'),
+]
+
+
+def _exchange_weekend(ticker: str) -> bool:
+    """True when it's Sat/Sun in the ticker's exchange timezone (suffix-based,
+    no network calls — deterministic even when data sources are rate-limited)."""
+    from zoneinfo import ZoneInfo
+    tu = (ticker or '').upper()
+    if tu.isdigit():  # CN mutual funds (bare 6-digit codes)
+        tz_name = 'Asia/Shanghai'
+    else:
+        tz_name = 'America/New_York'
+        for suffix, tz in _EXCHANGE_TZ_BY_SUFFIX:
+            if tu.endswith(suffix):
+                tz_name = tz
+                break
+    return datetime.datetime.now(ZoneInfo(tz_name)).weekday() >= 5
 
 
 def _fetch_yfinance(ticker, currency, regular_only=False):
@@ -317,15 +344,11 @@ def _fetch_yfinance(ticker, currency, regular_only=False):
             pass
         # Weekend in the exchange's timezone: no session today, so last_price
         # is Friday's close and previous_close is THURSDAY's — the pair would
-        # show Friday's whole move as "today". Zero it instead.
-        if prev_close is not None:
-            try:
-                from zoneinfo import ZoneInfo
-                tz = ZoneInfo(getattr(fi, 'timezone', None) or 'Asia/Hong_Kong')
-                if datetime.datetime.now(tz).weekday() >= 5:  # Sat/Sun
-                    prev_close = price
-            except Exception:
-                pass
+        # show Friday's whole move as "today". Zero it instead. Timezone is
+        # inferred from the ticker suffix — fi.timezone is a lazy web request
+        # that gets rate-limited and would silently disable this guard.
+        if prev_close is not None and _exchange_weekend(ticker):
+            prev_close = price
         # Fall back to history if fast_info.previous_close unavailable
         if prev_close is None:
             hist = t.history(period='5d')
@@ -396,6 +419,14 @@ def fetch_price(ticker: str, regular_only: bool = False) -> tuple[float | None, 
                 logger.warning("FMP fallback succeeded for %s", ticker)
             except Exception as e_fmp:
                 logger.warning("FMP fallback failed for %s: %s", ticker, e_fmp)
+
+    # Central weekend guard — covers EVERY source (yfinance, FMP fallback,
+    # eastmoney): when the exchange has no session today, price is the last
+    # close and any "previous close" pairs it with the session before —
+    # which would show the last trading day's move as "today". Zero it here
+    # at the chokepoint so no fallback path can leak it back in.
+    if result[0] is not None and result[2] is not None and _exchange_weekend(ticker):
+        result = (result[0], result[1], result[0])
 
     # Only cache successful fetches; failed ones (None) should be retried immediately
     if result[0] is not None:

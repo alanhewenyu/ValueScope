@@ -809,7 +809,20 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
 
     total_ytd_pnl_cny += ytd_realized_total
 
+    # Latest TWR unit NAV (from snapshots) so the KPI row can show it
+    unit_nav = None
+    unit_nav_date = None
+    with get_conn() as conn:
+        _r = conn.execute(
+            "SELECT unit_nav, date FROM daily_snapshots "
+            "WHERE user_id=? AND unit_nav IS NOT NULL ORDER BY date DESC LIMIT 1",
+            (user_id,)).fetchone()
+        if _r:
+            unit_nav, unit_nav_date = _r[0], _r[1]
+
     summary = {
+        "unit_nav": round(unit_nav, 4) if unit_nav else None,
+        "unit_nav_date": unit_nav_date,
         "equity_cny": round(total_equity_cny, 2),
         "cash_cny": round(cash_cny, 2),
         "leverage_cny": round(leverage_cny, 2),
