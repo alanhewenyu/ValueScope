@@ -835,15 +835,18 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
     # counterpart to the hero's TWR. Denominator = year-start NAV + each
     # flow weighted by its remaining fraction of the period.
     ytd_mwr = None
+    ytd_mwr_start = None
     with get_conn() as conn:
         import datetime as _dt
         _jan1 = f"{_dt.date.today().year}-01-01"
-        # Start at the first snapshot with capital — aligns with the tracking
-        # baseline the whole YTD system uses (建库日), not stray earlier rows
+        # Start at the first UNITIZED snapshot of the year: from T0 onward
+        # every external flow (incl. living-expense withdrawals) is recorded
+        # in deposit_history, so Dietz is clean. Earlier history has
+        # unrecorded consumption outflows that would read as losses.
         _r0 = conn.execute(
             "SELECT date, net_assets FROM daily_snapshots "
             "WHERE user_id=? AND date>=? AND net_assets IS NOT NULL "
-            "AND capital IS NOT NULL AND capital > 0 ORDER BY date ASC LIMIT 1",
+            "AND units IS NOT NULL AND units > 0 ORDER BY date ASC LIMIT 1",
             (user_id, _jan1)).fetchone()
         if _r0 and _r0[1]:
             _d0 = _dt.date.fromisoformat(_r0[0])
@@ -865,12 +868,14 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
             _denom = _nav0 + _wsum
             if _denom > 0:
                 ytd_mwr = (net_assets - _nav0 - _fsum) / _denom * 100
+                ytd_mwr_start = _r0[0]
 
     summary = {
         "unit_nav": round(unit_nav, 4) if unit_nav else None,
         "unit_nav_date": unit_nav_date,
         "unit_nav_est": round(unit_nav_est, 4) if unit_nav_est else None,
         "ytd_mwr": round(ytd_mwr, 2) if ytd_mwr is not None else None,
+        "ytd_mwr_start": ytd_mwr_start,
         "equity_cny": round(total_equity_cny, 2),
         "cash_cny": round(cash_cny, 2),
         "leverage_cny": round(leverage_cny, 2),
