@@ -219,10 +219,16 @@ function HeroSummary({ locale, onGoPerformance }: { locale: string; onGoPerforma
   const _pad = (_hi - _lo) * 0.08 || 1;
   const yMin = _lo - _pad, yMax = _hi + _pad, yr = yMax - yMin;
   const W = 800, H = 220, PAD = 6;
-  const X = (i: number, n: number) => PAD + (i / Math.max(n - 1, 1)) * (W - 2 * PAD);
+  // Time-based x axis: both series positioned by DATE, not index — the two
+  // calendars differ (snapshots skip Sun/Mon, indices have their own
+  // holidays), index-scaling made the crosshair dots visibly misaligned
+  const t0 = Date.parse(series[0].date);
+  const t1 = Date.parse(series[series.length - 1].date) || t0 + 1;
+  const Xd = (date: string) => PAD + ((Date.parse(date) - t0) / Math.max(t1 - t0, 1)) * (W - 2 * PAD);
   const Y = (v: number) => H - PAD - ((v - yMin) / yr) * (H - 2 * PAD);
-  const line = (vals: number[]) => vals.map((v, i) => `${X(i, vals.length).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
-  const areaPath = `M${pv.map((v, i) => `${X(i, pv.length).toFixed(1)},${Y(v).toFixed(1)}`).join(" L")} L${X(pv.length - 1, pv.length).toFixed(1)},${H - PAD} L${X(0, pv.length).toFixed(1)},${H - PAD} Z`;
+  const lineD = (pts: { date: string }[], vals: number[]) =>
+    pts.map((p, i) => `${Xd(p.date).toFixed(1)},${Y(vals[i]).toFixed(1)}`).join(" ");
+  const areaPath = `M${series.map((p, i) => `${Xd(p.date).toFixed(1)},${Y(pv[i]).toFixed(1)}`).join(" L")} L${Xd(series[series.length - 1].date).toFixed(1)},${H - PAD} L${Xd(series[0].date).toFixed(1)},${H - PAD} Z`;
   const hoverPt = hoverIdx != null && hoverIdx >= 0 && hoverIdx < series.length ? hoverIdx : null;
   // Nearest benchmark value on/before the hovered date (different trading calendars)
   const benchIdxFor = (date: string) => {
@@ -262,7 +268,13 @@ function HeroSummary({ locale, onGoPerformance }: { locale: string; onGoPerforma
           const rect = heroSvgRef.current?.getBoundingClientRect();
           if (!rect) return;
           const frac = (e.clientX - rect.left) / rect.width;
-          setHoverIdx(Math.max(0, Math.min(series.length - 1, Math.round(frac * (series.length - 1)))));
+          const targetT = t0 + frac * (t1 - t0);
+          let best = 0, bestDist = Infinity;
+          for (let i = 0; i < series.length; i++) {
+            const d = Math.abs(Date.parse(series[i].date) - targetT);
+            if (d < bestDist) { bestDist = d; best = i; }
+          }
+          setHoverIdx(best);
         }}
         onMouseLeave={() => setHoverIdx(null)}>
         <defs>
@@ -272,16 +284,16 @@ function HeroSummary({ locale, onGoPerformance }: { locale: string; onGoPerforma
           </linearGradient>
         </defs>
         <path d={areaPath} fill="url(#heroFill)" />
-        {bv.length >= 2 && <polyline points={line(bv)} fill="none" stroke="#9ca3af" strokeWidth="1.5" strokeDasharray="4 3" />}
-        <polyline points={line(pv)} fill="none" stroke="#3b82f6" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        {bv.length >= 2 && <polyline points={lineD(bench, bv)} fill="none" stroke="#9ca3af" strokeWidth="1.5" strokeDasharray="4 3" />}
+        <polyline points={lineD(series, pv)} fill="none" stroke="#3b82f6" strokeWidth="2" vectorEffect="non-scaling-stroke" />
         {hoverPt != null && (() => {
-          const x = X(hoverPt, pv.length);
+          const x = Xd(series[hoverPt].date);
           const bIdx = benchIdxFor(series[hoverPt].date);
           return (
             <g>
               <line x1={x} y1={PAD} x2={x} y2={H - PAD} stroke="#9ca3af" strokeWidth="1" strokeDasharray="3 3" />
               <circle cx={x} cy={Y(pv[hoverPt])} r="3.5" fill="#3b82f6" />
-              {bIdx >= 0 && <circle cx={X(bIdx, bv.length)} cy={Y(bv[bIdx])} r="3" fill="#9ca3af" />}
+              {bIdx >= 0 && <circle cx={Xd(bench[bIdx].date)} cy={Y(bv[bIdx])} r="3" fill="#9ca3af" />}
             </g>
           );
         })()}
@@ -3789,7 +3801,9 @@ export default function PortfolioPage() {
                       value={`¥${pnlSign(weeklyPnl)}`} sub={pctStr(weeklyPct)} subColor={pnlColor(weeklyPnl)} />
                   )}
                   <KpiCard label={locale === "zh" ? "YTD 盈亏" : "YTD P&L"} value={`¥${pnlSign(data.summary.ytd_pnl_cny)}`}
-                    sub={`${pctStr((() => { const base = data.summary.net_assets - data.summary.ytd_pnl_cny; return base ? (data.summary.ytd_pnl_cny / base) * 100 : null; })())} ${locale === "zh" ? "· 资金口径，净值法见顶部" : "· money-based; TWR above"}`}
+                    sub={data.summary.ytd_mwr != null
+                      ? `${pctStr(data.summary.ytd_mwr)} ${locale === "zh" ? "· 资金加权 (Dietz)" : "· money-weighted (Dietz)"}`
+                      : undefined}
                     subColor={pnlColor(data.summary.ytd_pnl_cny)} />
                 </div>
 

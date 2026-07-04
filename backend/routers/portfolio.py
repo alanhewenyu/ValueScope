@@ -830,10 +830,47 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
                 (user_id, unit_nav_date)).fetchone()[0]
             unit_nav_est = (net_assets - _flows) / _units
 
+    # YTD money-weighted return (Modified Dietz): P&L over time-weighted
+    # invested capital — the professional "how much did MY money earn"
+    # counterpart to the hero's TWR. Denominator = year-start NAV + each
+    # flow weighted by its remaining fraction of the period.
+    ytd_mwr = None
+    with get_conn() as conn:
+        import datetime as _dt
+        _jan1 = f"{_dt.date.today().year}-01-01"
+        # Start at the first snapshot with capital — aligns with the tracking
+        # baseline the whole YTD system uses (建库日), not stray earlier rows
+        _r0 = conn.execute(
+            "SELECT date, net_assets FROM daily_snapshots "
+            "WHERE user_id=? AND date>=? AND net_assets IS NOT NULL "
+            "AND capital IS NOT NULL AND capital > 0 ORDER BY date ASC LIMIT 1",
+            (user_id, _jan1)).fetchone()
+        if _r0 and _r0[1]:
+            _d0 = _dt.date.fromisoformat(_r0[0])
+            _nav0 = _r0[1]
+            _today = _dt.date.today()
+            _total = max((_today - _d0).days, 1)
+            _flows = conn.execute(
+                "SELECT deposit_date, amount_cny FROM deposit_history "
+                "WHERE user_id=? AND deposit_date IS NOT NULL AND deposit_date > ?",
+                (user_id, _r0[0])).fetchall()
+            _fsum = sum(f[1] for f in _flows)
+            _wsum = 0.0
+            for _fd, _amt in _flows:
+                try:
+                    _w = max(0.0, min(1.0, (_today - _dt.date.fromisoformat(_fd)).days / _total))
+                except ValueError:
+                    _w = 0.5
+                _wsum += _amt * _w
+            _denom = _nav0 + _wsum
+            if _denom > 0:
+                ytd_mwr = (net_assets - _nav0 - _fsum) / _denom * 100
+
     summary = {
         "unit_nav": round(unit_nav, 4) if unit_nav else None,
         "unit_nav_date": unit_nav_date,
         "unit_nav_est": round(unit_nav_est, 4) if unit_nav_est else None,
+        "ytd_mwr": round(ytd_mwr, 2) if ytd_mwr is not None else None,
         "equity_cny": round(total_equity_cny, 2),
         "cash_cny": round(cash_cny, 2),
         "leverage_cny": round(leverage_cny, 2),

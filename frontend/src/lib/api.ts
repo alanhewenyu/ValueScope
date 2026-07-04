@@ -823,6 +823,7 @@ export interface PortfolioSummary {
   unit_nav?: number | null;      // TWR unit NAV (fund-style), null before T0
   unit_nav_date?: string | null;
   unit_nav_est?: number | null;  // live intraday estimate (display only)
+  ytd_mwr?: number | null;       // YTD money-weighted return % (Modified Dietz)
   equity_cny: number;
   cash_cny: number;
   leverage_cny: number;
