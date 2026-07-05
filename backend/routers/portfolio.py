@@ -948,6 +948,140 @@ def get_benchmarks(start: str = "2024-01-01"):
     return results
 
 
+_MARKET_CCY = {"A股": "CNY", "基金": "CNY", "B股": "HKD", "港股": "HKD",
+               "日股": "JPY", "美股": "USD"}
+
+
+def _fx_history(ccy: str, start: str) -> list[tuple[str, float]]:
+    """Daily {ccy}CNY closes since start, sorted asc. Cached 6h; [] on failure."""
+    from backend import persistent_cache as _pc
+    key = f"fxhist:{ccy}:{start}"
+    cached = _pc.get(key)
+    if cached is not None:
+        return cached
+    rows: list[tuple[str, float]] = []
+    try:
+        import yfinance as yf
+        import pandas as pd
+        end = (pd.Timestamp.now() + pd.DateOffset(days=1)).strftime("%Y-%m-%d")
+        hist = yf.download(f"{ccy}CNY=X", start=start, end=end,
+                           progress=False, auto_adjust=True)
+        if hist is not None and not hist.empty:
+            if isinstance(hist.columns, pd.MultiIndex):
+                hist.columns = hist.columns.droplevel(1)
+            df = hist[["Close"]].dropna().reset_index()
+            rows = [(pd.to_datetime(d).strftime("%Y-%m-%d"), float(c))
+                    for d, c in zip(df[df.columns[0]], df["Close"])]
+    except Exception:
+        rows = []
+    if rows:
+        _pc.put(key, rows, ttl=6 * 3600)
+    return rows
+
+
+@router.get("/fx-impact")
+def get_fx_impact(user_id: str = Depends(get_current_user)):
+    """YTD FX contribution to the CNY-denominated TWR.
+
+    Per snapshot interval: fx return = sum of prev-day currency weights
+    (equity MVs from market_data over net_assets) x FX moves; chained
+    geometrically. Local (currency-hedged) return is the residual
+    (1+total)/(1+fx)-1. Approximation: foreign-currency cash and margin
+    loans are not in market_data, so their FX exposure is excluded.
+    """
+    _require_db()
+    import datetime as _dt
+    import bisect
+    import json as _j
+    from backend.services.portfolio_db import get_conn
+    jan1 = f"{_dt.date.today().year}-01-01"
+    with get_conn() as conn:
+        snaps = conn.execute(
+            "SELECT date, net_assets, capital, unit_nav, market_data "
+            "FROM daily_snapshots WHERE user_id=? AND date>=? "
+            "AND net_assets IS NOT NULL ORDER BY date ASC",
+            (user_id, jan1)).fetchall()
+    series = []
+    for date, na, cap, unav, md in snaps:
+        val = unav if (unav is not None and unav > 0) else (
+            na / cap if cap and cap > 0 and na is not None else None)
+        if val is not None and na and na > 0:
+            series.append((date, val, na, md))
+    if len(series) < 2:
+        return {}
+
+    fx_start = (_dt.date.fromisoformat(series[0][0]) - _dt.timedelta(days=10)).isoformat()
+    hist: dict[str, tuple[list[str], list[float]]] = {}
+    for ccy in ("USD", "HKD", "JPY"):
+        rows = _fx_history(ccy, fx_start)
+        if rows:
+            hist[ccy] = ([r[0] for r in rows], [r[1] for r in rows])
+    if not hist:
+        return {}
+
+    def rate_on(ccy: str, date: str) -> float | None:
+        if ccy == "CNY":
+            return 1.0
+        h = hist.get(ccy)
+        if not h:
+            return None
+        i = bisect.bisect_right(h[0], date) - 1
+        return h[1][i] if i >= 0 else None
+
+    def ccy_weights(md_raw, date: str, net_assets: float) -> dict[str, float] | None:
+        if not md_raw:
+            return None
+        try:
+            md = _j.loads(md_raw)
+        except Exception:
+            return None
+        out: dict[str, float] = {}
+        for mkt, v in md.items():
+            ccy = _MARKET_CCY.get(mkt, "USD")
+            if isinstance(v, dict):
+                # legacy nested {ccy: native MV} format (2026-03 early rows)
+                for c, native in v.items():
+                    r = rate_on(c, date)
+                    if r is None or not isinstance(native, (int, float)):
+                        return None
+                    out[c] = out.get(c, 0.0) + native * r
+            elif isinstance(v, (int, float)):
+                out[ccy] = out.get(ccy, 0.0) + v
+        return {c: mv / net_assets for c, mv in out.items()}
+
+    tot_f = fx_f = 1.0
+    covered = 0
+    for i in range(1, len(series)):
+        d0, v0, na0, md0 = series[i - 1]
+        d1, v1 = series[i][0], series[i][1]
+        tot_f *= v1 / v0
+        w = ccy_weights(md0, d0, na0)
+        if w is None:
+            continue
+        r_fx = 0.0
+        ok = True
+        for ccy, wt in w.items():
+            if ccy == "CNY":
+                continue
+            r0, r1 = rate_on(ccy, d0), rate_on(ccy, d1)
+            if not r0 or not r1:
+                ok = False
+                break
+            r_fx += wt * (r1 / r0 - 1)
+        if ok:
+            fx_f *= 1 + r_fx
+            covered += 1
+    if covered == 0:
+        return {}
+    return {
+        "total_pct": round((tot_f - 1) * 100, 2),
+        "fx_pp": round((fx_f - 1) * 100, 2),
+        "local_pct": round((tot_f / fx_f - 1) * 100, 2),
+        "start": series[0][0],
+        "end": series[-1][0],
+    }
+
+
 @router.post("/snapshot")
 def record_snapshot(user_id: str = Depends(get_current_user)):
     """Day-0 snapshot: run the user's snapshot immediately after onboarding

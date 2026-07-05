@@ -16,6 +16,8 @@ import {
   getSnapshots,
   getNavHistory,
   getBenchmarks,
+  getFxImpact,
+  type FxImpact,
   upsertPosition,
   deletePosition,
   updateCash,
@@ -180,6 +182,7 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
   const [benchName, setBenchName] = useState<string>(() =>
     (typeof window !== "undefined" && localStorage.getItem("vs_hero_bench")) || "CSI 300");
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [fxImpact, setFxImpact] = useState<FxImpact | null>(null);
   const heroSvgRef = React.useRef<SVGSVGElement>(null);
 
   useEffect(() => {
@@ -201,6 +204,7 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
         getBenchmarks(pts[0].date).then(setBenchData).catch(() => {});
       }
     }).catch(() => {});
+    getFxImpact().then((r) => { if (r && r.fx_pp != null) setFxImpact(r as FxImpact); }).catch(() => {});
   }, []);
 
   if (series.length < 2) return null;
@@ -294,6 +298,15 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
             <div className="flex gap-1.5 sm:gap-0 sm:justify-between text-[11px] text-gray-500 dark:text-gray-400">
               <span>{zh ? "资金加权" : "Money-wtd"}</span>
               <span className="font-mono">{ytdMwr >= 0 ? "+" : ""}{ytdMwr.toFixed(1)}%</span>
+            </div>
+          )}
+          {fxImpact && (
+            <div className="flex gap-1.5 sm:gap-0 sm:justify-between text-[11px] text-gray-500 dark:text-gray-400"
+              title={zh
+                ? `剔除汇率后本币收益约 ${fxImpact.local_pct >= 0 ? "+" : ""}${fxImpact.local_pct.toFixed(1)}%（按持仓市值权重估算，外币现金未计）`
+                : `Currency-hedged return ≈ ${fxImpact.local_pct >= 0 ? "+" : ""}${fxImpact.local_pct.toFixed(1)}% (equity-weight estimate, FX cash excluded)`}>
+              <span>{zh ? "汇率影响" : "FX impact"}</span>
+              <span className={`font-mono ${pnlColor(fxImpact.fx_pp)}`}>{fxImpact.fx_pp >= 0 ? "+" : ""}{fxImpact.fx_pp.toFixed(1)}pp</span>
             </div>
           )}
           <div className="hidden sm:block text-[10px] text-gray-400 pt-0.5">{zh ? "详情 →" : "details →"}</div>

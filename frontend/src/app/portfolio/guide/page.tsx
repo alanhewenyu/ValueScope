@@ -180,6 +180,9 @@ export default function GuidePage() {
       </P>
       <H3>各自的计算方法</H3>
       <P><strong className="text-gray-800 dark:text-gray-200">① YTD TWR（净值涨幅）</strong>= 最新单位净值 ÷ 年初单位净值 − 1。净值每日按第三节的两步公式滚动，等价于把每日「剥离出入金后的纯投资收益率」几何连乘——公募基金披露收益率的标准方法。启用净值法（T0）之前的历史用旧的 净资产÷本金 比值拼接（当时本金随支取下降，隐性做了资金流调整，是合理近似）；T0 起为精确的份额法。</P>
+      <P>
+        TWR 按人民币计价，因此<strong className="text-gray-800 dark:text-gray-200">含汇率影响</strong>。概览页的「汇率影响」备注把它拆出来：每日按各币种持仓权重 × 汇率变动链式累积得到汇率贡献（pp），TWR 剔除汇率后的残差即「本币口径收益」——衡量纯投资管理能力（悬停备注可见）。按持仓市值权重估算，外币现金余额未计入，属近似值。
+      </P>
       <P><strong className="text-gray-800 dark:text-gray-200">② 资金加权（Modified Dietz）</strong>：</P>
       <Code>{`收益率 = (期末净资产 − 期初净资产 − 期间净入金)
        ÷ (期初净资产 + Σ 每笔流水 × 该笔剩余时间占比)`}</Code>

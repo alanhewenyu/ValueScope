@@ -989,6 +989,18 @@ export async function getBenchmarks(start: string): Promise<Record<string, Bench
   return fetchAPI<Record<string, BenchmarkPoint[]>>(`/api/portfolio/benchmarks?start=${start}`);
 }
 
+export interface FxImpact {
+  total_pct: number;   // YTD TWR in CNY
+  fx_pp: number;       // FX contribution, percentage points
+  local_pct: number;   // currency-hedged residual return
+  start: string;
+  end: string;
+}
+
+export async function getFxImpact(): Promise<Partial<FxImpact>> {
+  return fetchAPI<Partial<FxImpact>>("/api/portfolio/fx-impact");
+}
+
 export async function upsertPosition(data: PositionInput): Promise<{ ok: boolean }> {
   return fetchAPI<{ ok: boolean }>("/api/portfolio/positions", {
     method: "POST",
