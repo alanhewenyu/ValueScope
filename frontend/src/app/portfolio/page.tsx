@@ -303,8 +303,8 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
           {fxImpact && (
             <div className="flex gap-1.5 sm:gap-0 sm:justify-between text-[11px] text-gray-500 dark:text-gray-400"
               title={zh
-                ? `剔除汇率后本币收益约 ${fxImpact.local_pct >= 0 ? "+" : ""}${fxImpact.local_pct.toFixed(1)}%（按持仓市值权重估算，外币现金未计）`
-                : `Currency-hedged return ≈ ${fxImpact.local_pct >= 0 ? "+" : ""}${fxImpact.local_pct.toFixed(1)}% (equity-weight estimate, FX cash excluded)`}>
+                ? `剔除汇率后本币收益约 ${fxImpact.local_pct >= 0 ? "+" : ""}${fxImpact.local_pct.toFixed(1)}%。按币种净敞口（资产−同币种融资）计算；2026-07 前历史无分币种负债记录、仅按持仓估算，外币融资期影响略被高估`
+                : `Currency-hedged return ≈ ${fxImpact.local_pct >= 0 ? "+" : ""}${fxImpact.local_pct.toFixed(1)}%. Net exposure (assets − same-currency loans); pre-2026-07 history is equity-only and slightly overstates FX drag`}>
               <span>{zh ? "汇率影响" : "FX impact"}</span>
               <span className={`font-mono ${pnlColor(fxImpact.fx_pp)}`}>{fxImpact.fx_pp >= 0 ? "+" : ""}{fxImpact.fx_pp.toFixed(1)}pp</span>
             </div>
