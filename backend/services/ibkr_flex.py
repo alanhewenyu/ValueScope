@@ -21,6 +21,9 @@ logger = logging.getLogger("valuescope.ibkr_flex")
 _BASE = "https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService"
 _CACHE_KEY = "ibkr_flex_stmt"
 _CACHE_TTL = 1800  # report is EOD; 30min is plenty
+_COOLDOWN_KEY = "ibkr_flex_cooldown"
+_COOLDOWN_TTL = 900  # after a failure, back off — hammering during IBKR's
+                     # maintenance windows escalates 1001 into a 1025 lockout
 
 # Match tolerances: broker rounding on diluted/average cost displays
 _QTY_TOL = 1e-4
@@ -53,25 +56,24 @@ def fetch_statement(force: bool = False) -> dict | None:
         cached = pc.get(_CACHE_KEY)
         if cached is not None:
             return cached
+        if pc.get(_COOLDOWN_KEY) is not None:
+            return None
 
     tok = os.getenv("IBKR_FLEX_TOKEN")
     qid = os.getenv("IBKR_FLEX_QUERY_ID")
     try:
-        ref = None
-        for attempt in range(3):
-            req = urllib.request.Request(
-                f"{_BASE}.SendRequest?t={tok}&q={qid}&v=3",
-                headers={"User-Agent": "valuescope/1.0"})
-            r1 = urllib.request.urlopen(req, timeout=30).read().decode()
-            m = re.search(r"<ReferenceCode>(\d+)</ReferenceCode>", r1)
-            if m:
-                ref = m.group(1)
-                break
-            # ErrorCode 1001 = generation throttled — transient, back off
-            logger.warning("Flex SendRequest attempt %d failed: %s", attempt + 1, r1[:160])
-            time.sleep(20)
-        if ref is None:
+        req = urllib.request.Request(
+            f"{_BASE}.SendRequest?t={tok}&q={qid}&v=3",
+            headers={"User-Agent": "valuescope/1.0"})
+        r1 = urllib.request.urlopen(req, timeout=30).read().decode()
+        m = re.search(r"<ReferenceCode>(\d+)</ReferenceCode>", r1)
+        if not m:
+            # 1001 = generation window/throttle, 1025 = lockout from retries.
+            # Single attempt + cooldown; the next page load after TTL retries.
+            logger.warning("Flex SendRequest failed: %s", r1[:160])
+            pc.put(_COOLDOWN_KEY, 1, ttl=_COOLDOWN_TTL)
             return None
+        ref = m.group(1)
         xml = None
         for _ in range(6):
             time.sleep(4)
@@ -84,10 +86,12 @@ def fetch_statement(force: bool = False) -> dict | None:
                 break
         if xml is None:
             logger.warning("Flex report not ready after polling")
+            pc.put(_COOLDOWN_KEY, 1, ttl=_COOLDOWN_TTL)
             return None
         data = _parse(xml)
     except Exception as e:
         logger.warning("Flex fetch failed: %s: %s", type(e).__name__, e)
+        pc.put(_COOLDOWN_KEY, 1, ttl=_COOLDOWN_TTL)
         return None
     if data:
         pc.put(_CACHE_KEY, data, ttl=_CACHE_TTL)
