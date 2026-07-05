@@ -1073,7 +1073,9 @@ function PerformanceChart({ navHistory, snapshots = [], locale }: {
         indexed: (p.net_asset_value / p.capital_invested) / startEnav * 100,
       }));
     }
-    const portLabel = twrPts.length > 0 ? "Portfolio (TWR)" : "Portfolio";
+    const portLabel = locale === "zh"
+      ? (twrPts.length > 0 ? "组合净值 (TWR)" : "组合")
+      : (twrPts.length > 0 ? "Portfolio (TWR)" : "Portfolio");
 
     // Build indexed benchmark returns (filter to date range)
     const startDate = portIndexed[0].date;
@@ -1220,7 +1222,7 @@ function PerformanceChart({ navHistory, snapshots = [], locale }: {
           </div>
           {alphas.length > 0 && (
             <div className="text-[10px] font-mono text-gray-400 mt-1">
-              Alpha (excess return): {alphas.join(" · ")}
+              {locale === "zh" ? "超额收益 (Alpha)" : "Alpha (excess return)"}: {alphas.join(" · ")}
             </div>
           )}
         </div>
