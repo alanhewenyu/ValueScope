@@ -150,8 +150,10 @@ def take_snapshot(dry_run=False, user_id: str = "local", force: bool = False):
     # ── Cash (IBKR-style: negative balance = margin loan) ──
     pos_cash = 0.0
     neg_cash = 0.0  # margin loans expressed as negative cash
+    cash_ccy: dict[str, float] = {}  # signed CNY exposure by currency
     for row in conn.execute("SELECT currency, balance FROM cash_balances WHERE user_id=?", (user_id,)):
         v = row["balance"] * fx.get(row["currency"], 1.0)
+        cash_ccy[row["currency"]] = cash_ccy.get(row["currency"], 0.0) + v
         if v >= 0:
             pos_cash += v
         else:
@@ -165,6 +167,8 @@ def take_snapshot(dry_run=False, user_id: str = "local", force: bool = False):
     for row in conn.execute("SELECT category, currency, amount FROM margin_balances WHERE user_id=?", (user_id,)):
         rate = fx.get(row["currency"], 1.0)
         amt_cny = row["amount"] * rate
+        # Liability denominated in a currency = negative exposure to it
+        cash_ccy[row["currency"]] = cash_ccy.get(row["currency"], 0.0) - amt_cny
         if row["category"] == "in_house":
             in_house += amt_cny
         elif row["category"] == "off_exchange":
@@ -206,7 +210,8 @@ def take_snapshot(dry_run=False, user_id: str = "local", force: bool = False):
                         market_data=market_json, capital=capital,
                         market_pnl=market_pnl_json, user_id=user_id,
                         units=units, unit_nav=unit_nav,
-                        fx_json=json.dumps(fx))
+                        fx_json=json.dumps(fx),
+                        cash_json=json.dumps(cash_ccy, ensure_ascii=False))
 
         # Auto-create YTD baselines if none exist for current year
         from backend.services.portfolio_db import get_ytd_baselines, record_ytd_baselines

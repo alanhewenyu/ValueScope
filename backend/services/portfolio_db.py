@@ -699,6 +699,10 @@ def _migrate_twr_columns(conn):
         # Daily FX snapshot — accumulates history for future price-vs-FX
         # return decomposition (no fx history existed before)
         ("daily_snapshots", "fx_json", "fx_json TEXT"),
+        # Signed CNY cash/liability exposure by currency (negative cash =
+        # margin, margin_balances liabilities negative) — makes the FX
+        # decomposition exact from the date this ships
+        ("daily_snapshots", "cash_json", "cash_json TEXT"),
     ]:
         try:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
@@ -1218,16 +1222,17 @@ def upsert_snapshot(conn: sqlite3.Connection, date: str, total_assets: float,
                     user_id: str = 'local',
                     units: float | None = None,
                     unit_nav: float | None = None,
-                    fx_json: str | None = None) -> None:
+                    fx_json: str | None = None,
+                    cash_json: str | None = None) -> None:
     """Record daily snapshot — first write of the day wins (no overwrite)."""
     conn.execute("""
         INSERT OR IGNORE INTO daily_snapshots
             (date, total_assets, net_assets, equity_mv_cny, cash_cny,
              leverage_cny, total_pnl_cny, market_data, capital, market_pnl,
-             realized_pnl_cny, created_at, user_id, units, unit_nav, fx_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?, ?)
+             realized_pnl_cny, created_at, user_id, units, unit_nav, fx_json, cash_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?, ?, ?)
     """, (date, total_assets, net_assets, equity_mv, cash, leverage, total_pnl,
-          market_data, capital, market_pnl, realized_pnl_cny, user_id, units, unit_nav, fx_json))
+          market_data, capital, market_pnl, realized_pnl_cny, user_id, units, unit_nav, fx_json, cash_json))
 
     if market_pnl:
         conn.execute("""

@@ -997,16 +997,16 @@ def get_fx_impact(user_id: str = Depends(get_current_user)):
     jan1 = f"{_dt.date.today().year}-01-01"
     with get_conn() as conn:
         snaps = conn.execute(
-            "SELECT date, net_assets, capital, unit_nav, market_data "
+            "SELECT date, net_assets, capital, unit_nav, market_data, cash_json "
             "FROM daily_snapshots WHERE user_id=? AND date>=? "
             "AND net_assets IS NOT NULL ORDER BY date ASC",
             (user_id, jan1)).fetchall()
     series = []
-    for date, na, cap, unav, md in snaps:
+    for date, na, cap, unav, md, cj in snaps:
         val = unav if (unav is not None and unav > 0) else (
             na / cap if cap and cap > 0 and na is not None else None)
         if val is not None and na and na > 0:
-            series.append((date, val, na, md))
+            series.append((date, val, na, md, cj))
     if len(series) < 2:
         return {}
 
@@ -1028,7 +1028,7 @@ def get_fx_impact(user_id: str = Depends(get_current_user)):
         i = bisect.bisect_right(h[0], date) - 1
         return h[1][i] if i >= 0 else None
 
-    def ccy_weights(md_raw, date: str, net_assets: float) -> dict[str, float] | None:
+    def ccy_weights(md_raw, cash_raw, date: str, net_assets: float) -> dict[str, float] | None:
         if not md_raw:
             return None
         try:
@@ -1047,15 +1047,24 @@ def get_fx_impact(user_id: str = Depends(get_current_user)):
                     out[c] = out.get(c, 0.0) + native * r
             elif isinstance(v, (int, float)):
                 out[ccy] = out.get(ccy, 0.0) + v
+        # Signed per-currency cash/liability exposure (recorded since
+        # 2026-07); folds margin loans in — exact from that date onward
+        if cash_raw:
+            try:
+                for c, v in _j.loads(cash_raw).items():
+                    if isinstance(v, (int, float)):
+                        out[c] = out.get(c, 0.0) + v
+            except Exception:
+                pass
         return {c: mv / net_assets for c, mv in out.items()}
 
     tot_f = fx_f = 1.0
     covered = 0
     for i in range(1, len(series)):
-        d0, v0, na0, md0 = series[i - 1]
+        d0, v0, na0, md0, cj0 = series[i - 1]
         d1, v1 = series[i][0], series[i][1]
         tot_f *= v1 / v0
-        w = ccy_weights(md0, d0, na0)
+        w = ccy_weights(md0, cj0, d0, na0)
         if w is None:
             continue
         r_fx = 0.0
