@@ -170,9 +170,9 @@ function FlowFields({ zh, inputCls, flowDirection, setFlowDirection, flowCurrenc
 
 /** Hero: the 3-second answer — one sentence + one clean YTD curve vs CSI 300.
  *  Details live in the Performance tab; clicking the hero jumps there. */
-function HeroSummary({ locale, onGoPerformance, unitNav, ytdMwr }: {
+function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate, ytdMwr }: {
   locale: string; onGoPerformance: () => void;
-  unitNav?: number | null; ytdMwr?: number | null;
+  unitNav?: number | null; unitNavEst?: number | null; unitNavDate?: string | null; ytdMwr?: number | null;
 }) {
   const zh = locale === "zh";
   const [series, setSeries] = useState<{ date: string; val: number }[]>([]);
@@ -258,12 +258,13 @@ function HeroSummary({ locale, onGoPerformance, unitNav, ytdMwr }: {
     return k;
   };
 
-  const latestNav = unitNav ?? series[series.length - 1].val;
+  const officialNav = unitNav ?? series[series.length - 1].val;
+  const liveEst = unitNavEst != null && Math.abs(unitNavEst - officialNav) >= 0.0001 ? unitNavEst : null;
   return (
     <div onClick={onGoPerformance}
       className="mb-4 p-4 rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 cursor-pointer hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
       <div className="grid grid-cols-1 sm:grid-cols-[180px_1fr] gap-3 sm:gap-5">
-      <div className="flex sm:flex-col sm:justify-between items-baseline sm:items-stretch gap-2 sm:gap-0">
+      <div className="flex flex-col sm:justify-between gap-2 sm:gap-0">
         <div>
           <div className="text-[11px] text-gray-400">{zh ? "今年（净值 TWR）" : "YTD (TWR)"}</div>
           <div className={`text-2xl sm:text-3xl font-semibold leading-tight ${pnlColor(portRet)}`}>
@@ -277,18 +278,25 @@ function HeroSummary({ locale, onGoPerformance, unitNav, ytdMwr }: {
             </div>
           )}
         </div>
-        <div className="hidden sm:block border-t border-gray-100 dark:border-gray-800 pt-2 mt-2 space-y-1">
-          <div className="flex justify-between text-[11px] text-gray-500 dark:text-gray-400">
+        <div className="flex flex-wrap gap-x-4 gap-y-0.5 sm:block sm:space-y-1 sm:border-t sm:border-gray-100 sm:dark:border-gray-800 sm:pt-2 sm:mt-2">
+          <div className="flex gap-1.5 sm:gap-0 sm:justify-between text-[11px] text-gray-500 dark:text-gray-400"
+            title={unitNavDate ? (zh ? `快照 ${unitNavDate}` : `snapshot ${unitNavDate}`) : undefined}>
             <span>{zh ? "单位净值" : "Unit NAV"}</span>
-            <span className="font-mono">{latestNav.toFixed(4)}</span>
+            <span className="font-mono">{officialNav.toFixed(4)}</span>
           </div>
+          {liveEst != null && (
+            <div className="flex gap-1.5 sm:gap-0 sm:justify-between text-[11px] text-gray-500 dark:text-gray-400">
+              <span>{zh ? "盘中估算" : "Intraday est."}</span>
+              <span className={`font-mono ${pnlColor(liveEst - officialNav)}`}>{liveEst.toFixed(4)}</span>
+            </div>
+          )}
           {ytdMwr != null && (
-            <div className="flex justify-between text-[11px] text-gray-500 dark:text-gray-400">
+            <div className="flex gap-1.5 sm:gap-0 sm:justify-between text-[11px] text-gray-500 dark:text-gray-400">
               <span>{zh ? "资金加权" : "Money-wtd"}</span>
               <span className="font-mono">{ytdMwr >= 0 ? "+" : ""}{ytdMwr.toFixed(1)}%</span>
             </div>
           )}
-          <div className="text-[10px] text-gray-400 pt-0.5">{zh ? "详情 →" : "details →"}</div>
+          <div className="hidden sm:block text-[10px] text-gray-400 pt-0.5">{zh ? "详情 →" : "details →"}</div>
         </div>
       </div>
       <div className="min-w-0">
@@ -3929,24 +3937,10 @@ export default function PortfolioPage() {
             {pageTab === "overview" && (
               <>
                 <HeroSummary locale={locale} onGoPerformance={() => setPageTab("performance")}
-                  unitNav={data.summary.unit_nav_est ?? data.summary.unit_nav} ytdMwr={data.summary.ytd_mwr} />
+                  unitNav={data.summary.unit_nav} unitNavEst={data.summary.unit_nav_est}
+                  unitNavDate={data.summary.unit_nav_date} ytdMwr={data.summary.ytd_mwr} />
                 {/* ── KPI Row 1: Asset Overview ── */}
                 <div className="flex flex-wrap gap-2 mb-2">
-                  {data.summary.unit_nav != null && (() => {
-                    const official = data.summary.unit_nav!;
-                    const est = data.summary.unit_nav_est;
-                    const live = est != null && Math.abs(est - official) >= 0.0001;
-                    const shown = live ? est! : official;
-                    return (
-                      <KpiCard label={locale === "zh" ? "单位净值 (TWR)" : "Unit NAV (TWR)"}
-                        value={shown.toFixed(4)}
-                        sub={live
-                          ? (locale === "zh"
-                            ? `盘中估算 · 快照 ${official.toFixed(4)} (${data.summary.unit_nav_date || ""})`
-                            : `intraday est. · snap ${official.toFixed(4)} (${data.summary.unit_nav_date || ""})`)
-                          : `${locale === "zh" ? "累计" : "cum."} ${shown >= 1 ? "+" : ""}${((shown - 1) * 100).toFixed(1)}% · ${data.summary.unit_nav_date || ""}`} />
-                    );
-                  })()}
                   <KpiCard label={locale === "zh" ? "资产总值" : "Total Assets"} value={`¥${formatNumber(data.summary.equity_cny + data.summary.cash_cny)}`}
                     sub={locale === "zh" ? "权益 + 现金" : "Equity + Cash"} />
                   <KpiCard label={locale === "zh" ? "资产净值" : "Net Assets"} value={`¥${formatNumber(data.summary.net_assets)}`}
