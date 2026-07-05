@@ -2978,6 +2978,11 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                 <p>{zh
                   ? "ℹ️ 所有账户都需要在此注册。新增持仓时，账户选项来自此列表。"
                   : "ℹ️ All accounts must be registered here. The account dropdown in Positions tab is sourced from this list."}</p>
+                <p>
+                  <a href="/portfolio/guide" target="_blank" rel="noopener" className="text-blue-500 hover:underline">
+                    {zh ? "📖 完整规则见记账指南（净值、本金、资金流、成本口径）" : "📖 Full rules in the accounting guide"}
+                  </a>
+                </p>
               </div>
 
               {/* Existing settings */}
@@ -3815,9 +3820,6 @@ export default function PortfolioPage() {
           <span className="text-xs text-gray-400 font-mono">{new Date().toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" }).slice(0, 16)}</span>
           {data && data.fx && <FxBanner fx={data.fx} />}
           <div className="ml-auto flex gap-2">
-            <Link href="/portfolio/guide" className="px-3 py-1 text-xs border border-gray-300 dark:border-gray-700 rounded hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-gray-600 dark:text-gray-300">
-              {locale === "zh" ? "📖 指南" : "📖 Guide"}
-            </Link>
             <button onClick={() => { setPanelEditHolding(null); setPanelOpen(true); }} className="px-3 py-1 text-xs border border-gray-300 dark:border-gray-700 rounded hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
               {locale === "zh" ? "管理" : "Manage"}
             </button>
@@ -3828,6 +3830,11 @@ export default function PortfolioPage() {
                 📥 Excel
               </button>
             )}
+            <Link href="/portfolio/guide"
+              className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-700 rounded hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-gray-600 dark:text-gray-300"
+              title={locale === "zh" ? "记账指南" : "Accounting guide"}>
+              📖
+            </Link>
             <button onClick={() => load()} disabled={loading} className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 transition-colors">
               {loading ? "..." : (locale === "zh" ? "刷新" : "Refresh")}
             </button>
