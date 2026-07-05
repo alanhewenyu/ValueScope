@@ -258,46 +258,46 @@ def backup_db(keep_daily=7):
         backup_dir = Path(DB_PATH).parent / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
 
-    src = Path(DB_PATH)
-    if not src.exists():
-        print(f"  WARN: DB not found at {src}, skipping backup")
-        return
+    # All portfolio DBs, not just the active one (Joint lives in its own file)
+    from backend.services.portfolio_db import PORTFOLIOS
+    sources = [Path(p) for _, p in PORTFOLIOS] or [Path(DB_PATH)]
 
     today = datetime.now().strftime("%Y-%m-%d")
-    dst = backup_dir / f"portfolio_{today}.db"
+    for src in sources:
+        if not src.exists():
+            print(f"  WARN: DB not found at {src}, skipping backup")
+            continue
+        prefix = src.stem  # portfolio / portfolio_child
+        dst = backup_dir / f"{prefix}_{today}.db"
 
-    src_conn = sqlite3.connect(str(src))
-    dst_conn = sqlite3.connect(str(dst))
-    try:
-        src_conn.backup(dst_conn)
-        dst_conn.close()
-        src_conn.close()
-        size_mb = dst.stat().st_size / (1024 * 1024)
-        print(f"✓ Backup saved: {dst}  ({size_mb:.1f} MB)")
-    except Exception as e:
-        dst_conn.close()
-        src_conn.close()
-        print(f"  WARN: backup failed: {e}")
-        return
-
-    latest = backup_dir / "portfolio_latest.db"
-    shutil.copy2(str(dst), str(latest))
-
-    # Retention: prune old daily backups, keep monthly (1st of month)
-    backups = sorted(backup_dir.glob("portfolio_????-??-??.db"))
-    for f in backups:
-        name = f.stem
-        date_str = name.replace("portfolio_", "")
+        src_conn = sqlite3.connect(str(src))
+        dst_conn = sqlite3.connect(str(dst))
         try:
-            dt = datetime.strptime(date_str, "%Y-%m-%d")
-        except ValueError:
+            src_conn.backup(dst_conn)
+            dst_conn.close()
+            src_conn.close()
+            size_mb = dst.stat().st_size / (1024 * 1024)
+            print(f"✓ Backup saved: {dst}  ({size_mb:.1f} MB)")
+        except Exception as e:
+            dst_conn.close()
+            src_conn.close()
+            print(f"  WARN: backup failed for {prefix}: {e}")
             continue
-        if dt.day == 1:
-            continue
-        age = (datetime.now() - dt).days
-        if age > keep_daily:
-            f.unlink()
-            print(f"  Pruned old backup: {f.name}")
+
+        shutil.copy2(str(dst), str(backup_dir / f"{prefix}_latest.db"))
+
+        # Retention: prune old dailies for this prefix, keep 1st-of-month
+        for f in sorted(backup_dir.glob(f"{prefix}_????-??-??.db")):
+            date_str = f.stem.replace(f"{prefix}_", "")
+            try:
+                dt = datetime.strptime(date_str, "%Y-%m-%d")
+            except ValueError:
+                continue
+            if dt.day == 1:
+                continue
+            if (datetime.now() - dt).days > keep_daily:
+                f.unlink()
+                print(f"  Pruned old backup: {f.name}")
 
 
 if __name__ == "__main__":
