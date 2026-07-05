@@ -18,6 +18,8 @@ import {
   getBenchmarks,
   getFxImpact,
   type FxImpact,
+  getIbkrRecon,
+  type IbkrRecon,
   upsertPosition,
   deletePosition,
   updateCash,
@@ -2024,6 +2026,43 @@ function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; on
 // Setup Tips Banner — shown after import, dismissible
 // ══════════════════════════════════════════
 
+function IbkrReconBanner({ recon, locale }: { recon: IbkrRecon; locale: string }) {
+  const zh = locale === "zh";
+  const [open, setOpen] = useState(false);
+  if (!recon.diffs || recon.diffs.length === 0) return null;
+  return (
+    <div className="mb-3 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-4 py-2 text-sm">
+      <button onClick={() => setOpen(!open)} className="w-full text-left flex items-center gap-2">
+        <span>🔄</span>
+        <span className="text-amber-800 dark:text-amber-300 font-medium">
+          {zh
+            ? `盈透对账：${recon.diffs.length} 项差异待确认（报表日 ${recon.report_date}）`
+            : `IBKR recon: ${recon.diffs.length} difference(s), statement ${recon.report_date}`}
+        </span>
+        <span className="ml-auto text-amber-600 dark:text-amber-400 text-xs">{open ? (zh ? "收起 ▲" : "Hide ▲") : (zh ? "查看 ▼" : "View ▼")}</span>
+      </button>
+      {open && (
+        <div className="mt-2 space-y-1 text-xs text-amber-900 dark:text-amber-200">
+          {recon.diffs.map((d, i) => (
+            <div key={i} className="flex flex-wrap gap-x-2">
+              <span className="font-mono font-medium">{d.ticker}</span>
+              <span>{d.note}</span>
+              {(d.kind === "qty" || d.kind === "cost" || d.kind === "cash") && (
+                <span className="font-mono">tracker {d.tracker} → IBKR {d.ibkr}</span>
+              )}
+            </div>
+          ))}
+          <div className="pt-1 text-amber-600 dark:text-amber-400">
+            {zh
+              ? "请在管理面板按语义入账：数量/成本走「持仓」编辑，现金走「现金」，清仓类差异务必走「交易」以保留收益归因。确认入账后此提示自动消失。"
+              : "Apply via the Manage panel — edit Positions/Cash directly; use Trade for closes to preserve attribution. This banner clears once reconciled."}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SetupTipsBanner({ locale, data, onOpenPanel }: {
   locale: string; data: PortfolioData;
   onOpenPanel: (tab: "cash" | "settings") => void;
@@ -3626,6 +3665,12 @@ export default function PortfolioPage() {
   const [error, setError] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelInitialTab, setPanelInitialTab] = useState<"edit" | "close" | "cash" | "flows" | "settings">("edit");
+  const [ibkrRecon, setIbkrRecon] = useState<IbkrRecon | null>(null);
+  useEffect(() => {
+    getIbkrRecon().then((r) => {
+      if (r && r.diffs && r.diffs.length > 0) setIbkrRecon(r as IbkrRecon);
+    }).catch(() => {});
+  }, []);
   const [panelEditHolding, setPanelEditHolding] = useState<PortfolioHolding | null>(null);
   const [panelTradeTarget, setPanelTradeTarget] = useState<PortfolioHolding | null>(null);
   const [panelTradeDir, setPanelTradeDir] = useState<"buy" | "sell" | null>(null);
@@ -3947,6 +3992,7 @@ export default function PortfolioPage() {
           <>
             {/* Setup tips banner — shown after import until dismissed */}
             <SetupTipsBanner locale={locale} data={data} onOpenPanel={(tab) => { setPanelInitialTab(tab); setPanelOpen(true); }} />
+            {ibkrRecon && <IbkrReconBanner recon={ibkrRecon} locale={locale} />}
 
             {/* ════════ OVERVIEW TAB ════════ */}
             {pageTab === "overview" && (

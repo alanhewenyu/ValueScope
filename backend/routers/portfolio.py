@@ -1091,6 +1091,27 @@ def get_fx_impact(user_id: str = Depends(get_current_user)):
     }
 
 
+@router.get("/ibkr-recon")
+def ibkr_recon(user_id: str = Depends(get_current_user)):
+    """IBKR Flex reconciliation (review-only). {} when not configured.
+
+    Env-gated single-owner feature: the Flex token lives in backend/.env,
+    so this only activates on deployments whose owner configured it.
+    """
+    from backend.services import ibkr_flex
+    if not ibkr_flex.enabled():
+        return {}
+    _require_db()
+    from backend.services.portfolio_db import get_conn
+    try:
+        with get_conn() as conn:
+            res = ibkr_flex.reconcile(conn, user_id=user_id)
+        return res or {}
+    except Exception as e:
+        logger.warning("ibkr recon failed: %s", e)
+        return {}
+
+
 @router.post("/snapshot")
 def record_snapshot(user_id: str = Depends(get_current_user)):
     """Day-0 snapshot: run the user's snapshot immediately after onboarding

@@ -1001,6 +1001,26 @@ export async function getFxImpact(): Promise<Partial<FxImpact>> {
   return fetchAPI<Partial<FxImpact>>("/api/portfolio/fx-impact");
 }
 
+export interface IbkrReconDiff {
+  kind: "qty" | "cost" | "missing_tracker" | "missing_ibkr" | "cash";
+  ticker: string;
+  tracker: number | null;
+  ibkr: number | null;
+  note: string;
+}
+
+export interface IbkrRecon {
+  report_date: string;
+  account: string;
+  checked_positions: number;
+  trade_count: number;
+  diffs: IbkrReconDiff[];
+}
+
+export async function getIbkrRecon(): Promise<Partial<IbkrRecon>> {
+  return fetchAPI<Partial<IbkrRecon>>("/api/portfolio/ibkr-recon");
+}
+
 export async function upsertPosition(data: PositionInput): Promise<{ ok: boolean }> {
   return fetchAPI<{ ok: boolean }>("/api/portfolio/positions", {
     method: "POST",
