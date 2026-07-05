@@ -54,7 +54,7 @@ def fetch_statement(force: bool = False) -> dict | None:
     from backend import persistent_cache as pc
     if not force:
         cached = pc.get(_CACHE_KEY)
-        if cached is not None:
+        if cached is not None and "accounts" in cached:
             return cached
         if pc.get(_COOLDOWN_KEY) is not None:
             return None
@@ -99,42 +99,76 @@ def fetch_statement(force: bool = False) -> dict | None:
 
 
 def _parse(xml: str) -> dict:
+    """One FlexStatement node per account — the query may span several."""
     root = ET.fromstring(xml)
-    stmt = root.find(".//FlexStatement")
-    positions = []
-    for p in root.findall(".//OpenPosition"):
-        try:
-            positions.append({
-                "ticker": map_ticker(p.get("symbol"), p.get("listingExchange"), p.get("currency")),
-                "symbol": p.get("symbol"),
-                "currency": p.get("currency"),
-                "quantity": float(p.get("position") or 0),
-                "cost_price": float(p.get("costBasisPrice") or 0),
-                "mark_price": float(p.get("markPrice") or 0),
-            })
-        except (TypeError, ValueError):
-            continue
-    cash = {}
-    for c in root.findall(".//CashReportCurrency"):
-        ccy = c.get("currency")
-        try:
-            if ccy and ccy != "BASE_SUMMARY":
-                cash[ccy] = float(c.get("endingCash") or 0)
-        except (TypeError, ValueError):
-            continue
-    trades = len(root.findall(".//Trade"))
-    return {
-        "report_date": stmt.get("toDate") if stmt is not None else None,
-        "positions": positions,
-        "cash": cash,
-        "trade_count": trades,
-        "account": stmt.get("accountId") if stmt is not None else None,
-    }
+    accounts: dict[str, dict] = {}
+    for stmt in root.findall(".//FlexStatement"):
+        acct = stmt.get("accountId") or "?"
+        positions = []
+        for p in stmt.findall(".//OpenPosition"):
+            try:
+                positions.append({
+                    "ticker": map_ticker(p.get("symbol"), p.get("listingExchange"), p.get("currency")),
+                    "symbol": p.get("symbol"),
+                    "currency": p.get("currency"),
+                    "quantity": float(p.get("position") or 0),
+                    "cost_price": float(p.get("costBasisPrice") or 0),
+                    "mark_price": float(p.get("markPrice") or 0),
+                })
+            except (TypeError, ValueError):
+                continue
+        cash = {}
+        for c in stmt.findall(".//CashReportCurrency"):
+            ccy = c.get("currency")
+            try:
+                if ccy and ccy != "BASE_SUMMARY":
+                    cash[ccy] = float(c.get("endingCash") or 0)
+            except (TypeError, ValueError):
+                continue
+        accounts[acct] = {
+            "report_date": stmt.get("toDate"),
+            "positions": positions,
+            "cash": cash,
+            "trade_count": len(stmt.findall(".//Trade")),
+            "account": acct,
+        }
+    return {"accounts": accounts}
+
+
+def _account_map() -> dict[str, str]:
+    """IBKR_FLEX_MAP=Individual:U16028525,Joint:U19288500 — portfolio→account."""
+    raw = os.getenv("IBKR_FLEX_MAP", "")
+    out = {}
+    for part in raw.split(","):
+        if ":" in part:
+            k, v = part.split(":", 1)
+            out[k.strip()] = v.strip()
+    return out
+
+
+def _active_portfolio_name() -> str | None:
+    from backend.services.portfolio_db import PORTFOLIOS, DB_PATH
+    for name, path in PORTFOLIOS:
+        if os.path.abspath(path) == os.path.abspath(DB_PATH):
+            return name
+    return None
 
 
 def reconcile(conn, user_id: str = "local", broker_prefix: str = "盈透") -> dict | None:
-    """Diff Flex statement vs tracker positions/cash. Review-only — no writes."""
-    stmt = fetch_statement()
+    """Diff Flex statement vs tracker positions/cash. Review-only — no writes.
+
+    Multi-account: picks the statement mapped to the active portfolio via
+    IBKR_FLEX_MAP; with a single-account query it just uses that account.
+    """
+    fetched = fetch_statement()
+    if not fetched or not fetched.get("accounts"):
+        return None
+    accounts = fetched["accounts"]
+    if len(accounts) == 1:
+        stmt = next(iter(accounts.values()))
+    else:
+        acct = _account_map().get(_active_portfolio_name() or "")
+        stmt = accounts.get(acct)
     if stmt is None:
         return None
 

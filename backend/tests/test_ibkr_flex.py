@@ -26,10 +26,11 @@ class TestMapTicker:
         assert ibkr_flex.map_ticker("7203", "TSEJ", "JPY") == "7203.T"
 
 
-def _stub(monkeypatch, positions, cash):
-    stmt = {"report_date": "2026-07-03", "account": "U1", "trade_count": 0,
+def _stub(monkeypatch, positions, cash, account="U1"):
+    stmt = {"report_date": "2026-07-03", "account": account, "trade_count": 0,
             "positions": positions, "cash": cash}
-    monkeypatch.setattr(ibkr_flex, "fetch_statement", lambda force=False: stmt)
+    monkeypatch.setattr(ibkr_flex, "fetch_statement",
+                        lambda force=False: {"accounts": {account: stmt}})
 
 
 def _pos(ticker, qty, cost):
@@ -73,3 +74,26 @@ class TestReconcile:
         db.commit()
         _stub(monkeypatch, [], {})
         assert ibkr_flex.reconcile(db, "u1")["diffs"] == []
+
+    def test_multi_account_picks_mapped_statement(self, db, monkeypatch):
+        upsert_position(db, "QQQ", "Invesco QQQ", "美股", "盈透", "USD", 11, 586.62, user_id="u1")
+        db.commit()
+        s1 = {"report_date": "2026-07-03", "account": "U16028525", "trade_count": 0,
+              "positions": [_pos("AAPL", 150, 196.033)], "cash": {}}
+        s2 = {"report_date": "2026-07-03", "account": "U19288500", "trade_count": 0,
+              "positions": [_pos("QQQ", 11, 586.62)], "cash": {}}
+        monkeypatch.setattr(ibkr_flex, "fetch_statement",
+                            lambda force=False: {"accounts": {"U16028525": s1, "U19288500": s2}})
+        monkeypatch.setenv("IBKR_FLEX_MAP", "Individual:U16028525,Joint:U19288500")
+        monkeypatch.setattr(ibkr_flex, "_active_portfolio_name", lambda: "Joint")
+        r = ibkr_flex.reconcile(db, "u1")
+        assert r["account"] == "U19288500" and r["diffs"] == []
+
+    def test_multi_account_unmapped_returns_none(self, db, monkeypatch):
+        s = {"report_date": "2026-07-03", "account": "U1", "trade_count": 0,
+             "positions": [], "cash": {}}
+        monkeypatch.setattr(ibkr_flex, "fetch_statement",
+                            lambda force=False: {"accounts": {"U1": s, "U2": dict(s, account="U2")}})
+        monkeypatch.setenv("IBKR_FLEX_MAP", "")
+        monkeypatch.setattr(ibkr_flex, "_active_portfolio_name", lambda: None)
+        assert ibkr_flex.reconcile(db, "u1") is None
