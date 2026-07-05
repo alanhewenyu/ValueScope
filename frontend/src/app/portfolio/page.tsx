@@ -170,7 +170,10 @@ function FlowFields({ zh, inputCls, flowDirection, setFlowDirection, flowCurrenc
 
 /** Hero: the 3-second answer — one sentence + one clean YTD curve vs CSI 300.
  *  Details live in the Performance tab; clicking the hero jumps there. */
-function HeroSummary({ locale, onGoPerformance }: { locale: string; onGoPerformance: () => void }) {
+function HeroSummary({ locale, onGoPerformance, unitNav, ytdMwr }: {
+  locale: string; onGoPerformance: () => void;
+  unitNav?: number | null; ytdMwr?: number | null;
+}) {
   const zh = locale === "zh";
   const [series, setSeries] = useState<{ date: string; val: number }[]>([]);
   const [benchData, setBenchData] = useState<Record<string, BenchmarkPoint[]>>({});
@@ -229,9 +232,24 @@ function HeroSummary({ locale, onGoPerformance }: { locale: string; onGoPerforma
   const t1 = Date.parse(series[series.length - 1].date) || t0 + 1;
   const Xd = (date: string) => PAD + ((Date.parse(date) - t0) / Math.max(t1 - t0, 1)) * (W - 2 * PAD);
   const Y = (v: number) => H - PAD - ((v - yMin) / yr) * (H - 2 * PAD);
-  const lineD = (pts: { date: string }[], vals: number[]) =>
-    pts.map((p, i) => `${Xd(p.date).toFixed(1)},${Y(vals[i]).toFixed(1)}`).join(" ");
-  const areaPath = `M${series.map((p, i) => `${Xd(p.date).toFixed(1)},${Y(pv[i]).toFixed(1)}`).join(" L")} L${Xd(series[series.length - 1].date).toFixed(1)},${H - PAD} L${Xd(series[0].date).toFixed(1)},${H - PAD} Z`;
+  // Sparse series (short YTD window) render as smooth beziers instead of
+  // jagged segments; crosshair anchors to data points so it's unaffected
+  const smooth = series.length < 40;
+  const segPath = (pts: { date: string }[], vals: number[]) => {
+    if (!pts.length) return "";
+    let d = `M${Xd(pts[0].date).toFixed(1)},${Y(vals[0]).toFixed(1)}`;
+    for (let i = 1; i < pts.length; i++) {
+      const x1 = Xd(pts[i].date), y1 = Y(vals[i]);
+      if (smooth) {
+        const mx = ((Xd(pts[i - 1].date) + x1) / 2).toFixed(1);
+        d += ` C${mx},${Y(vals[i - 1]).toFixed(1)} ${mx},${y1.toFixed(1)} ${x1.toFixed(1)},${y1.toFixed(1)}`;
+      } else {
+        d += ` L${x1.toFixed(1)},${y1.toFixed(1)}`;
+      }
+    }
+    return d;
+  };
+  const areaPath = `${segPath(series, pv)} L${Xd(series[series.length - 1].date).toFixed(1)},${H - PAD} L${Xd(series[0].date).toFixed(1)},${H - PAD} Z`;
   const hoverPt = hoverIdx != null && hoverIdx >= 0 && hoverIdx < series.length ? hoverIdx : null;
   // Nearest benchmark value on/before the hovered date (different trading calendars)
   const benchIdxFor = (date: string) => {
@@ -240,31 +258,48 @@ function HeroSummary({ locale, onGoPerformance }: { locale: string; onGoPerforma
     return k;
   };
 
+  const latestNav = unitNav ?? series[series.length - 1].val;
   return (
     <div onClick={onGoPerformance}
       className="mb-4 p-4 rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 cursor-pointer hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
-      <div className="flex items-baseline justify-between mb-2 flex-wrap gap-1">
-        <div className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">
-          {zh ? `今年 ` : "YTD "}
-          <span className={pnlColor(portRet)}>{portRet >= 0 ? "+" : ""}{portRet.toFixed(1)}%</span>
+      <div className="grid grid-cols-1 sm:grid-cols-[180px_1fr] gap-3 sm:gap-5">
+      <div className="flex sm:flex-col sm:justify-between items-baseline sm:items-stretch gap-2 sm:gap-0">
+        <div>
+          <div className="text-[11px] text-gray-400">{zh ? "今年（净值 TWR）" : "YTD (TWR)"}</div>
+          <div className={`text-2xl sm:text-3xl font-semibold leading-tight ${pnlColor(portRet)}`}>
+            {portRet >= 0 ? "+" : ""}{portRet.toFixed(1)}%
+          </div>
           {diff != null && (
-            <span className="text-gray-500 dark:text-gray-400 font-normal text-sm sm:text-base">
+            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               {zh
-                ? `，${diff >= 0 ? "跑赢" : "跑输"}${benchLabels[benchName]} ${Math.abs(diff).toFixed(1)} 个百分点`
-                : `, ${diff >= 0 ? "beating" : "trailing"} ${benchLabels[benchName]} by ${Math.abs(diff).toFixed(1)}pp`}
-            </span>
+                ? `${diff >= 0 ? "跑赢" : "跑输"}${benchLabels[benchName]} ${Math.abs(diff).toFixed(1)}pp`
+                : `${diff >= 0 ? "beating" : "trailing"} ${benchLabels[benchName]} by ${Math.abs(diff).toFixed(1)}pp`}
+            </div>
           )}
         </div>
-        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-          {Object.keys(benchLabels).map((name) => (
-            <button key={name}
-              onClick={() => { setBenchName(name); try { localStorage.setItem("vs_hero_bench", name); } catch {} }}
-              className={`px-1.5 py-0.5 text-[10px] rounded-full border transition-colors ${benchName === name ? "bg-blue-600 text-white border-blue-600" : "bg-white dark:bg-gray-900 text-gray-400 border-gray-200 dark:border-gray-700 hover:border-blue-400"}`}>
-              {benchLabels[name]}
-            </button>
-          ))}
-          <span className="text-[10px] text-gray-400">{zh ? "净值 (TWR) · 详情 →" : "Unit NAV (TWR) · details →"}</span>
+        <div className="hidden sm:block border-t border-gray-100 dark:border-gray-800 pt-2 mt-2 space-y-1">
+          <div className="flex justify-between text-[11px] text-gray-500 dark:text-gray-400">
+            <span>{zh ? "单位净值" : "Unit NAV"}</span>
+            <span className="font-mono">{latestNav.toFixed(4)}</span>
+          </div>
+          {ytdMwr != null && (
+            <div className="flex justify-between text-[11px] text-gray-500 dark:text-gray-400">
+              <span>{zh ? "资金加权" : "Money-wtd"}</span>
+              <span className="font-mono">{ytdMwr >= 0 ? "+" : ""}{ytdMwr.toFixed(1)}%</span>
+            </div>
+          )}
+          <div className="text-[10px] text-gray-400 pt-0.5">{zh ? "详情 →" : "details →"}</div>
         </div>
+      </div>
+      <div className="min-w-0">
+      <div className="flex items-center justify-end gap-2 mb-1" onClick={(e) => e.stopPropagation()}>
+        {Object.keys(benchLabels).map((name) => (
+          <button key={name}
+            onClick={() => { setBenchName(name); try { localStorage.setItem("vs_hero_bench", name); } catch {} }}
+            className={`px-1.5 py-0.5 text-[10px] rounded-full border transition-colors ${benchName === name ? "bg-blue-600 text-white border-blue-600" : "bg-white dark:bg-gray-900 text-gray-400 border-gray-200 dark:border-gray-700 hover:border-blue-400"}`}>
+            {benchLabels[name]}
+          </button>
+        ))}
       </div>
       <svg ref={heroSvgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-32 sm:h-36" preserveAspectRatio="none"
         onMouseMove={(e) => {
@@ -287,8 +322,8 @@ function HeroSummary({ locale, onGoPerformance }: { locale: string; onGoPerforma
           </linearGradient>
         </defs>
         <path d={areaPath} fill="url(#heroFill)" />
-        {bv.length >= 2 && <polyline points={lineD(bench, bv)} fill="none" stroke="#9ca3af" strokeWidth="1.5" strokeDasharray="4 3" />}
-        <polyline points={lineD(series, pv)} fill="none" stroke="#3b82f6" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        {bv.length >= 2 && <path d={segPath(bench, bv)} fill="none" stroke="#9ca3af" strokeWidth="1.5" strokeDasharray="4 3" />}
+        <path d={segPath(series, pv)} fill="none" stroke="#3b82f6" strokeWidth="2" vectorEffect="non-scaling-stroke" />
         {hoverPt != null && (() => {
           const x = Xd(series[hoverPt].date);
           const bIdx = benchIdxFor(series[hoverPt].date);
@@ -317,6 +352,8 @@ function HeroSummary({ locale, onGoPerformance }: { locale: string; onGoPerforma
       <div className="flex justify-between text-[10px] text-gray-400 font-mono mt-0.5">
         <span>{series[0].date}{zh && series[0].date.slice(5, 7) !== "01" ? "（记账起点）" : ""}</span>
         <span>{series[series.length - 1].date}</span>
+      </div>
+      </div>
       </div>
     </div>
   );
@@ -3891,7 +3928,8 @@ export default function PortfolioPage() {
             {/* ════════ OVERVIEW TAB ════════ */}
             {pageTab === "overview" && (
               <>
-                <HeroSummary locale={locale} onGoPerformance={() => setPageTab("performance")} />
+                <HeroSummary locale={locale} onGoPerformance={() => setPageTab("performance")}
+                  unitNav={data.summary.unit_nav_est ?? data.summary.unit_nav} ytdMwr={data.summary.ytd_mwr} />
                 {/* ── KPI Row 1: Asset Overview ── */}
                 <div className="flex flex-wrap gap-2 mb-2">
                   {data.summary.unit_nav != null && (() => {
