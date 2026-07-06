@@ -107,12 +107,20 @@ def _parse(xml: str) -> dict:
         positions = []
         for p in stmt.findall(".//OpenPosition"):
             try:
+                # IBKR distinguishes two costs: openPrice = trading average
+                # (what TWS shows and the tracker records) vs costBasisPrice =
+                # tax basis (adjusted for corp actions / ROC / wash sales).
+                # Reconcile against the trading average; fall back to tax basis
+                # only if openPrice isn't in the query.
+                open_px = p.get("openPrice")
+                tax_basis = float(p.get("costBasisPrice") or 0)
                 positions.append({
                     "ticker": map_ticker(p.get("symbol"), p.get("listingExchange"), p.get("currency")),
                     "symbol": p.get("symbol"),
                     "currency": p.get("currency"),
                     "quantity": float(p.get("position") or 0),
-                    "cost_price": float(p.get("costBasisPrice") or 0),
+                    "cost_price": float(open_px) if open_px not in (None, "") else tax_basis,
+                    "tax_basis": tax_basis,
                     "mark_price": float(p.get("markPrice") or 0),
                 })
             except (TypeError, ValueError):
