@@ -33,6 +33,8 @@ try:
 except Exception:
     pass
 
+import anyio
+import anyio.to_thread
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -142,12 +144,30 @@ async def health_check():
     return {"status": "ok", "version": "2.0.0"}
 
 
+# Dedicated limiter so the deep health check never competes for the shared anyio
+# threadpool. Sync endpoints (and to_thread.run_sync's default) draw from a single
+# limiter that crawler traffic can saturate — when that happens even this check
+# queues past the monitor's timeout and trips a false "down" alert. Its own budget
+# guarantees it always gets a worker thread.
+_DEEP_HEALTH_LIMITER = anyio.CapacityLimiter(2)
+
+
 @app.get("/api/health/deep")
-def deep_health_check():
+async def deep_health_check():
     """Deep health check: verify DeepSeek & Serper API keys are valid and have quota.
 
     Returns per-service status so UptimeRobot keyword monitoring can alert on failures.
+
+    async on purpose: the blocking upstream calls run on a dedicated limiter
+    (_DEEP_HEALTH_LIMITER) so a saturated shared threadpool can't make this endpoint
+    hang. See health_check() for the underlying threadpool-saturation issue.
     """
+    return await anyio.to_thread.run_sync(
+        _deep_health_check_sync, limiter=_DEEP_HEALTH_LIMITER
+    )
+
+
+def _deep_health_check_sync():
     import requests as _req
 
     result = {"status": "ok", "version": "2.0.0", "services": {}}
