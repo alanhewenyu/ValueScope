@@ -48,6 +48,7 @@ import { formatCurrency, formatLargeNumber, formatNumber } from "@/lib/format";
 import { trackEvent } from "@/lib/gtag";
 import { useI18n } from "@/lib/i18n";
 import { useSettings } from "@/lib/settings";
+import { AI_VALUATION_ENABLED } from "@/lib/flags";
 
 type TabId = "overview" | "dcf" | "relative" | "scoring" | "insights";
 
@@ -563,7 +564,7 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
 
   // Fetch AI quota on mount (only when using server keys)
   useEffect(() => {
-    if (!hasAiKeys) {
+    if (AI_VALUATION_ENABLED && !hasAiKeys) {
       getAIQuota().then(setAiQuota).catch(() => {});
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -618,9 +619,11 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
     return () => { cancelled = true; };
   }, [ticker, prefetchedDefaults]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Pre-fill WACC from parent data
+  // Pre-fill WACC from parent data. Guard against degenerate values: when
+  // the quote/market-cap fetch fails upstream, the backend computes WACC=0
+  // (equity weight 0), which would silently break the DCF.
   useEffect(() => {
-    if (waccData && defaultsApplied) {
+    if (waccData && defaultsApplied && waccData.wacc > 0.001) {
       setWaccRate(parseFloat((waccData.wacc * 100).toFixed(1)));
     }
   }, [waccData, defaultsApplied]);
@@ -1005,7 +1008,7 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
             )}
           </h3>
           {/* AI button — always top right, hidden after AI was used */}
-          {!aiResult && (
+          {AI_VALUATION_ENABLED && !aiResult && (
             <div className="ml-auto flex flex-col items-end shrink-0">
               <button
                 type="button"
@@ -1362,6 +1365,7 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
                   {loading && <Loader2 className="w-5 h-5 animate-spin text-gray-400 shrink-0" />}
                 </div>
                 {/* Right: action buttons */}
+                {AI_VALUATION_ENABLED && (
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <button
                     type="button"
@@ -1388,6 +1392,7 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
                     )}
                   </button>
                 </div>
+                )}
               </div>
               {result.ttm?.label && (
                 <div className="mt-2 text-[10px] text-gray-500 dark:text-gray-400">
@@ -1400,7 +1405,7 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
             <div className="bg-white dark:bg-gray-900 rounded-b-xl border-x border-b border-gray-200 dark:border-gray-800">
             <div className="flex items-center border-b border-gray-200 dark:border-gray-800">
               <div className="flex flex-1">
-                {(["summary", "forecast", "sensitivity", "ai", ...(buffett?.available ? ["buffett"] : [])] as ("summary" | "forecast" | "sensitivity" | "ai" | "buffett")[]).map((tab) => {
+                {(["summary", "forecast", "sensitivity", ...(AI_VALUATION_ENABLED ? ["ai"] : []), ...(buffett?.available ? ["buffett"] : [])] as ("summary" | "forecast" | "sensitivity" | "ai" | "buffett")[]).map((tab) => {
                   const labels: Record<string, string> = { summary: t.dcfTabSummary, forecast: t.dcfTabForecast, sensitivity: t.dcfTabSensitivity, ai: t.dcfTabAI, buffett: t.dcfTabBuffett };
                   const isActive = resultTab === tab;
                   const hasNotif = tab === "ai" && gapResult != null;

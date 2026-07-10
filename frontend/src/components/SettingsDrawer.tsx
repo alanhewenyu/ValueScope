@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSettings } from "@/lib/settings";
 import { useI18n } from "@/lib/i18n";
 import { getAIQuota } from "@/lib/api";
+import { AI_VALUATION_ENABLED } from "@/lib/flags";
 
 interface SettingsDrawerProps {
   open: boolean;
@@ -85,6 +86,7 @@ export default function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
 
   // Fetch AI daily limit
   useEffect(() => {
+    if (!AI_VALUATION_ENABLED) return;
     getAIQuota().then((q) => setAiDailyLimit(q.limit)).catch(() => {});
   }, []);
 
@@ -263,10 +265,12 @@ export default function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
               </a>
             </section>
 
+            {/* ── Section 2: AI Engine — hidden with the AI valuation UI ── */}
+            {AI_VALUATION_ENABLED && (
+            <>
             {/* Divider */}
             <hr className="border-gray-200 dark:border-gray-700" />
 
-            {/* ── Section 2: AI Engine ────────────────────────────── */}
             <section className="space-y-4">
               <div className="flex items-center gap-2">
                 {/* Sparkle icon */}
@@ -385,6 +389,8 @@ export default function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
                 </div>
               )}
             </section>
+            </>
+            )}
           </div>
         </div>
       </div>
