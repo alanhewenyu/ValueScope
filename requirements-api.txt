@@ -30,3 +30,4 @@ mini-racer
 # Authentication
 bcrypt>=4.0,<5.0
 PyJWT>=2.8,<3.0
+mcp>=1.9,<2.0

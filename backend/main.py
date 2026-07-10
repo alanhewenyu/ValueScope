@@ -68,10 +68,23 @@ if _fmp_key:
     threading.Thread(target=fetch_forex_data, args=(_fmp_key,), daemon=True).start()
     threading.Thread(target=fetch_market_risk_premium, args=(_fmp_key,), daemon=True).start()
 
+from contextlib import asynccontextmanager
+
+from backend.mcp_server import mcp as valuescope_mcp
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    # MCP streamable-HTTP transport needs its session manager running
+    async with valuescope_mcp.session_manager.run():
+        yield
+
+
 app = FastAPI(
     title="ValueScope API",
     description="AI-Powered Stock Valuation & Analysis API",
     version="2.0.0",
+    lifespan=_lifespan,
 )
 
 # GZip — compress responses >= 500 bytes (~50% reduction for JSON)
@@ -131,6 +144,10 @@ app.include_router(portfolio.router, prefix="/api/portfolio", tags=["Portfolio"]
 app.include_router(history.router, prefix="/api/history", tags=["History"])
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
+
+# MCP server — any MCP client (Claude, ChatGPT, Cherry Studio, …) can call
+# the valuation engine at https://<host>/mcp via streamable HTTP
+app.mount("/mcp", valuescope_mcp.streamable_http_app())
 
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])

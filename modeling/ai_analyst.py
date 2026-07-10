@@ -716,12 +716,14 @@ Please conduct **independent, in-depth** analysis for each parameter below. Each
 **Note: JSON must be valid format, all strings in double quotes, no comments. Cite data sources in reasoning where applicable.**"""
 
 
-def analyze_company(ticker, summary_df, base_year_data, company_profile, calculated_wacc, calculated_tax_rate, base_year, ttm_quarter='', ttm_end_date='', fy_end_month=12, freshness_info=None):
-    """
-    Call AI CLI (Claude or Gemini) to analyze a company and generate DCF valuation parameters.
+def build_analysis_prompt(ticker, summary_df, company_profile, calculated_wacc,
+                          calculated_tax_rate, base_year, ttm_quarter='',
+                          ttm_end_date='', fy_end_month=12, freshness_info=None):
+    """Build the DCF parameter-analysis prompt.
 
-    Returns:
-        dict with keys: parameters (dict), raw_text (str)
+    Shared by two consumers: the CLI flow (analyze_company shells out to an
+    AI CLI with it) and the MCP server (which returns it to the calling
+    model so that model performs the analysis itself).
     """
     company_name = company_profile.get('companyName', ticker)
     country = company_profile.get('country', 'United States')
@@ -800,6 +802,30 @@ def analyze_company(ticker, summary_df, base_year_data, company_profile, calcula
             f"而非仅依赖上面表格中的历史趋势外推。"
         )
         prompt += _stale_extra
+
+    return prompt
+
+
+def analyze_company(ticker, summary_df, base_year_data, company_profile, calculated_wacc, calculated_tax_rate, base_year, ttm_quarter='', ttm_end_date='', fy_end_month=12, freshness_info=None):
+    """
+    Call AI CLI (Claude or Gemini) to analyze a company and generate DCF valuation parameters.
+
+    Returns:
+        dict with keys: parameters (dict), raw_text (str)
+    """
+    company_name = company_profile.get('companyName', ticker)
+    prompt = build_analysis_prompt(
+        ticker=ticker,
+        summary_df=summary_df,
+        company_profile=company_profile,
+        calculated_wacc=calculated_wacc,
+        calculated_tax_rate=calculated_tax_rate,
+        base_year=base_year,
+        ttm_quarter=ttm_quarter,
+        ttm_end_date=ttm_end_date,
+        fy_end_month=fy_end_month,
+        freshness_info=freshness_info,
+    )
 
     engine_name = _ai_engine_display_name()
     print(f"\n{S.ai_label(f'正在使用 AI 分析 {company_name} ({ticker})...')}  {S.muted(f'({engine_name})')}")
