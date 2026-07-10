@@ -6,8 +6,10 @@ import { Loader2 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import CompanyHeader from "@/components/CompanyHeader";
 
-// Lazy-load tab components — only the active tab's JS is loaded
-const OverviewTab = dynamic(() => import("@/components/stock/OverviewTab"), { ssr: false });
+// Overview is the landing tab and carries the SEO-critical content, so it is
+// imported statically and server-rendered. The other tabs are client-only
+// (their data needs user API keys) and stay lazy-loaded.
+import OverviewTab from "@/components/stock/OverviewTab";
 const RelativeValuationTab = dynamic(() => import("@/components/stock/RelativeValuationTab"), { ssr: false });
 const ScoringTab = dynamic(() => import("@/components/stock/ScoringTab"), { ssr: false });
 const InsightsTab = dynamic(() => import("@/components/stock/InsightsTab"), { ssr: false });
@@ -49,6 +51,14 @@ import { useSettings } from "@/lib/settings";
 
 type TabId = "overview" | "dcf" | "relative" | "scoring" | "insights";
 
+const TAB_IDS: TabId[] = ["overview", "dcf", "relative", "scoring", "insights"];
+
+/** URL for a tab: /stock/TICKER for overview, /stock/TICKER/dcf etc. for the rest. */
+function tabUrl(ticker: string, tab: TabId): string {
+  const base = `/stock/${encodeURIComponent(ticker)}`;
+  return tab === "overview" ? base : `${base}/${tab}`;
+}
+
 function CompanyDescription({
   title,
   text,
@@ -82,10 +92,12 @@ export default function StockPageClient({
   ticker,
   initialProfile = null,
   initialFinancials = null,
+  initialTab = "overview",
 }: {
   ticker: string;
   initialProfile?: CompanyProfile | null;
   initialFinancials?: FinancialData | null;
+  initialTab?: TabId;
 }) {
   const { t, locale } = useI18n();
   const { fmpApiKey, serperApiKey, deepseekApiKey, ready } = useSettings();
@@ -101,8 +113,10 @@ export default function StockPageClient({
     seeded.current = true;
   }
 
-  const [profile, setProfile] = useState<CompanyProfile | null>(null);
-  const [financials, setFinancials] = useState<FinancialData | null>(null);
+  // Initialize from server-fetched data so the first render (including SSR
+  // HTML) already contains real content instead of a skeleton.
+  const [profile, setProfile] = useState<CompanyProfile | null>(initialProfile);
+  const [financials, setFinancials] = useState<FinancialData | null>(initialFinancials);
   const [wacc, setWacc] = useState<{
     wacc: number;
     risk_free_rate: number;
@@ -110,7 +124,10 @@ export default function StockPageClient({
   } | null>(null);
   const [initialLoading, setInitialLoading] = useState(true); // true until at least one core request finishes
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab);
+  // Tabs the user has opened — kept mounted (hidden) after a visit so tab
+  // state (e.g. a finished DCF run) survives switching away and back.
+  const [visitedTabs, setVisitedTabs] = useState<Set<TabId>>(() => new Set([initialTab]));
   const [indexes, setIndexes] = useState<string[]>([]);
   // Shared data — fetched once, used by Overview + Scoring + Relative tabs
   const [scores, setScores] = useState<ScoresData | null>(null);
@@ -118,6 +135,26 @@ export default function StockPageClient({
   const [estimates, setEstimates] = useState<EstimatesData | null>(null);
   // Pre-fetched DCF defaults (loaded early so DCF tab opens instantly)
   const [prefetchedDefaults, setPrefetchedDefaults] = useState<DCFDefaults | null>(null);
+
+  // Switch tab + sync the URL (shallow — no navigation, component stays mounted)
+  const activateTab = useCallback((tab: TabId, pushUrl = true) => {
+    setVisitedTabs((prev) => (prev.has(tab) ? prev : new Set(prev).add(tab)));
+    setActiveTab(tab);
+    if (pushUrl && typeof window !== "undefined") {
+      window.history.pushState({ vsTab: tab }, "", tabUrl(decodeURIComponent(ticker), tab));
+    }
+  }, [ticker]);
+
+  // Back/forward buttons: restore the tab encoded in the URL
+  useEffect(() => {
+    const onPop = () => {
+      const seg = window.location.pathname.split("/").filter(Boolean).pop() ?? "";
+      const tab = (TAB_IDS as string[]).includes(seg) ? (seg as TabId) : "overview";
+      activateTab(tab, false);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [activateTab]);
 
   useEffect(() => {
     if (!ticker || !ready) return;
@@ -127,8 +164,11 @@ export default function StockPageClient({
 
     setInitialLoading(true);
     setError("");
-    setProfile(null);
-    setFinancials(null);
+    // Only blank out when there was no server-fetched data — otherwise the
+    // SSR content would flash to a skeleton while the cache-seeded fetch
+    // resolves.
+    if (!initialProfile) setProfile(null);
+    if (!initialFinancials) setFinancials(null);
 
     // Track whether failures are network errors (backend down) vs data not found
     let backendDown = false;
@@ -191,7 +231,7 @@ export default function StockPageClient({
       .catch(() => {});
 
     return () => { cancelled = true; };
-  }, [ticker, ready, fmpApiKey]);
+  }, [ticker, ready, fmpApiKey, initialProfile, initialFinancials]);
 
   // Skeleton placeholder while data loads
   const showSkeleton = !profile && !error && initialLoading;
@@ -317,7 +357,7 @@ export default function StockPageClient({
             {tabs.map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => activateTab(tab.id)}
                 className={`px-3 py-2.5 sm:px-4 sm:py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap
                   ${
                     activeTab === tab.id
@@ -361,17 +401,21 @@ export default function StockPageClient({
           </div>
         ) : (
           <>
-            {/* Description lives at the top of Overview (the landing tab) so
-                the tab bar stays right under the header */}
-            {activeTab === "overview" && profile?.description && (
-              <CompanyDescription
-                title={locale === "zh" ? "公司简介" : "Company Profile"}
-                text={profile.description}
-                moreLabel={locale === "zh" ? "展开" : "Show more"}
-                lessLabel={locale === "zh" ? "收起" : "Show less"}
-              />
-            )}
-            {activeTab === "overview" && (
+            {/* Overview is always mounted (hidden when inactive): it is the
+                SEO-critical server-rendered content. Other tabs mount on
+                first visit and stay mounted so their state (e.g. a finished
+                DCF run) survives switching tabs. */}
+            <div hidden={activeTab !== "overview"}>
+              {/* Description lives at the top of Overview (the landing tab) so
+                  the tab bar stays right under the header */}
+              {profile?.description && (
+                <CompanyDescription
+                  title={locale === "zh" ? "公司简介" : "Company Profile"}
+                  text={profile.description}
+                  moreLabel={locale === "zh" ? "展开" : "Show more"}
+                  lessLabel={locale === "zh" ? "收起" : "Show less"}
+                />
+              )}
               <OverviewTab
                 profile={profile}
                 financials={financials}
@@ -384,19 +428,31 @@ export default function StockPageClient({
                 apikey={fmpApiKey}
                 deepseekKey={deepseekApiKey}
               />
+            </div>
+            {visitedTabs.has("dcf") && (
+              <div hidden={activeTab !== "dcf"}>
+                <DCFTab ticker={decodedTicker} waccData={wacc} financials={financials} profile={profile} prefetchedDefaults={prefetchedDefaults} />
+              </div>
             )}
-            {activeTab === "dcf" && <DCFTab ticker={decodedTicker} waccData={wacc} financials={financials} profile={profile} prefetchedDefaults={prefetchedDefaults} />}
-            {activeTab === "relative" && (
-              <RelativeValuationTab ticker={decodedTicker} initialData={relVal} />
+            {visitedTabs.has("relative") && (
+              <div hidden={activeTab !== "relative"}>
+                <RelativeValuationTab ticker={decodedTicker} initialData={relVal} />
+              </div>
             )}
-            {activeTab === "scoring" && <ScoringTab ticker={decodedTicker} initialScores={scores} />}
-            {activeTab === "insights" && (
-              <InsightsTab
-                ticker={decodedTicker}
-                estimates={estimates}
-                apikey={fmpApiKey}
-                deepseekKey={deepseekApiKey}
-              />
+            {visitedTabs.has("scoring") && (
+              <div hidden={activeTab !== "scoring"}>
+                <ScoringTab ticker={decodedTicker} initialScores={scores} />
+              </div>
+            )}
+            {visitedTabs.has("insights") && (
+              <div hidden={activeTab !== "insights"}>
+                <InsightsTab
+                  ticker={decodedTicker}
+                  estimates={estimates}
+                  apikey={fmpApiKey}
+                  deepseekKey={deepseekApiKey}
+                />
+              </div>
             )}
           </>
         )}
@@ -1256,7 +1312,8 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
       </div>
 
       {/* ══════ Results (right side on xl when params expanded) ══════ */}
-      <div className={`${result && !paramsCollapsed ? "xl:flex-1 xl:min-w-0" : ""} space-y-4`}>
+      {/* Dim stale results while the debounced auto-rerun recomputes */}
+      <div className={`${result && !paramsCollapsed ? "xl:flex-1 xl:min-w-0" : ""} space-y-4 transition-opacity duration-200 ${loading && result ? "opacity-50" : ""}`}>
 
       {/* Error display */}
       {error && (
@@ -1302,6 +1359,7 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
                       {diffPct100 > 0 ? "+" : ""}{diffPct100.toFixed(1)}%
                     </div>
                   </div>
+                  {loading && <Loader2 className="w-5 h-5 animate-spin text-gray-400 shrink-0" />}
                 </div>
                 {/* Right: action buttons */}
                 <div className="flex items-center gap-2 flex-shrink-0">
