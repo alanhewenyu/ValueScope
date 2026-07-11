@@ -806,6 +806,10 @@ export interface PortfolioHolding {
   pnl: number;
   pnl_pct: number;
   pnl_cny: number;
+  realized_cny?: number;      // lifetime realized P&L for this ticker+broker
+  dividends_cny?: number;     // net dividends from the ledger (Flex-fed)
+  total_return_cny?: number;  // pnl_cny + realized + dividends
+  total_return_pct?: number | null; // total_return_cny / current cost basis
   daily_pnl: number | null;
   daily_pnl_pct: number | null;
   daily_pnl_cny: number | null;
@@ -1001,6 +1005,43 @@ export async function getFxImpact(): Promise<Partial<FxImpact>> {
   return fetchAPI<Partial<FxImpact>>("/api/portfolio/fx-impact");
 }
 
+export interface RiskBroker {
+  broker: string;
+  mv: number;        // positions market value, CNY
+  pos_cash: number;  // positive cash, CNY
+  financing: number; // in-broker margin loans (abs), CNY
+  coverage: number | null;      // (mv+pos_cash)/financing, 维持担保比例
+  drop_to_150: number | null;   // equity move to hit 150% coverage (≤0)
+  drop_to_130: number | null;
+}
+
+export interface RiskGridCell {
+  equity_shock: number;
+  fx_shock: number;
+  nav: number;
+  nav_pct: number | null;      // vs base NAV
+  debt_to_nav: number | null;
+  worst_coverage: number | null;
+  coverages?: Record<string, number>; // per financing account
+}
+
+export interface RiskData {
+  nav: number;
+  total_assets: number;
+  debt: number;
+  off_exchange: number;
+  debt_to_nav: number | null;
+  gross_to_nav: number | null;
+  worst_coverage: number | null;
+  brokers: RiskBroker[];
+  currency_exposure: { ccy: string; net_cny: number; pct_nav: number | null }[];
+  grid: RiskGridCell[];
+}
+
+export async function getRisk(): Promise<Partial<RiskData>> {
+  return fetchAPI<Partial<RiskData>>("/api/portfolio/risk");
+}
+
 export interface IbkrReconDiff {
   kind: "qty" | "cost" | "missing_tracker" | "missing_ibkr" | "cash";
   ticker: string;
@@ -1015,10 +1056,60 @@ export interface IbkrRecon {
   checked_positions: number;
   trade_count: number;
   diffs: IbkrReconDiff[];
+  // Advisory only: Flex reports tax-lot (FIFO) basis, which permanently
+  // diverges from TWS/tracker average cost after partial sells — not a
+  // reconciliation item, institutions reconcile qty/cash and keep cost
+  // in their own books.
+  cost_notes?: IbkrReconDiff[];
+  ignored?: number; // whitelisted known diffs currently hidden
 }
 
 export async function getIbkrRecon(): Promise<Partial<IbkrRecon>> {
   return fetchAPI<Partial<IbkrRecon>>("/api/portfolio/ibkr-recon");
+}
+
+export interface IbkrReconApplyResult {
+  applied: { kind: string; ticker: string; value: number }[];
+  skipped: { kind: string; ticker: string; reason: string }[];
+  report_date?: string;
+}
+
+// One-click apply for mechanical diffs (cash/cost). The backend re-derives
+// amounts from the Flex statement; we only name which diffs to apply.
+export async function applyIbkrRecon(
+  items: { kind: string; ticker: string }[],
+): Promise<IbkrReconApplyResult> {
+  return fetchAPI<IbkrReconApplyResult>("/api/portfolio/ibkr-recon/apply", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items }),
+  });
+}
+
+// Whitelist a known intentional diff (e.g. transfer-in cost conventions);
+// pinned to both sides' values — reappears if either side moves.
+export async function ignoreIbkrRecon(
+  items: { kind: string; ticker: string }[],
+): Promise<{ ignored: { kind: string; ticker: string }[] }> {
+  return fetchAPI("/api/portfolio/ibkr-recon/ignore", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items }),
+  });
+}
+
+export async function clearIbkrReconIgnores(): Promise<{ cleared: number }> {
+  return fetchAPI("/api/portfolio/ibkr-recon/ignore", { method: "DELETE" });
+}
+
+export interface DividendLedger {
+  rows: { ticker: string | null; type: string; currency: string; amount: number; date: string; description: string; account: string }[];
+  // net = dividends + payments-in-lieu − withholding tax
+  by_ticker: Record<string, { net_native: number; currency: string; net_cny: number }>;
+}
+
+export async function getDividends(): Promise<Partial<DividendLedger>> {
+  return fetchAPI<Partial<DividendLedger>>("/api/portfolio/dividends");
 }
 
 export async function upsertPosition(data: PositionInput): Promise<{ ok: boolean }> {

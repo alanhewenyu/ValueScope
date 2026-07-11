@@ -19,7 +19,14 @@ import {
   getFxImpact,
   type FxImpact,
   getIbkrRecon,
+  applyIbkrRecon,
+  ignoreIbkrRecon,
+  clearIbkrReconIgnores,
+  getDividends,
+  type DividendLedger,
   type IbkrRecon,
+  getRisk,
+  type RiskData,
   upsertPosition,
   deletePosition,
   updateCash,
@@ -214,9 +221,17 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
   const benchLabels: Record<string, string> = zh
     ? { "CSI 300": "沪深300", "S&P 500": "标普500", "Hang Seng": "恒生" }
     : { "CSI 300": "CSI 300", "S&P 500": "S&P 500", "Hang Seng": "HSI" };
-  const bench = (benchData[benchName] || [])
-    .filter((p) => p.date >= series[0].date)
-    .map((p) => ({ date: p.date, val: p.close }));
+  // Rebase at the last index close ON OR BEFORE the portfolio's first
+  // snapshot (the endpoint returns a 10-day lead-in for exactly this):
+  // snapshots exist on Saturdays pricing Friday's close, so taking the
+  // first close AFTER the start used to swallow a full session (~1pp).
+  const benchRaw = benchData[benchName] || [];
+  const benchLead = benchRaw.filter((p) => p.date <= series[0].date);
+  const benchBase = benchLead.length ? benchLead[benchLead.length - 1].close : null;
+  const bench = benchBase && benchBase > 0
+    ? [{ date: series[0].date, val: benchBase },
+       ...benchRaw.filter((p) => p.date > series[0].date).map((p) => ({ date: p.date, val: p.close }))]
+    : [];
 
   const portRet = (series[series.length - 1].val / series[0].val - 1) * 100;
   const benchRet = bench.length >= 2 ? (bench[bench.length - 1].val / bench[0].val - 1) * 100 : null;
@@ -272,15 +287,20 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
       <div className="grid grid-cols-1 sm:grid-cols-[180px_1fr] gap-3 sm:gap-5">
       <div className="flex flex-col sm:justify-between gap-2 sm:gap-0">
         <div>
-          <div className="text-[11px] text-gray-400">{zh ? "今年（净值 TWR）" : "YTD (TWR)"}</div>
+          <div className="text-[11px] text-gray-400">
+            {zh ? `今年（净值 TWR，自 ${series[0].date.slice(5)}）` : `YTD (TWR, since ${series[0].date.slice(5)})`}
+          </div>
           <div className={`text-2xl sm:text-3xl font-semibold leading-tight ${pnlColor(portRet)}`}>
             {portRet >= 0 ? "+" : ""}{portRet.toFixed(1)}%
           </div>
           {diff != null && (
-            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5"
+              title={zh
+                ? `基准同窗口（自 ${series[0].date}）、已折算人民币口径——与行情软件的"年初至今/本币"数字不可比`
+                : `Benchmark over the same window (since ${series[0].date}), converted to CNY — not comparable to quote-app YTD figures`}>
               {zh
-                ? `${diff >= 0 ? "跑赢" : "跑输"}${benchLabels[benchName]} ${Math.abs(diff).toFixed(1)}pp`
-                : `${diff >= 0 ? "beating" : "trailing"} ${benchLabels[benchName]} by ${Math.abs(diff).toFixed(1)}pp`}
+                ? `${diff >= 0 ? "跑赢" : "跑输"}${benchLabels[benchName]} ${Math.abs(diff).toFixed(1)}pp（同窗口·¥口径）`
+                : `${diff >= 0 ? "beating" : "trailing"} ${benchLabels[benchName]} by ${Math.abs(diff).toFixed(1)}pp (same window, CNY)`}
             </div>
           )}
         </div>
@@ -516,6 +536,7 @@ function HoldingsTable({ holdings, summary, locale, onEdit, onTrade, compact, on
   const [filterMkt, setFilterMkt] = useState("All");
   const [filterBroker, setFilterBroker] = useState("All");
   const [filterSector, setFilterSector] = useState("All");
+  const [filterIndustry, setFilterIndustry] = useState("All");
   // Column group toggles
   const [showDaily, setShowDaily] = useState(true);
   const [showYtd, setShowYtd] = useState(true);
@@ -528,7 +549,11 @@ function HoldingsTable({ holdings, summary, locale, onEdit, onTrade, compact, on
     const s = Array.from(new Set(holdings.map((h) => h.sector).filter(Boolean)));
     return s.length > 0 ? ["All", ...s.sort()] : [];
   }, [holdings]);
-  const hasIndustry = holdings.some((h) => h.industry);
+  // Industry is a filter dimension (Risk-Navigator style), not a column
+  const industries = useMemo(() => {
+    const s = Array.from(new Set(holdings.map((h) => h.industry).filter(Boolean)));
+    return s.length > 0 ? ["All", ...s.sort()] : [];
+  }, [holdings]);
   const hasDcf = holdings.some((h) => h.dcf_price != null);
 
   const filtered = useMemo(() => {
@@ -540,6 +565,7 @@ function HoldingsTable({ holdings, summary, locale, onEdit, onTrade, compact, on
     if (filterMkt !== "All") list = list.filter((h) => h.market === filterMkt);
     if (filterBroker !== "All") list = list.filter((h) => h.broker === filterBroker);
     if (filterSector !== "All") list = list.filter((h) => h.sector === filterSector);
+    if (filterIndustry !== "All") list = list.filter((h) => h.industry === filterIndustry);
     return [...list].sort((a, b) => {
       const av = (a as unknown as Record<string, unknown>)[sortKey];
       const bv = (b as unknown as Record<string, unknown>)[sortKey];
@@ -547,7 +573,7 @@ function HoldingsTable({ holdings, summary, locale, onEdit, onTrade, compact, on
       const nb = typeof bv === "number" ? bv : 0;
       return sortAsc ? na - nb : nb - na;
     });
-  }, [holdings, search, filterMkt, filterBroker, filterSector, sortKey, sortAsc]);
+  }, [holdings, search, filterMkt, filterBroker, filterSector, filterIndustry, sortKey, sortAsc]);
 
   function toggleSort(key: string) {
     if (sortKey === key) setSortAsc(!sortAsc);
@@ -578,7 +604,12 @@ function HoldingsTable({ holdings, summary, locale, onEdit, onTrade, compact, on
         </select>
         {sectors.length > 0 && (
           <select className={inputCls} value={filterSector} onChange={(e) => setFilterSector(e.target.value)}>
-            {sectors.map((s) => <option key={s} value={s}>{s === "All" ? (locale === "zh" ? "全部行业" : "All Sectors") : s}</option>)}
+            {sectors.map((s) => <option key={s} value={s}>{s === "All" ? (locale === "zh" ? "全部板块" : "All Sectors") : s}</option>)}
+          </select>
+        )}
+        {industries.length > 0 && (
+          <select className={inputCls} value={filterIndustry} onChange={(e) => setFilterIndustry(e.target.value)}>
+            {industries.map((s) => <option key={s} value={s}>{s === "All" ? (locale === "zh" ? "全部行业" : "All Industries") : s}</option>)}
           </select>
         )}
         <span className="text-gray-300 dark:text-gray-700">|</span>
@@ -632,10 +663,30 @@ function HoldingsTable({ holdings, summary, locale, onEdit, onTrade, compact, on
                 </>}
                 {showTotal && <>
                   <th className="text-right px-2 py-2.5 cursor-pointer select-none" onClick={() => toggleSort("pnl_cny")}>
-                    {locale === "zh" ? "总盈亏" : "Total P&L"}<SI col="pnl_cny" />
+                    {locale === "zh" ? "未实现" : "Unrealised"}<SI col="pnl_cny" />
                   </th>
                   <th className="text-right px-2 py-2.5 cursor-pointer select-none" onClick={() => toggleSort("pnl_pct")}>
-                    {locale === "zh" ? "总收益%" : "Total%"}<SI col="pnl_pct" />
+                    {locale === "zh" ? "未实现%" : "Unrl.%"}<SI col="pnl_pct" />
+                  </th>
+                  <th className="text-right px-2 py-2.5 cursor-pointer select-none"
+                    title={locale === "zh" ? "该票在该账户的历史已实现盈亏（closed_trades）" : "Lifetime realized P&L for this ticker+broker"}
+                    onClick={() => toggleSort("realized_cny")}>
+                    {locale === "zh" ? "已实现" : "Realized"}<SI col="realized_cny" />
+                  </th>
+                  <th className="text-right px-2 py-2.5 cursor-pointer select-none"
+                    title={locale === "zh" ? "税后分红净额（分红台账，盈透 Flex 自动积累）" : "Net dividends (Flex-fed ledger)"}
+                    onClick={() => toggleSort("dividends_cny")}>
+                    {locale === "zh" ? "分红" : "Dividends"}<SI col="dividends_cny" />
+                  </th>
+                  <th className="text-right px-2 py-2.5 cursor-pointer select-none"
+                    title={locale === "zh" ? "累计收益 = 未实现 + 已实现 + 分红" : "Total return = unrealized + realized + dividends"}
+                    onClick={() => toggleSort("total_return_cny")}>
+                    {locale === "zh" ? "累计收益" : "Total Return"}<SI col="total_return_cny" />
+                  </th>
+                  <th className="text-right px-2 py-2.5 cursor-pointer select-none"
+                    title={locale === "zh" ? "累计收益 ÷ 当前持仓成本" : "Total return ÷ current cost basis"}
+                    onClick={() => toggleSort("total_return_pct")}>
+                    {locale === "zh" ? "累计%" : "TR%"}<SI col="total_return_pct" />
                   </th>
                 </>}
                 {showDcf && <>
@@ -643,7 +694,6 @@ function HoldingsTable({ holdings, summary, locale, onEdit, onTrade, compact, on
                   <th className="text-right px-2 py-2.5" title="Margin of Safety = (DCF - Price) / DCF">{locale === "zh" ? "安全边际" : "MoS%"}</th>
                 </>}
                 {onEdit && <th className="px-2 py-2.5" />}
-                {hasIndustry && <th className="text-left px-2 py-2.5">{locale === "zh" ? "行业" : "Industry"}</th>}
               </tr>
             </thead>
             <tbody>
@@ -677,6 +727,18 @@ function HoldingsTable({ holdings, summary, locale, onEdit, onTrade, compact, on
                   {showTotal && <>
                     <td className={`text-right px-2 py-1.5 ${pnlColor(h.pnl_cny)}`}>{pnlSign(h.pnl_cny)}</td>
                     <td className={`text-right px-2 py-1.5 ${pnlColor(h.pnl_pct)}`}>{pctStr(h.pnl_pct)}</td>
+                    <td className={`text-right px-2 py-1.5 ${h.realized_cny ? pnlColor(h.realized_cny) : "text-gray-300 dark:text-gray-700"}`}>
+                      {h.realized_cny ? pnlSign(h.realized_cny) : "—"}
+                    </td>
+                    <td className={`text-right px-2 py-1.5 ${h.dividends_cny ? pnlColor(h.dividends_cny) : "text-gray-300 dark:text-gray-700"}`}>
+                      {h.dividends_cny ? pnlSign(h.dividends_cny) : "—"}
+                    </td>
+                    <td className={`text-right px-2 py-1.5 font-semibold ${pnlColor(h.total_return_cny ?? h.pnl_cny)}`}>
+                      {pnlSign(h.total_return_cny ?? h.pnl_cny)}
+                    </td>
+                    <td className={`text-right px-2 py-1.5 ${pnlColor(h.total_return_pct ?? h.pnl_pct)}`}>
+                      {pctStr(h.total_return_pct ?? h.pnl_pct)}
+                    </td>
                   </>}
                   {showDcf && <>
                     <td className="text-right px-2 py-1.5">
@@ -693,7 +755,6 @@ function HoldingsTable({ holdings, summary, locale, onEdit, onTrade, compact, on
                     {onTrade && <button onClick={() => onTrade(h, "sell")} title={locale === "zh" ? "卖出/减仓" : "Sell"} className="text-gray-400 hover:text-green-600 text-[10px] mr-1.5">卖</button>}
                     <button onClick={() => onEdit(h)} className="text-gray-400 hover:text-blue-500 text-[10px]">✎</button>
                   </td>}
-                  {hasIndustry && <td className="px-2 py-1.5 text-gray-400 truncate max-w-[90px]" title={h.industry}>{h.industry || "—"}</td>}
                 </tr>
               ))}
             </tbody>
@@ -703,6 +764,9 @@ function HoldingsTable({ holdings, summary, locale, onEdit, onTrade, compact, on
               const fDailyPnl = filtered.reduce((s, h) => s + (h.daily_pnl_cny ?? 0), 0);
               const fYtdPnl = filtered.reduce((s, h) => s + (h.ytd_pnl_cny ?? 0), 0);
               const fTotalPnl = filtered.reduce((s, h) => s + (h.pnl_cny ?? 0), 0);
+              const fRealized = filtered.reduce((s, h) => s + (h.realized_cny ?? 0), 0);
+              const fDividends = filtered.reduce((s, h) => s + (h.dividends_cny ?? 0), 0);
+              const fTotalReturn = filtered.reduce((s, h) => s + (h.total_return_cny ?? h.pnl_cny ?? 0), 0);
               const fTotalPct = fCostCny !== 0 ? (fTotalPnl / fCostCny) * 100 : 0;
               const fWt = filtered.reduce((s, h) => s + h.weight, 0);
               return (
@@ -724,10 +788,15 @@ function HoldingsTable({ holdings, summary, locale, onEdit, onTrade, compact, on
                     {showTotal && <>
                       <td className={`text-right px-2 py-2 ${pnlColor(fTotalPnl)}`}>{pnlSign(fTotalPnl)}</td>
                       <td className={`text-right px-2 py-2 ${pnlColor(fTotalPct)}`}>{pctStr(fTotalPct)}</td>
+                      <td className={`text-right px-2 py-2 ${pnlColor(fRealized)}`}>{fRealized ? pnlSign(fRealized) : "—"}</td>
+                      <td className={`text-right px-2 py-2 ${pnlColor(fDividends)}`}>{fDividends ? pnlSign(fDividends) : "—"}</td>
+                      <td className={`text-right px-2 py-2 font-semibold ${pnlColor(fTotalReturn)}`}>{pnlSign(fTotalReturn)}</td>
+                      <td className={`text-right px-2 py-2 ${pnlColor(fCostCny !== 0 ? (fTotalReturn / fCostCny) * 100 : 0)}`}>
+                        {pctStr(fCostCny !== 0 ? (fTotalReturn / fCostCny) * 100 : null)}
+                      </td>
                     </>}
                     {showDcf && <><td /><td /></>}
                     {onEdit && <td />}
-                    {hasIndustry && <td />}
                   </tr>
                 </tfoot>
               );
@@ -796,6 +865,516 @@ function CashTable({ cash, fx, locale }: { cash: PortfolioData["cash"]; fx: Reco
 }
 
 // ══════════════════════════════════════════
+// Risk: leverage stress test + withdrawal sustainability
+// ══════════════════════════════════════════
+
+const covColor = (c: number | null | undefined) =>
+  c == null ? "" : c < 1.3 ? "text-red-600 dark:text-red-400"
+    : c < 1.5 ? "text-amber-600 dark:text-amber-400" : "text-green-600 dark:text-green-400";
+const covBg = (c: number | null | undefined) =>
+  c == null ? "" : c < 1.3 ? "bg-red-50 dark:bg-red-900/30"
+    : c < 1.5 ? "bg-amber-50 dark:bg-amber-900/20" : "";
+
+function RiskAlertBanner({ risk, locale, onGoRisk }: {
+  risk: Partial<RiskData> | null; locale: string; onGoRisk: () => void;
+}) {
+  const zh = locale === "zh";
+  if (!risk || risk.worst_coverage == null || risk.worst_coverage >= 1.5) return null;
+  const danger = risk.worst_coverage < 1.3;
+  const worst = (risk.brokers || []).filter((b) => b.coverage != null)
+    .sort((a, b) => (a.coverage as number) - (b.coverage as number))[0];
+  return (
+    <div className={`mb-3 rounded-lg border px-4 py-2 text-sm ${danger
+      ? "border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20"
+      : "border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20"}`}>
+      <button onClick={onGoRisk} className="w-full text-left flex items-center gap-2">
+        <span>{danger ? "🚨" : "⚠️"}</span>
+        <span className={`font-medium ${danger ? "text-red-800 dark:text-red-300" : "text-amber-800 dark:text-amber-300"}`}>
+          {zh
+            ? `保证金预警：「${worst?.broker}」维持担保比例 ${(risk.worst_coverage * 100).toFixed(0)}%${danger ? "，已逼近强平区间" : "，安全垫偏薄"}`
+            : `Margin alert: "${worst?.broker}" coverage ${(risk.worst_coverage * 100).toFixed(0)}%${danger ? " — approaching liquidation zone" : " — cushion is thin"}`}
+        </span>
+        <span className="ml-auto text-xs underline">{zh ? "查看风险面板 →" : "View risk panel →"}</span>
+      </button>
+    </div>
+  );
+}
+
+function RiskStressSection({ locale, risk }: { locale: string; risk: Partial<RiskData> | null }) {
+  const zh = locale === "zh";
+  if (!risk || risk.nav == null) {
+    return <div className="text-center py-8 text-gray-500 text-sm">{zh ? "风险数据加载中..." : "Loading risk data..."}</div>;
+  }
+  const finBrokers = (risk.brokers || []).filter((b) => b.financing > 0);
+  const fxCols = [-0.10, -0.05, 0.0, 0.05];
+  const eqRows = [0.0, -0.10, -0.20, -0.30, -0.40];
+  const cell = (e: number, f: number) => (risk.grid || []).find((g) => g.equity_shock === e && g.fx_shock === f);
+  const note = zh
+    ? [
+      "* 维持担保比例 = (持仓市值 + 正现金) / 场内融资，与国内券商两融口径一致；盈透/富途实际维持保证金按品种逐仓计算，此处为组合级近似，阈值仅作参考（<150% 警示 / <130% 危险）。",
+      "* 压力网格：股票冲击同时作用于所有市场；汇率冲击 = 所有外币兑人民币同向变动（日元融资与日股资产自然对冲已计入）。",
+      "* 场外借款计入净资产与负债率，但不参与券商担保比例（不会被强平，但要还）。",
+      "* 持仓按最新缓存价估值（EOD 级别近似）。",
+    ].join("\n")
+    : "* Coverage = (MV + positive cash) / in-broker financing. Brokers compute true maintenance margin per position — treat thresholds (<150% warn / <130% danger) as indicative.\n* Grid: equity shock hits all markets; FX shock moves all foreign currencies vs CNY together.\n* Off-exchange borrowing counts toward NAV/debt but not broker coverage.";
+  return (
+    <>
+      <SectionTitle note={note}>{zh ? "杠杆与压力测试" : "Leverage & Stress Test"}</SectionTitle>
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-4">
+        {[
+          { label: zh ? "净资产" : "NAV", value: `¥${formatNumber(risk.nav, 0)}` },
+          { label: zh ? "总负债" : "Total Debt", value: `¥${formatNumber(risk.debt || 0, 0)}`,
+            sub: zh ? `场外 ${formatNumber(risk.off_exchange || 0, 0)} + 融资 ${formatNumber((risk.debt || 0) - (risk.off_exchange || 0), 0)}` : `off-exch + margin` },
+          { label: zh ? "负债/净资产" : "Debt / NAV", value: risk.debt_to_nav != null ? `${(risk.debt_to_nav * 100).toFixed(1)}%` : "—" },
+          { label: zh ? "总资产/净资产" : "Gross / NAV", value: risk.gross_to_nav != null ? `${risk.gross_to_nav.toFixed(2)}×` : "—",
+            sub: zh ? "杠杆倍数" : "gross leverage" },
+          { label: zh ? "最差担保比例" : "Worst Coverage", value: risk.worst_coverage != null ? `${(risk.worst_coverage * 100).toFixed(0)}%` : "—",
+            color: covColor(risk.worst_coverage), sub: finBrokers.length ? finBrokers.sort((a, b) => (a.coverage ?? 99) - (b.coverage ?? 99))[0].broker : undefined },
+          { label: zh ? "外币净敞口" : "FX Net Exposure",
+            value: `${((risk.currency_exposure || []).filter((c) => c.ccy !== "CNY").reduce((s, c) => s + (c.pct_nav || 0), 0)).toFixed(0)}%`,
+            sub: (risk.currency_exposure || []).filter((c) => c.ccy !== "CNY").map((c) => `${c.ccy} ${c.pct_nav}%`).join(" · ") },
+        ].map((m) => (
+          <div key={m.label} className="p-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800">
+            <div className="text-[9px] text-gray-400 uppercase">{m.label}</div>
+            <div className={`text-base font-mono font-semibold ${m.color || ""}`}>{m.value}</div>
+            {m.sub && <div className="text-[10px] text-gray-400 font-mono truncate">{m.sub}</div>}
+          </div>
+        ))}
+      </div>
+
+      {/* Per-broker margin detail */}
+      {finBrokers.length > 0 && (
+        <div className="mb-4 overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-[10px] text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">
+                <th className="text-left py-1.5">{zh ? "融资账户" : "Account"}</th>
+                <th className="text-right">{zh ? "持仓市值" : "MV"}</th>
+                <th className="text-right">{zh ? "正现金" : "Cash+"}</th>
+                <th className="text-right">{zh ? "融资" : "Financing"}</th>
+                <th className="text-right">{zh ? "担保比例" : "Coverage"}</th>
+                <th className="text-right">{zh ? "距150%" : "To 150%"}</th>
+                <th className="text-right">{zh ? "距130%" : "To 130%"}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {finBrokers.map((b) => (
+                <tr key={b.broker} className="border-b border-gray-100 dark:border-gray-800/50 font-mono">
+                  <td className="py-1.5 font-sans">{b.broker}</td>
+                  <td className="text-right">¥{formatNumber(b.mv, 0)}</td>
+                  <td className="text-right">¥{formatNumber(b.pos_cash, 0)}</td>
+                  <td className="text-right">¥{formatNumber(b.financing, 0)}</td>
+                  <td className={`text-right font-semibold ${covColor(b.coverage)}`}>{b.coverage != null ? `${(b.coverage * 100).toFixed(0)}%` : "—"}</td>
+                  <td className="text-right">{b.drop_to_150 != null ? `${(b.drop_to_150 * 100).toFixed(0)}%` : "—"}</td>
+                  <td className="text-right">{b.drop_to_130 != null ? `${(b.drop_to_130 * 100).toFixed(0)}%` : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Stress grid */}
+      <div className="mb-6 overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-[10px] text-gray-400 uppercase border-b border-gray-200 dark:border-gray-800">
+              <th className="text-left py-1.5">{zh ? "股票 \\ 汇率" : "Equity \\ FX"}</th>
+              {fxCols.map((f) => (
+                <th key={f} className="text-right">{zh ? "外币" : "FX"} {f > 0 ? "+" : ""}{(f * 100).toFixed(0)}%</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {eqRows.map((e) => (
+              <tr key={e} className="border-b border-gray-100 dark:border-gray-800/50">
+                <td className="py-1.5 font-mono">{zh ? "股票" : "Eq"} {e === 0 ? "0" : `${(e * 100).toFixed(0)}`}%</td>
+                {fxCols.map((f) => {
+                  const g = cell(e, f);
+                  return (
+                    <td key={f} className={`text-right font-mono px-1 py-1 align-top ${covBg(g?.worst_coverage)}`}>
+                      {g ? (
+                        <>
+                          <div className={pnlColor(g.nav_pct || 0)}>{(g.nav_pct || 0) > 0 ? "+" : ""}{g.nav_pct}%</div>
+                          {Object.entries(g.coverages || {}).map(([b, c]) => (
+                            <div key={b} className={`text-[10px] ${covColor(c)}`}>
+                              {b.replace(/U\d+$/, "")} {(c * 100).toFixed(0)}%
+                            </div>
+                          ))}
+                        </>
+                      ) : "—"}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="text-[10px] text-gray-400 mt-1">
+          {zh ? "单元格：净资产变动% + 各融资账户在该情景下的担保比例（黄底 = 有账户 <150%，红底 = 有账户 <130%）" : "Cell: NAV change % + each financing account's coverage under that scenario (amber bg = any account <150%, red = <130%)"}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function SustainabilitySection({ locale }: { locale: string }) {
+  const zh = locale === "zh";
+  const T0 = "2026-07-04"; // flow discipline start — outflows recorded from here
+  const [flows, setFlows] = useState<DepositRecord[]>([]);
+  const [snaps, setSnaps] = useState<Snapshot[]>([]);
+  const [navHist, setNavHist] = useState<NavHistoryPoint[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    Promise.all([getAllFlows(500), getSnapshots(365), getNavHistory()])
+      .then(([f, s, n]) => { setFlows(f); setSnaps(s); setNavHist(n); })
+      .finally(() => setLoaded(true));
+  }, []);
+
+  // Monthly Capital deltas — under 方案A every consumption withdrawal cuts
+  // Capital directly, so historical Capital declines mirror spending even
+  // before T0's explicit flow records. Positive deltas = injections; only
+  // negative ones estimate consumption.
+  const capMonthly = useMemo(() => {
+    const eom: Record<string, number> = {};
+    const put = (date: string, cap: number | null | undefined) => {
+      if (cap == null || cap <= 0) return;
+      const m = date.slice(0, 7);
+      eom[m] = cap; // rows arrive date-asc per source; last write wins as EOM
+    };
+    [...navHist].sort((a, b) => a.date.localeCompare(b.date))
+      .forEach((n) => put(n.date, n.capital_invested));
+    [...snaps].sort((a, b) => a.date.localeCompare(b.date))
+      .forEach((s) => put(s.date, s.capital));
+    const months = Object.keys(eom).sort();
+    const deltas: { month: string; delta: number }[] = [];
+    for (let i = 1; i < months.length; i++) {
+      deltas.push({ month: months[i], delta: eom[months[i]] - eom[months[i - 1]] });
+    }
+    const recent = deltas.slice(-12);
+    const draws = recent.filter((d) => d.delta < 0).map((d) => -d.delta);
+    const avgDraw = draws.length ? draws.reduce((s, v) => s + v, 0) / draws.length : null;
+    return { recent, avgDraw };
+  }, [navHist, snaps]);
+
+  // Observed consumption: recorded outflows since T0, grouped by month
+  const outByMonth = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const f of flows) {
+      const d = f.deposit_date || f.created_at?.slice(0, 10) || "";
+      if (d >= T0 && f.amount_cny < 0) m[d.slice(0, 7)] = (m[d.slice(0, 7)] || 0) + (-f.amount_cny);
+    }
+    return m;
+  }, [flows]);
+  const observedMonthly = useMemo(() => {
+    const total = Object.values(outByMonth).reduce((s, v) => s + v, 0);
+    if (total <= 0) return null;
+    const days = Math.max(15, (Date.now() - new Date(T0).getTime()) / 86400000);
+    return total / (days / 30.44);
+  }, [outByMonth]);
+
+  // Realized TWR stats (same splice as risk metrics) as reference
+  const realized = useMemo(() => {
+    const pts = [...snaps].sort((a, b) => a.date.localeCompare(b.date))
+      .filter((s) => s.net_assets != null && s.net_assets > 0
+        && ((s.unit_nav != null && s.unit_nav > 0) || (s.capital != null && s.capital > 0)))
+      .map((s) => ({
+        date: s.date,
+        val: s.unit_nav != null && s.unit_nav > 0 ? s.unit_nav : (s.net_assets as number) / (s.capital as number),
+      }));
+    if (pts.length < 10) return null;
+    const rets = pts.slice(1).map((p, i) => p.val / pts[i].val - 1);
+    const avg = rets.reduce((s, r) => s + r, 0) / rets.length;
+    const varc = rets.reduce((s, r) => s + (r - avg) ** 2, 0) / (rets.length - 1);
+    // Short windows are shown as-is (cumulative YTD) — annualizing months
+    // of equity returns just extrapolates the streak, which is meaningless
+    // for anything that isn't a yield. Only the multi-year span gets
+    // annualized (CAGR). YTD baseline = last point of the previous year
+    // when available (resets every Jan 1), else the year's first point.
+    const curYear = pts[pts.length - 1].date.slice(0, 4);
+    let baseIdx = 0;
+    for (let i = 0; i < pts.length && pts[i].date.slice(0, 4) < curYear; i++) baseIdx = i;
+    const cumRecent = (pts[pts.length - 1].val / pts[baseIdx].val - 1) * 100;
+    const cumStart = pts[baseIdx].date;
+    let longRun: number | null = null;
+    const hist = [...navHist].sort((a, b) => a.date.localeCompare(b.date))
+      .filter((n) => n.capital_invested > 0 && n.net_asset_value > 0);
+    if (hist.length > 0) {
+      const r0 = hist[0].net_asset_value / hist[0].capital_invested;
+      const last = pts[pts.length - 1];
+      const days = (new Date(last.date).getTime() - new Date(hist[0].date).getTime()) / 86400000;
+      if (days > 365 && r0 > 0) {
+        longRun = (Math.pow(last.val / r0, 365 / days) - 1) * 100;
+      }
+    }
+    return {
+      cumRecent, cumStart, vol: Math.sqrt(varc) * Math.sqrt(252) * 100,
+      longRun, longRunStart: hist[0]?.date,
+    };
+  }, [snaps, navHist]);
+  const nav = useMemo(() => {
+    const s = [...snaps].sort((a, b) => a.date.localeCompare(b.date));
+    for (let i = s.length - 1; i >= 0; i--) if (s[i].net_assets) return s[i].net_assets as number;
+    return null;
+  }, [snaps]);
+
+  // Assumptions (all hand-editable — this is a what-if calculator).
+  // Spend splits in two: base living costs (grow with inflation, forever)
+  // vs the mortgage payment — fixed nominal and gone after its term, so
+  // inflating it or extending it past payoff would distort everything.
+  const [navStr, setNavStr] = useState("");
+  const [spendStr, setSpendStr] = useState("");   // base, ex-mortgage
+  const [mortStr, setMortStr] = useState("9000");
+  const [mortYearsStr, setMortYearsStr] = useState("9");
+  const [retStr, setRetStr] = useState("8");
+  const [volStr, setVolStr] = useState("25");
+  const [inflStr, setInflStr] = useState("3");
+  useEffect(() => {
+    if (nav && !navStr) setNavStr(String(Math.round(nav)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nav]);
+  const navVal = parseFloat(navStr) || 0;
+  const spend = parseFloat(spendStr) || 0;        // base living costs
+  const mort = parseFloat(mortStr) || 0;
+  const mortMonths = Math.max(0, Math.round((parseFloat(mortYearsStr) || 0) * 12));
+  useEffect(() => {
+    if (!spendStr) {
+      const est = observedMonthly || capMonthly.avgDraw;
+      if (est) setSpendStr(String(Math.max(0, Math.round((est - mort) / 100) * 100)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [observedMonthly, capMonthly.avgDraw]);
+  const ret = parseFloat(retStr) || 0;
+  const vol = parseFloat(volStr) || 0;
+  const infl = parseFloat(inflStr) || 0;
+  const totalSpend = spend + mort;
+
+  const mc = useMemo(() => {
+    const nav = navVal;
+    if (!nav || !(totalSpend > 0)) return null;
+    const mu = ret / 100, sig = vol / 100, inf = infl / 100;
+    const PATHS = 500, MONTHS = 480; // 40 years
+    let surv30 = 0;
+    const dep: number[] = [];
+    const navAtPayoff: number[] = []; // per-path NAV when the mortgage ends
+    // deterministic-ish seed not needed; Box-Muller on Math.random
+    for (let p = 0; p < PATHS; p++) {
+      let v = nav, sp = spend, dead = MONTHS + 1;
+      for (let m = 1; m <= MONTHS; m++) {
+        const u1 = Math.random() || 1e-9, u2 = Math.random();
+        const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+        v = v * Math.exp((mu - sig * sig / 2) / 12 + sig * Math.sqrt(1 / 12) * z)
+          - sp - (m <= mortMonths ? mort : 0);
+        sp *= Math.pow(1 + inf, 1 / 12); // base inflates; mortgage stays fixed
+        if (m === mortMonths) navAtPayoff.push(Math.max(0, v));
+        if (v <= 0) { dead = m; break; }
+      }
+      if (dead > 360) surv30++;
+      if (dead < mortMonths) navAtPayoff.push(0); // depleted before payoff
+      dep.push(dead);
+    }
+    dep.sort((a, b) => a - b);
+    navAtPayoff.sort((a, b) => a - b);
+    const med = dep[Math.floor(PATHS / 2)];
+    const p10 = dep[Math.floor(PATHS * 0.1)];
+    return {
+      surv30: (surv30 / PATHS) * 100,
+      medYears: med > MONTHS ? null : med / 12,
+      p10Years: p10 > MONTHS ? null : p10 / 12,
+      medNavAtPayoff: mortMonths > 0 && navAtPayoff.length
+        ? navAtPayoff[Math.floor(navAtPayoff.length / 2)] : null,
+    };
+  }, [navVal, spend, mort, mortMonths, ret, vol, infl]);
+
+  const wdRate = navVal && totalSpend > 0 ? (totalSpend * 12) / navVal * 100 : null;
+  // Post-mortgage rate at the payoff point: inflated base spend over the
+  // simulated MEDIAN NAV at that time — dividing by today's NAV would
+  // pretend nine years of withdrawals never happened
+  const baseAtPayoff = spend * Math.pow(1 + infl / 100, mortMonths / 12);
+  const wdRateAfter = mc?.medNavAtPayoff != null && mc.medNavAtPayoff > 0 && spend > 0
+    ? (baseAtPayoff * 12) / mc.medNavAtPayoff * 100 : null;
+  // Static runway honours the mortgage step-down (zero return, zero inflation)
+  const staticRunway = (() => {
+    if (!navVal || !(totalSpend > 0)) return null;
+    let v = navVal, m = 0;
+    while (v > 0 && m < 1200) {
+      m += 1;
+      v -= spend + (m <= mortMonths ? mort : 0);
+    }
+    return m >= 1200 ? null : m / 12;
+  })();
+
+  if (!loaded) return <div className="text-center py-8 text-gray-500 text-sm">{zh ? "加载中..." : "Loading..."}</div>;
+
+  const note = zh
+    ? [
+      `* 支取率经验参考：≤4% 长期稳健（Trinity 研究），4–6% 需盯紧收益，>6% 在消耗本金。`,
+      `* 月支出默认取 T0(${T0}) 起已记录出金的月均值——出金纪律执行越久越准；也可手动改。`,
+      `* 蒙特卡洛：500 条路径 × 40 年，月度对数正态收益，支出随通胀增长。假设可调，结果是量级参考不是预言。`,
+      realized ? `* 实测参考：${realized.longRun != null ? `长期年化 ${realized.longRun.toFixed(1)}%（净值自 ${realized.longRunStart || ""} 复合年化）；` : ""}今年以来累计 ${realized.cumRecent >= 0 ? "+" : ""}${realized.cumRecent.toFixed(1)}%（基准 ${realized.cumStart || ""}，每年1月1日重置）——短窗口刻意不年化：把几个月股票收益年化等于假设势头延续一年，只有利率型收入才能这么算。波动实测 ${realized.vol.toFixed(1)}%（日频）。长期假设建议以长期年化打折使用。` : "",
+    ].filter(Boolean).join("\n")
+    : "* ≤4% withdrawal = sustainable (Trinity study); >6% is eating principal.\n* Monthly spend defaults to recorded outflows since T0; editable.\n* Monte Carlo: 500 paths × 40y, lognormal monthly returns, inflation-growing spend.";
+
+  return (
+    <>
+      <SectionTitle note={note}>{zh ? "支取可持续性" : "Withdrawal Sustainability"}</SectionTitle>
+      <div className="text-[10px] text-gray-400 mb-2 leading-relaxed">
+        {zh
+          ? "这是一个 what-if 测算器：下面五个假设都可以手动改，改完结果实时重算。"
+          : "A what-if calculator: all five assumptions below are editable; results recompute live."}
+      </div>
+      {/* Assumptions */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+        {[
+          { label: zh ? "净资产 ¥" : "NAV ¥", v: navStr, set: setNavStr,
+            sub: nav ? (zh ? `当前实际 ¥${formatNumber(nav, 0)}` : `actual ¥${formatNumber(nav, 0)}`) : undefined },
+          { label: zh ? "基础月支出 ¥（不含房贷）" : "Base monthly spend ¥ (ex-mortgage)", v: spendStr, set: setSpendStr, spendFill: true,
+            placeholder: zh ? "手动输入，如 10000" : "e.g. 10000",
+            sub: zh ? "随通胀逐年增长；点下方按钮自动减房贷填入" : "grows with inflation; buttons auto-subtract mortgage" },
+          { label: zh ? "房贷月供 ¥" : "Mortgage ¥/mo", v: mortStr, set: setMortStr,
+            sub: zh ? "固定名义金额，不随通胀" : "fixed nominal, no inflation" },
+          { label: zh ? "房贷剩余年限" : "Mortgage years left", v: mortYearsStr, set: setMortYearsStr,
+            sub: zh ? `到期后月支出降为基础支出` : "spend steps down at payoff" },
+          { label: zh ? "预期年化收益 %" : "Expected return %", v: retStr, set: setRetStr,
+            sub: realized ? (zh
+              ? `实测：${realized.longRun != null ? `长期年化 ${realized.longRun.toFixed(1)}%（自${realized.longRunStart?.slice(0, 7) || ""}）· ` : ""}今年以来累计 ${realized.cumRecent >= 0 ? "+" : ""}${realized.cumRecent.toFixed(1)}%（自${realized.cumStart?.slice(5) || ""}，未年化）`
+              : `realized: ${realized.longRun != null ? `long-run CAGR ${realized.longRun.toFixed(1)}% · ` : ""}YTD +${realized.cumRecent.toFixed(1)}% since ${realized.cumStart} (not annualized)`) : undefined },
+          { label: zh ? "年化波动 %" : "Volatility %", v: volStr, set: setVolStr,
+            sub: realized ? (zh ? `实测 ${realized.vol.toFixed(1)}%` : `realized ${realized.vol.toFixed(1)}%`) : undefined },
+          { label: zh ? "通胀 %" : "Inflation %", v: inflStr, set: setInflStr,
+            sub: zh ? "支出逐年按此增长" : "spend grows at this rate" },
+        ].map((f) => (
+          <div key={f.label}>
+            <div className="text-[10px] text-gray-500 mb-1">{f.label}</div>
+            <input className="w-full px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 font-mono"
+              inputMode="decimal" value={f.v} placeholder={f.placeholder} onChange={(e) => f.set(e.target.value)} />
+            {f.sub && <div className="text-[9px] text-gray-400 mt-0.5">{f.sub}</div>}
+            {f.spendFill && (
+              <div className="flex flex-wrap gap-1 mt-0.5">
+                {observedMonthly && (
+                  <button onClick={() => setSpendStr(String(Math.max(0, Math.round((observedMonthly - mort) / 100) * 100)))}
+                    className="text-[9px] px-1 py-0.5 rounded border border-gray-300 dark:border-gray-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20">
+                    {zh ? `出金实测 ¥${formatNumber(observedMonthly, 0)}` : `flows ¥${formatNumber(observedMonthly, 0)}`}
+                  </button>
+                )}
+                {capMonthly.avgDraw && (
+                  <button onClick={() => setSpendStr(String(Math.max(0, Math.round((capMonthly.avgDraw! - mort) / 100) * 100)))}
+                    className="text-[9px] px-1 py-0.5 rounded border border-gray-300 dark:border-gray-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20">
+                    {zh ? `Capital估算 ¥${formatNumber(capMonthly.avgDraw, 0)}` : `capital est. ¥${formatNumber(capMonthly.avgDraw, 0)}`}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      {/* Results */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+        {[
+          (() => {
+            // At payoff the "% rate" stops being readable once the pot is
+            // nearly gone (100%+ = under a year of spend left) — switch to
+            // "years of spend remaining", which is what it really means
+            const medNav = mc?.medNavAtPayoff;
+            const yearsLeft = medNav != null && medNav > 0 && baseAtPayoff > 0
+              ? medNav / (baseAtPayoff * 12) : null;
+            const afterTxt = medNav === 0 ? (zh ? "已耗尽" : "depleted")
+              : yearsLeft != null && yearsLeft < 3
+                ? (zh ? `仅剩≈${yearsLeft.toFixed(1)}年支出` : `≈${yearsLeft.toFixed(1)}y of spend left`)
+                : wdRateAfter != null ? `${wdRateAfter.toFixed(1)}%` : "—";
+            return {
+              label: zh ? "年支取率（当前 → 房贷结清时）" : "Withdrawal Rate (now → at payoff)",
+              value: wdRate != null ? `${wdRate.toFixed(1)}% → ${afterTxt}` : "—",
+              color: wdRate == null ? "" : wdRate <= 4 ? "text-green-600 dark:text-green-400" : wdRate <= 6 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400",
+              sub: medNav != null && medNav > 0
+                ? (zh
+                  ? `结清时中位净资产 ¥${formatNumber(medNav, 0)}${wdRateAfter != null ? `，支取率 ${wdRateAfter.toFixed(1)}%` : ""}，基础支出含通胀 ¥${formatNumber(baseAtPayoff, 0)}/月`
+                  : `median NAV at payoff ¥${formatNumber(medNav, 0)}${wdRateAfter != null ? `, rate ${wdRateAfter.toFixed(1)}%` : ""}`)
+                : (zh ? `含房贷 ¥${formatNumber(totalSpend, 0)}/月` : `incl. mortgage ¥${formatNumber(totalSpend, 0)}/mo`),
+            };
+          })(),
+          { label: zh ? "静态跑道" : "Static Runway",
+            value: staticRunway != null ? (zh ? `${staticRunway.toFixed(1)} 年` : `${staticRunway.toFixed(1)}y`) : "—",
+            color: "",
+            sub: zh ? "假设组合零收益还能花几年" : "years of spend at zero return" },
+          { label: zh ? "30年存活率" : "Survives 30y",
+            value: mc ? `${mc.surv30.toFixed(0)}%` : "—",
+            color: !mc ? "" : mc.surv30 >= 90 ? "text-green-600 dark:text-green-400" : mc.surv30 >= 70 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400",
+            sub: zh ? "模拟中 30 年后没花光的概率" : "P(not depleted after 30y)" },
+          { label: zh ? "耗尽年限（中位 / 悲观）" : "Depletion (median / p10)",
+            value: mc ? `${mc.medYears ? mc.medYears.toFixed(0) + (zh ? "年" : "y") : (zh ? ">40年" : ">40y")} / ${mc.p10Years ? mc.p10Years.toFixed(0) + (zh ? "年" : "y") : (zh ? ">40年" : ">40y")}` : "—",
+            color: "",
+            sub: zh ? "一般情况 / 最差10%的情况" : "typical / worst-10% case" },
+        ].map((m) => (
+          <div key={m.label} className="p-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800">
+            <div className="text-[9px] text-gray-400 uppercase">{m.label}</div>
+            <div className={`text-base font-mono font-semibold ${m.color || ""}`}>{m.value}</div>
+            {m.sub && <div className="text-[10px] text-gray-400">{m.sub}</div>}
+          </div>
+        ))}
+      </div>
+      {/* Plain-language explanations */}
+      <div className="mb-4 p-3 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 text-[11px] text-gray-600 dark:text-gray-400 leading-relaxed space-y-1">
+        <div className="text-[10px] text-gray-400 uppercase mb-1">{zh ? "指标说明" : "How to read these"}</div>
+        {zh ? (
+          <>
+            <div><b>年支取率</b>：每年花掉组合的百分之几。经验法则（Trinity 研究）：≤4% 时组合大概率永续；4–6% 要靠收益撑着；&gt;6% 是在消耗本金。箭头后是<b>房贷结清那一刻</b>的状态——分母用模拟路径在那个时点的<b>中位净资产</b>（不是今天的），分子用通胀调整后的基础支出。当结清时余额不足 3 年支出时，百分比失去意义（100% = 只够一年），直接改显"仅剩≈N年支出"。</div>
+            <div><b>房贷的建模方式</b>：月供是固定名义金额（不随通胀涨），且只扣到剩余年限结束——之后所有路径的月支出自动降为基础支出。房贷对应的房产不在组合净资产内，所以只在现金流层面建模，不进资产负债。</div>
+            <div><b>静态跑道</b>：最保守的底线——假设从今天起组合收益为零，现有净资产 ÷ 年支出 = 还能撑几年。真实结果几乎必然好于它，它回答的是"最差也有多少年"。</div>
+            <div><b>30年存活率</b>：用你设定的收益/波动假设，随机模拟 500 种可能的未来（每月收益有好有坏），看其中多少比例到 30 年后钱还没花光。≥90% 绿色 = 稳；&lt;70% 红色 = 危险。</div>
+            <div><b>耗尽年限</b>：这 500 种未来按耗尽时间排序——中位数 = 一半情况比它好一半比它差；悲观(P10) = 运气最差的 10% 情况（比如开局就遇到大熊市）也能撑这么久。&gt;40年 表示模拟期内没耗尽。</div>
+            <div><b>为什么波动率重要</b>：同样 8% 年化，波动越大越危险——下跌年份里你照常支取，卖在低点的份额永远回不来（序列风险）。这就是模拟比"平均收益算术题"悲观的原因。</div>
+          </>
+        ) : (
+          <>
+            <div><b>Withdrawal rate</b>: annual spend as % of NAV. Rule of thumb (Trinity study): ≤4% is likely perpetual; &gt;6% eats principal.</div>
+            <div><b>Static runway</b>: worst-case floor — years of spending if returns were zero from today.</div>
+            <div><b>Survives 30y</b>: of 500 simulated futures under your assumptions, the share still solvent after 30 years.</div>
+            <div><b>Depletion</b>: median = typical case; p10 = the unlucky-decile case (e.g. a bear market up front). &gt;40y = never depleted in-simulation.</div>
+            <div><b>Why volatility matters</b>: withdrawing through drawdowns sells at lows permanently (sequence risk) — that&apos;s why simulation is gloomier than average-return arithmetic.</div>
+          </>
+        )}
+      </div>
+      {/* Historical capital trend (consumption mirror) */}
+      {capMonthly.recent.length > 0 && (
+        <div className="mb-3 text-xs">
+          <div className="text-[10px] text-gray-400 uppercase mb-1">
+            {zh ? "Capital 月度变化（近12个月）——负值≈当月净支取，是 T0 前消费的镜像" : "Monthly capital deltas (last 12mo) — negatives ≈ net withdrawals"}
+          </div>
+          <div className="flex flex-wrap gap-2 font-mono">
+            {capMonthly.recent.map((d) => (
+              <span key={d.month} className={`px-2 py-1 rounded border ${d.delta < 0
+                ? "bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-900 text-red-700 dark:text-red-400"
+                : "bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-800 text-gray-500"}`}>
+                {d.month}: {d.delta >= 0 ? "+" : ""}{formatNumber(d.delta, 0)}
+              </span>
+            ))}
+          </div>
+          {capMonthly.avgDraw && (
+            <div className="text-[10px] text-gray-400 mt-1">
+              {zh ? `支取月份的月均支取 ≈ ¥${formatNumber(capMonthly.avgDraw, 0)}（可点上方按钮填入月支出）` : `avg monthly draw ≈ ¥${formatNumber(capMonthly.avgDraw, 0)}`}
+            </div>
+          )}
+        </div>
+      )}
+      {/* Recent recorded outflows */}
+      {Object.keys(outByMonth).length > 0 && (
+        <div className="mb-6 text-xs">
+          <div className="text-[10px] text-gray-400 uppercase mb-1">{zh ? "已记录出金（月度，T0 起）" : "Recorded outflows (monthly, since T0)"}</div>
+          <div className="flex flex-wrap gap-2 font-mono">
+            {Object.entries(outByMonth).sort().map(([m, v]) => (
+              <span key={m} className="px-2 py-1 rounded bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800">
+                {m}: ¥{formatNumber(v, 0)}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ══════════════════════════════════════════
 // Performance & Risk Analytics
 // ══════════════════════════════════════════
 
@@ -835,57 +1414,94 @@ function PerformanceSection({ locale, hideChart, hideRisk }: { locale: string; h
   })();
 
   const snapshotsSorted = [...snapshots].sort((a, b) => a.date.localeCompare(b.date));
-  const navValues = snapshotsSorted.map((s) => s.net_assets).filter((v): v is number => v != null && v > 0);
 
-  // Compute capital values from snapshots
-  const capitalValues = snapshotsSorted.map((s) => s.capital).filter((v): v is number => v != null);
+  // Flow-adjusted return index: TWR unit NAV after T0, NAV/Capital ratio
+  // before — the same splice as MonthlyHeatmap. Raw net_assets would count
+  // every living-expense withdrawal as a loss day, inflating vol/drawdown
+  // and depressing Sharpe.
+  const riskPts = snapshotsSorted
+    .filter((s) => s.net_assets != null && s.net_assets > 0
+      && ((s.unit_nav != null && s.unit_nav > 0) || (s.capital != null && s.capital > 0)))
+    .map((s) => ({
+      date: s.date,
+      val: s.unit_nav != null && s.unit_nav > 0 ? s.unit_nav : (s.net_assets as number) / (s.capital as number),
+      na: s.net_assets as number,
+    }));
 
-  // Risk metrics
-  let maxDrawdown = 0, peak = 0, ddStart = "", ddEnd = "", ddPeakValue = 0;
-  const dailyReturns: number[] = [];
-  for (let i = 0; i < navValues.length; i++) {
-    if (navValues[i] > peak) { peak = navValues[i]; ddStart = snapshotsSorted[i]?.date || ""; }
-    const dd = (peak - navValues[i]) / peak;
+  // Full-history flow-adjusted index: nav_history's NAV/Capital ratio
+  // (weekly-ish, from 2023-12) chains seamlessly into the snapshot-era
+  // series — same construction the TWR seed used. Long-horizon stats
+  // (CAGR, max drawdown, Calmar) come from this; higher-frequency stats
+  // (vol, Sharpe, win rate) stay on the daily-snapshot era only, since
+  // mixing weekly and daily intervals would corrupt them.
+  const firstSnapDate = riskPts[0]?.date || "9999";
+  const fullPts = [
+    ...[...navHistory].sort((a, b) => a.date.localeCompare(b.date))
+      .filter((n) => n.capital_invested > 0 && n.net_asset_value > 0 && n.date < firstSnapDate)
+      .map((n) => ({ date: n.date, val: n.net_asset_value / n.capital_invested, na: n.net_asset_value })),
+    ...riskPts,
+  ];
+
+  let longCagr: number | null = null, cumRet: number | null = null;
+  if (fullPts.length > 1) {
+    const a = fullPts[0], b = fullPts[fullPts.length - 1];
+    const days = (new Date(b.date).getTime() - new Date(a.date).getTime()) / 86400000;
+    cumRet = (b.val / a.val - 1) * 100;
+    if (days > 90) longCagr = (Math.pow(b.val / a.val, 365 / days) - 1) * 100;
+  }
+
+  // Max drawdown over the full index; ¥ loss scales by NAV at the peak
+  let maxDrawdown = 0, peak = 0, ddStart = "", ddEnd = "", peakNa = 0, ddPeakNa = 0;
+  let ddCurStart = "";
+  for (const p of fullPts) {
+    if (p.val > peak) { peak = p.val; ddCurStart = p.date; peakNa = p.na; }
+    const dd = (peak - p.val) / peak;
     if (dd > maxDrawdown) {
       maxDrawdown = dd;
-      ddEnd = snapshotsSorted[i]?.date || "";
-      ddPeakValue = peak;
+      ddStart = ddCurStart;
+      ddEnd = p.date;
+      ddPeakNa = peakNa;
     }
-    if (i > 0 && navValues[i - 1] > 0) dailyReturns.push((navValues[i] - navValues[i - 1]) / navValues[i - 1]);
   }
-  const pnlLost = maxDrawdown * ddPeakValue;
+  const pnlLost = maxDrawdown * ddPeakNa;
+
+  // Daily-era stats (higher-moment metrics need uniform intervals)
+  const dailyReturns: number[] = [];
+  for (let i = 1; i < riskPts.length; i++) {
+    if (riskPts[i - 1].val > 0) dailyReturns.push(riskPts[i].val / riskPts[i - 1].val - 1);
+  }
   const avgReturn = dailyReturns.length > 0 ? dailyReturns.reduce((s, r) => s + r, 0) / dailyReturns.length : 0;
   const variance = dailyReturns.length > 1 ? dailyReturns.reduce((s, r) => s + (r - avgReturn) ** 2, 0) / (dailyReturns.length - 1) : 0;
   const dailyVol = Math.sqrt(variance);
   const annualVol = dailyVol * Math.sqrt(252);
-  const annualReturn = avgReturn * 252;
+  const annualReturn = avgReturn * 252; // arithmetic — feeds Sharpe only
   const riskFreeRate = 0.015; // 1.5% CNY
   const sharpe = annualVol > 0 ? (annualReturn - riskFreeRate) / annualVol : 0;
-  const calmar = maxDrawdown > 0 ? annualReturn / maxDrawdown : 0;
+  const calmar = maxDrawdown > 0 && longCagr != null ? (longCagr / 100) / maxDrawdown : 0;
   const winDays = dailyReturns.filter((r) => r > 0).length;
   const lossDays = dailyReturns.filter((r) => r < 0).length;
   const winRate = dailyReturns.length > 0 ? (winDays / dailyReturns.length) * 100 : 0;
 
-  // Time range
-  const firstDate = snapshotsSorted[0]?.date || "";
-  const lastDate = snapshotsSorted[snapshotsSorted.length - 1]?.date || "";
-  const daySpan = firstDate && lastDate ? Math.round((new Date(lastDate).getTime() - new Date(firstDate).getTime()) / 86400000) : 0;
-  const yearsSpan = daySpan / 365;
-  const timeLabel = yearsSpan >= 1 ? `${yearsSpan.toFixed(1)}yr` : `${Math.round(yearsSpan * 12)}mo`;
+  // Time ranges for labelling
+  const fullStart = fullPts[0]?.date || "";
+  const lastDate = fullPts[fullPts.length - 1]?.date || "";
+  const dailyStart = riskPts[0]?.date || "";
+  const fullYears = fullStart && lastDate
+    ? (new Date(lastDate).getTime() - new Date(fullStart).getTime()) / 86400000 / 365 : 0;
 
   const riskNote = [
-    `* ${snapshotsSorted.length}条快照 (${firstDate} – ${lastDate})`,
-    `* 收益率已剔除出入金影响: return = ΔPnL / (Capital_t + PnL_prev)`,
-    `* Drawdown: 累计收益指数相对峰值的跌幅。最大回撤 ${(maxDrawdown * 100).toFixed(2)}%，期间亏损 ¥${formatNumber(Math.abs(pnlLost), 0)}`,
-    `* Sharpe >1 = 每承担1单位风险获得>1单位超额收益 (rf=1.5% CNY)`,
-    `* Calmar = 年化收益 / 最大回撤。衡量单位最大亏损下的收益能力，>3 为优秀`,
+    `* 全部收益基于份额净值（TWR，已剔除出入金影响）：${fullStart} 前段来自周频 NAV/Capital 净值，${dailyStart} 起为每日快照`,
+    `* 年化收益/最大回撤/卡玛用全历史（${fullYears.toFixed(1)}年）复合口径；波动率/夏普/胜率只用日频段（${dailyStart} 起），周频数据混入会失真`,
+    `* 最大回撤 ${(maxDrawdown * 100).toFixed(2)}%（${ddStart} → ${ddEnd}），按峰值净资产折算亏损 ¥${formatNumber(Math.abs(pnlLost), 0)}`,
+    `* Sharpe >1 = 每承担1单位波动获得>1单位超额收益（rf=1.5% CNY，日频算术年化口径）`,
+    `* Calmar = 长期复合年化 ÷ 最大回撤，衡量单位最大亏损换来的收益，>1 良好 >3 优秀`,
   ].join("\n");
 
   return (
     <>
       {/* Performance Chart (NAV + Capital) */}
       {!hideChart && navSorted.length > 2 && <PerformanceChart navHistory={navSorted} snapshots={snapshotsSorted} locale={locale} />}
-      {!hideChart && <MonthlyHeatmap snapshots={snapshotsSorted} locale={locale} />}
+      {!hideChart && <MonthlyHeatmap snapshots={snapshotsSorted} navHistory={navHistory} locale={locale} />}
 
       {/* Risk Analytics */}
       {!hideRisk && (<>
@@ -894,20 +1510,24 @@ function PerformanceSection({ locale, hideChart, hideRisk }: { locale: string; h
       </SectionTitle>
       <div className="grid grid-cols-3 md:grid-cols-7 gap-3 mb-6">
         {[
-          { label: locale === "zh" ? "年化收益" : "Ann. Return", value: `${(annualReturn * 100).toFixed(2)}%`,
-            sub: `${firstDate.slice(0, 10)}–${lastDate.slice(0, 10)} (${timeLabel})`, color: pnlColor(annualReturn) },
+          { label: locale === "zh" ? "年化收益" : "Ann. Return (CAGR)",
+            value: longCagr != null ? `${longCagr.toFixed(1)}%` : "—",
+            sub: cumRet != null ? `${fullStart} 起 · ${locale === "zh" ? "累计" : "cum."} ${cumRet >= 0 ? "+" : ""}${cumRet.toFixed(0)}%` : undefined,
+            color: pnlColor(longCagr || 0) },
           { label: locale === "zh" ? "年化波动率" : "Ann. Volatility", value: `${(annualVol * 100).toFixed(2)}%`,
-            sub: `daily σ=${(dailyVol * 100).toFixed(3)}%` },
+            sub: `${locale === "zh" ? "日频段" : "daily era"} σ=${(dailyVol * 100).toFixed(2)}%/d` },
           { label: locale === "zh" ? "最大回撤" : "Max Drawdown", value: `${(maxDrawdown * 100).toFixed(2)}%`,
-            sub: ddStart && ddEnd ? `¥${formatNumber(Math.abs(pnlLost), 0)} · ${ddStart.slice(5)}→${ddEnd.slice(5)}` : undefined,
+            sub: ddStart && ddEnd ? `¥${formatNumber(Math.abs(pnlLost), 0)} · ${ddStart.slice(2, 7)}→${ddEnd.slice(2, 7)}` : undefined,
             color: "text-red-600 dark:text-red-400" },
           { label: locale === "zh" ? "夏普比率" : "Sharpe Ratio", value: sharpe.toFixed(2),
-            sub: "rf=1.5% (CNY)" },
+            sub: `rf=1.5% · ${locale === "zh" ? `日频段自 ${dailyStart.slice(2)}` : `since ${dailyStart}`}` },
           { label: locale === "zh" ? "胜率" : "Win Rate", value: `${winRate.toFixed(0)}%`,
             sub: `${winDays}W / ${lossDays}L (daily)` },
-          { label: locale === "zh" ? "卡玛比率" : "Calmar Ratio", value: calmar.toFixed(2),
-            sub: `ret=${(annualReturn * 100).toFixed(1)}%/yr` },
-          { label: locale === "zh" ? "交易日" : "Trading Days", value: String(navValues.length) },
+          { label: locale === "zh" ? "卡玛比率" : "Calmar Ratio", value: calmar ? calmar.toFixed(2) : "—",
+            sub: locale === "zh" ? `${longCagr != null ? longCagr.toFixed(1) : "—"}% ÷ ${(maxDrawdown * 100).toFixed(1)}%` : `CAGR ÷ MDD` },
+          { label: locale === "zh" ? "样本" : "Sample",
+            value: locale === "zh" ? `${fullYears.toFixed(1)}年` : `${fullYears.toFixed(1)}y`,
+            sub: locale === "zh" ? `${riskPts.length} 个日频点` : `${riskPts.length} daily pts` },
         ].map((m) => (
           <div key={m.label} className="p-2 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800">
             <div className="text-[9px] text-gray-400 uppercase">{m.label}</div>
@@ -923,15 +1543,27 @@ function PerformanceSection({ locale, hideChart, hideRisk }: { locale: string; h
 /** Monthly returns heatmap — years × months grid from the TWR/ratio series.
  *  The single most professional-feeling component per tracker reviews
  *  (Sharesight/Snowball both ship it); grows richer every month. */
-function MonthlyHeatmap({ snapshots, locale }: { snapshots: Snapshot[]; locale: string }) {
+function MonthlyHeatmap({ snapshots, navHistory = [], locale }: {
+  snapshots: Snapshot[]; navHistory?: NavHistoryPoint[]; locale: string;
+}) {
   const zh = locale === "zh";
   const cells = useMemo(() => {
-    const pts = snapshots
+    const snapPts = snapshots
       .filter((s) => (s.unit_nav != null && s.unit_nav > 0) || (s.capital && s.capital > 0 && s.net_assets != null))
       .map((s) => ({
         date: s.date,
         val: s.unit_nav != null && s.unit_nav > 0 ? s.unit_nav : (s.net_assets as number) / (s.capital as number),
-      }));
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+    // Prepend the weekly NAV/Capital ratio history so 2024/2025 show up too
+    const firstSnap = snapPts[0]?.date || "9999";
+    const pts = [
+      ...[...navHistory]
+        .filter((n) => n.capital_invested > 0 && n.net_asset_value > 0 && n.date < firstSnap)
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .map((n) => ({ date: n.date, val: n.net_asset_value / n.capital_invested })),
+      ...snapPts,
+    ];
     if (pts.length < 2) return null;
     // Last value per month, in date order
     const monthEnd = new Map<string, number>();
@@ -1084,11 +1716,16 @@ function PerformanceChart({ navHistory, snapshots = [], locale }: {
     const endDate = portIndexed[portIndexed.length - 1].date;
     const benchIndexed: Record<string, { date: string; indexed: number }[]> = {};
     for (const [name, points] of Object.entries(benchData)) {
-      const inRange = points.filter((p) => p.date >= startDate && p.date <= endDate);
-      if (inRange.length < 2) continue;
-      const base = inRange[0].close;
-      if (base <= 0) continue;
-      benchIndexed[name] = inRange.map((p) => ({ date: p.date, indexed: (p.close / base) * 100 }));
+      // base = last close on/before the portfolio's start (10-day lead-in
+      // from the endpoint) — first-close-after swallowed a session
+      const lead = points.filter((p) => p.date <= startDate);
+      const after = points.filter((p) => p.date > startDate && p.date <= endDate);
+      const base = lead.length ? lead[lead.length - 1].close : after[0]?.close;
+      if (!base || base <= 0 || after.length < 1) continue;
+      benchIndexed[name] = [
+        { date: startDate, indexed: 100 },
+        ...after.map((p) => ({ date: p.date, indexed: (p.close / base) * 100 })),
+      ];
     }
 
     // Compute Y range across all series
@@ -1124,8 +1761,8 @@ function PerformanceChart({ navHistory, snapshots = [], locale }: {
       <>
         <SectionTitle
           note={locale === "zh"
-            ? "* 标准化收益对比 (起始=100)，使用 equity_nav (NAV/Capital) 消除出入金影响"
-            : "* Indexed return comparison (base=100), using equity_nav to eliminate capital flow distortion"}>
+            ? "* 标准化收益对比 (起始=100)，使用 equity_nav (NAV/Capital) 消除出入金影响\n* 基准均折算为人民币口径（标普×USDCNY、恒生×HKDCNY），与组合同币种可比；均为价格指数，不含股息\n* 沪深300 数据源滞后时自动切换 510300 ETF 代理"
+            : "* Indexed return comparison (base=100), flow-adjusted\n* Benchmarks converted to CNY (S&P × USDCNY, HSI × HKDCNY) to match the portfolio's denomination; price indices, ex-dividends"}>
           {locale === "zh" ? "业绩走势" : "Performance"}
         </SectionTitle>
         <div className="flex items-center gap-2 mb-3">
@@ -1348,55 +1985,84 @@ function PerformanceChart({ navHistory, snapshots = [], locale }: {
 // Return Attribution
 // ══════════════════════════════════════════
 
-function ReturnAttribution({ holdings, closedTrades, locale }: {
-  holdings: PortfolioHolding[]; closedTrades: ClosedTrade[]; locale: string;
+function ReturnAttribution({ holdings, closedTrades, dividends = {}, locale }: {
+  holdings: PortfolioHolding[]; closedTrades: ClosedTrade[];
+  dividends?: Record<string, { net_cny: number }>; locale: string;
 }) {
-  const [tab, setTab] = useState<"daily" | "ytd" | "unrealised" | "total">("unrealised");
+  const [tab, setTab] = useState<"daily" | "ytd" | "unrealised" | "realized" | "dividends" | "total">("unrealised");
 
   const tabDef = useMemo(() => {
-    const tabs: { key: string; label: string; pnlKey: string; pnlCnyKey: string }[] = [];
+    const zh = locale === "zh";
+    const tabs: { key: string; label: string; pnlKey: string }[] = [];
     const hasDaily = holdings.some((h) => h.daily_pnl_cny != null);
     const hasYtd = holdings.some((h) => h.ytd_pnl_cny != null);
-    if (hasDaily) tabs.push({ key: "daily", label: "Daily P&L", pnlKey: "daily_pnl_cny", pnlCnyKey: "daily_pnl_cny" });
-    if (hasYtd) tabs.push({ key: "ytd", label: "YTD P&L", pnlKey: "ytd_pnl_cny", pnlCnyKey: "ytd_pnl_cny" });
-    tabs.push({ key: "unrealised", label: "Unrealised P&L", pnlKey: "pnl_cny", pnlCnyKey: "pnl_cny" });
-    tabs.push({ key: "total", label: "Total P&L", pnlKey: "pnl_cny", pnlCnyKey: "pnl_cny" });
+    if (hasDaily) tabs.push({ key: "daily", label: zh ? "当日" : "Daily P&L", pnlKey: "daily_pnl_cny" });
+    if (hasYtd) tabs.push({ key: "ytd", label: zh ? "今年以来" : "YTD P&L", pnlKey: "ytd_pnl_cny" });
+    tabs.push({ key: "unrealised", label: zh ? "未实现" : "Unrealised", pnlKey: "pnl_cny" });
+    if (closedTrades.length > 0) tabs.push({ key: "realized", label: zh ? "已实现" : "Realized", pnlKey: "pnl_cny" });
+    if (Object.keys(dividends).length > 0) tabs.push({ key: "dividends", label: zh ? "分红" : "Dividends", pnlKey: "pnl_cny" });
+    tabs.push({ key: "total", label: zh ? "累计收益 Total Return" : "Total Return", pnlKey: "pnl_cny" });
     return tabs;
-  }, [holdings]);
+  }, [holdings, closedTrades, dividends, locale]);
 
   const activeTabDef = tabDef.find((t) => t.key === tab) || tabDef[0];
 
   // Compute by market
   const byMarket = useMemo(() => {
     const map: Record<string, number> = {};
-    for (const h of holdings) {
-      const val = (h as unknown as Record<string, number | null>)[activeTabDef.pnlKey] ?? 0;
-      map[h.market] = (map[h.market] || 0) + (val as number);
-    }
-    // For "total" tab, add closed trades
-    if (tab === "total") {
-      for (const t of closedTrades) {
-        map[t.market] = (map[t.market] || 0) + (t.realized_pnl_cny || 0);
+    const mktOf = new Map(holdings.map((h) => [h.ticker, h.market]));
+    const addTrades = () => {
+      for (const t of closedTrades) map[t.market] = (map[t.market] || 0) + (t.realized_pnl_cny || 0);
+    };
+    const addDivs = () => {
+      for (const [tk, d] of Object.entries(dividends)) {
+        const m = mktOf.get(tk) || (locale === "zh" ? "其他" : "Other");
+        map[m] = (map[m] || 0) + d.net_cny;
       }
+    };
+    if (tab === "realized") {
+      addTrades();
+    } else if (tab === "dividends") {
+      addDivs();
+    } else {
+      for (const h of holdings) {
+        const val = (h as unknown as Record<string, number | null>)[activeTabDef.pnlKey] ?? 0;
+        map[h.market] = (map[h.market] || 0) + (val as number);
+      }
+      if (tab === "total") { addTrades(); addDivs(); }
     }
     return sortMarkets(Object.keys(map)).map((m) => ({ market: m, pnl: map[m] }));
-  }, [holdings, closedTrades, tab, activeTabDef]);
+  }, [holdings, closedTrades, dividends, tab, activeTabDef, locale]);
 
   // Compute by stock (top contributors)
   const byStock = useMemo(() => {
     const map: Record<string, { name: string; pnl: number }> = {};
-    for (const h of holdings) {
-      const val = (h as unknown as Record<string, number | null>)[activeTabDef.pnlKey] ?? 0;
-      const key = h.ticker;
-      if (!map[key]) map[key] = { name: h.name, pnl: 0 };
-      map[key].pnl += val as number;
-    }
-    if (tab === "total") {
+    const nameOf = new Map(holdings.map((h) => [h.ticker, h.name]));
+    const addTrades = () => {
       for (const t of closedTrades) {
         const key = t.ticker || t.name;
         if (!map[key]) map[key] = { name: t.name, pnl: 0 };
         map[key].pnl += t.realized_pnl_cny || 0;
       }
+    };
+    const addDivs = () => {
+      for (const [tk, d] of Object.entries(dividends)) {
+        if (!map[tk]) map[tk] = { name: nameOf.get(tk) || tk, pnl: 0 };
+        map[tk].pnl += d.net_cny;
+      }
+    };
+    if (tab === "realized") {
+      addTrades();
+    } else if (tab === "dividends") {
+      addDivs();
+    } else {
+      for (const h of holdings) {
+        const val = (h as unknown as Record<string, number | null>)[activeTabDef.pnlKey] ?? 0;
+        const key = h.ticker;
+        if (!map[key]) map[key] = { name: h.name, pnl: 0 };
+        map[key].pnl += val as number;
+      }
+      if (tab === "total") { addTrades(); addDivs(); }
     }
     const sorted = Object.entries(map).sort((a, b) => b[1].pnl - a[1].pnl);
     const top10 = sorted.filter(([, v]) => v.pnl > 0).slice(0, 10);
@@ -1433,8 +2099,8 @@ function ReturnAttribution({ holdings, closedTrades, locale }: {
     <>
       <SectionTitle
         note={locale === "zh"
-          ? `* Total P&L 合并了未实现P&L与已平仓P&L\n* Contribution = 单市场/个股P&L占总P&L比重`
-          : `* Total P&L merges unrealized + closed trade P&L\n* Contribution = single market/stock P&L as % of total`}>
+          ? `* Total Return（累计收益）= 未实现 + 已实现 + 税后分红，与持仓表「累计收益」列同一公式\n* 「已实现」「分红」标签页展示各自的单独归因；分红台账自盈透 Flex 自动积累（2026-07 起），国内摊薄账户的分红已含在摊薄成本里，不重复计\n* Contribution = 单市场/个股占该口径总额的比重`
+          : `* Total Return = unrealized + realized + net dividends — same formula as the holdings table\n* Realized / Dividends tabs show standalone attribution; ledger auto-fed from IBKR Flex since 2026-07\n* Contribution = share of the selected measure`}>
         {locale === "zh" ? "收益归因" : "Return Attribution"}
       </SectionTitle>
 
@@ -1451,12 +2117,12 @@ function ReturnAttribution({ holdings, closedTrades, locale }: {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
         {/* By Market */}
         <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-3">
-          <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">{activeTabDef.label} by Market</div>
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">{locale === "zh" ? `${activeTabDef.label} · 按市场` : `${activeTabDef.label} by Market`}</div>
           <HBar items={byMarket.map((m) => ({ key: m.market, label: mktLabel(m.market, locale), pnl: m.pnl }))} />
         </div>
         {/* Top Contributors */}
         <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-3">
-          <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">{activeTabDef.label} Top Contributors</div>
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">{locale === "zh" ? `${activeTabDef.label} · 个股贡献（前10 + 拖累5）` : `${activeTabDef.label} Top Contributors`}</div>
           <HBar items={byStock.map(([k, v]) => ({ key: k, label: v.name.length > 8 ? v.name.slice(0, 8) + "…" : v.name, pnl: v.pnl }))} />
         </div>
       </div>
@@ -1572,6 +2238,105 @@ function PnlJournal({ locale }: { locale: string }) {
 // ══════════════════════════════════════════
 // Closed Trades Section
 // ══════════════════════════════════════════
+
+/** Dividend ledger journal — the fact record survives position closes, so
+ *  this is where a closed position's lifetime dividends remain visible. */
+function DividendJournal({ locale }: { locale: string }) {
+  const zh = locale === "zh";
+  const [ledger, setLedger] = useState<Partial<DividendLedger> | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => { getDividends().then(setLedger).catch(() => {}); }, []);
+
+  const rows = ledger?.rows || [];
+  const typeLabel: Record<string, string> = zh
+    ? { "Dividends": "分红", "Payment In Lieu Of Dividends": "代付分红", "Withholding Tax": "预扣税",
+        "Broker Interest Paid": "利息支出", "Broker Interest Received": "利息收入" }
+    : { "Dividends": "Div", "Payment In Lieu Of Dividends": "PIL", "Withholding Tax": "WHT",
+        "Broker Interest Paid": "Int paid", "Broker Interest Received": "Int recv" };
+
+  // Per-ticker cumulative (incl. tickers no longer held); interest → "(现金)"
+  const byTicker = useMemo(() => {
+    const m: Record<string, { native: number; ccy: string; cny: number; n: number; last: string }> = {};
+    for (const r of rows) {
+      const tk = r.ticker || (zh ? "（现金利息）" : "(cash interest)");
+      const g = m[tk] || { native: 0, ccy: r.currency, cny: 0, n: 0, last: "" };
+      g.native += r.amount;
+      g.n += 1;
+      if (r.date > g.last) g.last = r.date;
+      m[tk] = g;
+    }
+    // net CNY from the server-side aggregation where available
+    for (const [tk, v] of Object.entries(ledger?.by_ticker || {})) {
+      if (m[tk]) m[tk].cny = v.net_cny;
+    }
+    return Object.entries(m).sort((a, b) => Math.abs(b[1].cny || b[1].native) - Math.abs(a[1].cny || a[1].native));
+  }, [rows, ledger, zh]);
+
+  const totalCny = Object.values(ledger?.by_ticker || {}).reduce((s, v) => s + v.net_cny, 0);
+
+  return (
+    <>
+      <div className="flex items-center justify-between mt-8 mb-2">
+        <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-gray-900 dark:text-white">
+          <span className="text-xs">{expanded ? "▼" : "▶"}</span>
+          <span>{zh ? "分红台账" : "Dividend Ledger"}</span>
+          <span className={`text-xs font-mono font-normal normal-case ${pnlColor(totalCny)}`}>
+            ({rows.length} {zh ? "笔" : "entries"} · ¥{pnlSign(totalCny)})
+          </span>
+        </button>
+      </div>
+
+      {expanded && (rows.length === 0 ? (
+        <div className="text-xs text-gray-400 mb-4 leading-relaxed">
+          {zh
+            ? "台账为空。开启盈透 Flex 查询的 Cash Transactions 区段后，每日对账会自动积累分红/预扣税/利息流水（含此后清仓的持仓，记录永久保留）。"
+            : "Empty. Enable the Cash Transactions section on the IBKR Flex query and daily recon will accumulate dividends/tax/interest here (records survive position closes)."}
+        </div>
+      ) : (
+        <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden mb-4">
+          {/* Per-ticker cumulative — includes closed positions */}
+          <table className="w-full text-xs font-mono">
+            <thead>
+              <tr className="border-b-2 border-gray-200 dark:border-gray-700 text-[10px] text-gray-500 uppercase">
+                <th className="text-left px-3 py-1.5">{zh ? "标的（含已清仓）" : "Ticker (incl. closed)"}</th>
+                <th className="text-right px-3 py-1.5">{zh ? "累计净额" : "Net"}</th>
+                <th className="text-right px-3 py-1.5">¥</th>
+                <th className="text-right px-3 py-1.5">{zh ? "笔数" : "#"}</th>
+                <th className="text-right px-3 py-1.5">{zh ? "最近" : "Last"}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {byTicker.map(([tk, g]) => (
+                <tr key={tk} className="border-b border-gray-100 dark:border-gray-800/50">
+                  <td className="px-3 py-1.5 font-medium">{tk}</td>
+                  <td className={`text-right px-3 py-1.5 ${pnlColor(g.native)}`}>{pnlSign(g.native)} {g.ccy}</td>
+                  <td className={`text-right px-3 py-1.5 ${pnlColor(g.cny)}`}>{g.cny ? pnlSign(g.cny) : "—"}</td>
+                  <td className="text-right px-3 py-1.5 text-gray-500">{g.n}</td>
+                  <td className="text-right px-3 py-1.5 text-gray-400">{g.last}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {/* Recent entries */}
+          <div className="border-t border-gray-200 dark:border-gray-800 px-3 py-1.5 text-[10px] text-gray-400 uppercase">{zh ? "最近流水" : "Recent entries"}</div>
+          <table className="w-full text-xs font-mono">
+            <tbody>
+              {rows.slice(0, 30).map((r, i) => (
+                <tr key={i} className="border-b border-gray-100 dark:border-gray-800/50">
+                  <td className="px-3 py-1 text-gray-400 whitespace-nowrap">{r.date}</td>
+                  <td className="px-3 py-1">{r.ticker || "—"}</td>
+                  <td className="px-3 py-1 text-gray-500">{typeLabel[r.type] || r.type}</td>
+                  <td className={`text-right px-3 py-1 ${pnlColor(r.amount)}`}>{pnlSign(r.amount)} {r.currency}</td>
+                  <td className="px-3 py-1 text-gray-400 truncate max-w-[220px]" title={r.description}>{r.description}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </>
+  );
+}
 
 function ClosedTradesSection({ locale }: { locale: string }) {
   const [trades, setTrades] = useState<ClosedTrade[]>([]);
@@ -2026,10 +2791,97 @@ function OnboardingCard({ locale, onRefresh, onOpenPanel }: { locale: string; on
 // Setup Tips Banner — shown after import, dismissible
 // ══════════════════════════════════════════
 
-function IbkrReconBanner({ recon, locale }: { recon: IbkrRecon; locale: string }) {
+const RECON_AUTO_KINDS = ["cash", "cost", "missing_tracker", "qty", "missing_ibkr"];
+
+const reconBtnLabel = (kind: string, zh: boolean) =>
+  kind === "missing_tracker" ? (zh ? "建仓入账" : "Add position")
+    : kind === "missing_ibkr" ? (zh ? "清仓入账" : "Book close")
+    : kind === "qty" ? (zh ? "同步买卖" : "Sync trade")
+    : zh ? "对齐" : "Apply";
+
+function IbkrReconBanner({ recon, locale, onApplied }: {
+  recon: IbkrRecon; locale: string;
+  onApplied: (next: Partial<IbkrRecon> | null) => void;
+}) {
   const zh = locale === "zh";
   const [open, setOpen] = useState(false);
-  if (!recon.diffs || recon.diffs.length === 0) return null;
+  const [busy, setBusy] = useState<string | null>(null); // "kind:ticker" or "all"
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const ignoredCount = recon.ignored || 0;
+  const costNotes = recon.cost_notes || [];
+  const clearAndRefresh = async () => {
+    try {
+      await clearIbkrReconIgnores();
+      const next = await getIbkrRecon().catch(() => null);
+      onApplied(next && next.diffs && (next.diffs.length > 0 || (next.ignored || 0) > 0 || (next.cost_notes?.length || 0) > 0) ? next : null);
+    } catch { /* ignore */ }
+  };
+  if (!recon.diffs || (recon.diffs.length === 0 && ignoredCount === 0 && costNotes.length === 0)) return null;
+  if (recon.diffs.length === 0) {
+    // reconciled — quiet line; cost-basis convention gaps expandable
+    return (
+      <div className="mb-3 px-4 py-1.5 text-xs text-gray-400">
+        <div className="flex items-center gap-2">
+          <span>✓</span>
+          <span>
+            {zh
+              ? `盈透对账一致（报表日 ${recon.report_date}${ignoredCount ? `，${ignoredCount} 项已忽略` : ""}${costNotes.length ? `，${costNotes.length} 项成本口径差异仅供参考` : ""}）`
+              : `IBKR reconciled (${recon.report_date}${ignoredCount ? `, ${ignoredCount} ignored` : ""}${costNotes.length ? `, ${costNotes.length} cost-basis notes` : ""})`}
+          </span>
+          {costNotes.length > 0 && (
+            <button onClick={() => setOpen(!open)} className="underline hover:text-gray-600">{open ? (zh ? "收起" : "hide") : (zh ? "查看" : "view")}</button>
+          )}
+          {ignoredCount > 0 && (
+            <button onClick={clearAndRefresh} className="underline hover:text-gray-600">{zh ? "恢复已忽略项" : "unhide ignored"}</button>
+          )}
+        </div>
+        {open && costNotes.length > 0 && (
+          <div className="mt-1 pl-6 space-y-0.5 font-mono">
+            {costNotes.map((d, i) => (
+              <div key={i}>{d.ticker}: tracker {d.tracker} vs Flex批次 {d.ibkr}</div>
+            ))}
+            <div className="font-sans text-[10px] text-gray-400">
+              {zh
+                ? "Flex 报的是税务批次成本（FIFO），部分卖出/资本性分红后与 TWS 平均成本永久分叉——不是数据错误，无需处理。"
+                : "Flex carries tax-lot (FIFO) basis, which diverges from TWS average cost after partial sells — informational, no action needed."}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+  const autoDiffs = recon.diffs.filter((d) => RECON_AUTO_KINDS.includes(d.kind));
+
+  const refresh = async () => {
+    const next = await getIbkrRecon().catch(() => null);
+    onApplied(next && next.diffs && (next.diffs.length > 0 || (next.ignored || 0) > 0 || (next.cost_notes?.length || 0) > 0) ? next : null);
+  };
+
+  const apply = async (items: { kind: string; ticker: string }[], busyKey: string) => {
+    setBusy(busyKey); setApplyError(null);
+    try {
+      const res = await applyIbkrRecon(items);
+      if (res.skipped?.length) {
+        setApplyError(zh
+          ? `${res.skipped.length} 项未应用（${res.skipped.map((s) => s.ticker).join("、")}），请在管理面板手动处理`
+          : `${res.skipped.length} item(s) skipped (${res.skipped.map((s) => s.ticker).join(", ")}) — apply manually via the Manage panel`);
+      }
+      await refresh();
+    } catch (e: unknown) {
+      setApplyError(e instanceof Error ? e.message : zh ? "应用失败" : "Apply failed");
+    } finally { setBusy(null); }
+  };
+
+  const ignore = async (items: { kind: string; ticker: string }[], busyKey: string) => {
+    setBusy(busyKey); setApplyError(null);
+    try {
+      await ignoreIbkrRecon(items);
+      await refresh();
+    } catch (e: unknown) {
+      setApplyError(e instanceof Error ? e.message : zh ? "忽略失败" : "Ignore failed");
+    } finally { setBusy(null); }
+  };
+
   return (
     <div className="mb-3 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-4 py-2 text-sm">
       <button onClick={() => setOpen(!open)} className="w-full text-left flex items-center gap-2">
@@ -2044,18 +2896,64 @@ function IbkrReconBanner({ recon, locale }: { recon: IbkrRecon; locale: string }
       {open && (
         <div className="mt-2 space-y-1 text-xs text-amber-900 dark:text-amber-200">
           {recon.diffs.map((d, i) => (
-            <div key={i} className="flex flex-wrap gap-x-2">
+            <div key={i} className="flex flex-wrap items-center gap-x-2">
               <span className="font-mono font-medium">{d.ticker}</span>
               <span>{d.note}</span>
               {(d.kind === "qty" || d.kind === "cost" || d.kind === "cash") && (
                 <span className="font-mono">tracker {d.tracker} → IBKR {d.ibkr}</span>
               )}
+              {RECON_AUTO_KINDS.includes(d.kind) && (
+                <button
+                  onClick={() => apply([{ kind: d.kind, ticker: d.ticker }], `${d.kind}:${d.ticker}`)}
+                  disabled={busy !== null}
+                  className="px-1.5 py-0.5 rounded border border-amber-400 dark:border-amber-600 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-800/40 disabled:opacity-50"
+                >
+                  {busy === `${d.kind}:${d.ticker}` ? "…" : reconBtnLabel(d.kind, zh)}
+                </button>
+              )}
+              <button
+                onClick={() => ignore([{ kind: d.kind, ticker: d.ticker }], `ig:${d.kind}:${d.ticker}`)}
+                disabled={busy !== null}
+                title={zh ? "已知的口径差异（如转仓保留原始成本），钉在当前双方数值上——任一侧变动会重新出现" : "Known intentional diff — pinned to both sides' values; reappears if either moves"}
+                className="px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800/40 disabled:opacity-50"
+              >
+                {busy === `ig:${d.kind}:${d.ticker}` ? "…" : zh ? "忽略" : "Ignore"}
+              </button>
             </div>
           ))}
-          <div className="pt-1 text-amber-600 dark:text-amber-400">
-            {zh
-              ? "请在管理面板按语义入账：数量/成本走「持仓」编辑，现金走「现金」，清仓类差异务必走「交易」以保留收益归因。确认入账后此提示自动消失。"
-              : "Apply via the Manage panel — edit Positions/Cash directly; use Trade for closes to preserve attribution. This banner clears once reconciled."}
+          {costNotes.length > 0 && (
+            <div className="pt-1 text-gray-400 space-y-0.5">
+              <div className="text-[10px] uppercase">{zh ? "成本口径参考（不需处理）" : "Cost-basis notes (no action)"}</div>
+              {costNotes.map((d, i) => (
+                <div key={i} className="font-mono">{d.ticker}: tracker {d.tracker} vs Flex批次 {d.ibkr}</div>
+              ))}
+            </div>
+          )}
+          {applyError && (
+            <div className="pt-1 text-red-600 dark:text-red-400">{applyError}</div>
+          )}
+          <div className="pt-1 flex flex-wrap items-center gap-2 text-amber-600 dark:text-amber-400">
+            {autoDiffs.length > 1 && (
+              <button
+                onClick={() => apply(autoDiffs.map((d) => ({ kind: d.kind, ticker: d.ticker })), "all")}
+                disabled={busy !== null}
+                className="px-2 py-0.5 rounded border border-amber-400 dark:border-amber-600 font-medium text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-800/40 disabled:opacity-50"
+              >
+                {busy === "all"
+                  ? (zh ? "应用中…" : "Applying…")
+                  : zh ? `一键应用全部可自动项（${autoDiffs.length} 项）` : `Apply all auto-appliable diffs (${autoDiffs.length})`}
+              </button>
+            )}
+            <span>
+              {zh
+                ? "全部差异均可一键入账：现金/成本照抄盈透；新持仓自动建仓；买入照抄新均价；卖出/清仓按报表成交明细自动记已实现盈亏（与「交易」页同一套归因逻辑）。刻意保留的口径差（如转仓原始成本）用「忽略」挂白名单。"
+                : "Everything is one-click: cash/cost copy IBKR; new positions are created; buys copy the new average; sells/closes book realized P&L from actual fills. Use Ignore for intentional convention diffs (e.g. transfer-in costs)."}
+            </span>
+            {ignoredCount > 0 && (
+              <button onClick={clearAndRefresh} className="underline">
+                {zh ? `另有 ${ignoredCount} 项已忽略 · 恢复显示` : `${ignoredCount} ignored · show`}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -2208,6 +3106,14 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
   const [buyPrice, setBuyPrice] = useState("");
   const [buyFee, setBuyFee] = useState("");
   const [buyNewCost, setBuyNewCost] = useState(""); // computed, editable
+  // Open a brand-new position from the Trade tab (buy semantics: cash is
+  // deducted, YTD baseline starts at cost — unlike the raw Positions editor)
+  const [openingNew, setOpeningNew] = useState(false);
+  const [newTicker, setNewTicker] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newMarket, setNewMarket] = useState("美股");
+  const [newBroker, setNewBroker] = useState("");
+  const [newCurrency, setNewCurrency] = useState("USD");
 
   // ── Cash & Margin tab state ──
   const [cashEdits, setCashEdits] = useState<Record<string, string>>({});
@@ -2377,7 +3283,8 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
     const newQty = closeTarget.quantity + qty;
     let outlay = qty * price + fee;
     let cur = closeTarget.currency;
-    const isHkConnect = closeTarget.market === "HK"
+    // market values are Chinese labels ("港股"), not ISO-ish codes
+    const isHkConnect = closeTarget.market === "港股"
       && !!acctSettings.find((s) => s.broker === closeTarget.broker)?.hk_connect;
     if (isHkConnect && cur !== "CNY") {
       outlay = outlay * (data?.fx?.[cur] || 1.0);
@@ -2401,13 +3308,61 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
     } catch { setMsg("❌ Error"); } finally { setSaving(false); }
   }
 
+  const MARKET_DEFAULT_CCY: Record<string, string> = {
+    "A股": "CNY", "基金": "CNY", "港股": "HKD", "B股": "HKD", "美股": "USD", "日股": "JPY",
+  };
+
+  async function handleOpenNew() {
+    const qty = parseFloat(buyQty) || 0;
+    const price = parseFloat(buyPrice) || 0;
+    const fee = parseFloat(buyFee) || 0;
+    const ticker = newTicker.trim();
+    if (!ticker || !newName.trim() || !newBroker || qty <= 0 || price <= 0) return;
+    const existing = holdings.find((h) => h.ticker === ticker && h.broker === newBroker);
+    if (existing) {
+      // already held on this account — upsert would clobber qty/cost, so
+      // route the entered numbers into the add-to-position flow instead
+      selectCloseTarget(existing);
+      setTradeDirection("buy");
+      setBuyQty(String(qty)); setBuyPrice(String(price)); if (fee) setBuyFee(String(fee));
+      setOpeningNew(false);
+      setMsg(zh ? "⚠️ 该账户已持有此标的，已切换为「加仓」" : "⚠️ Already held on this account — switched to Buy/Add");
+      return;
+    }
+    const cost = (qty * price + fee) / qty;
+    let outlay = qty * price + fee;
+    let cur = newCurrency;
+    const isHkConnect = newMarket === "港股"
+      && !!acctSettings.find((s) => s.broker === newBroker)?.hk_connect;
+    if (isHkConnect && cur !== "CNY") {
+      outlay = outlay * (data?.fx?.[cur] || 1.0);
+      cur = "CNY";
+    }
+    const confirmMsg = zh
+      ? `新开仓 ${newName.trim()}（${ticker}）\n买入: ${qty} @ ${price}${fee ? `（手续费 ${fee.toFixed(2)}，摊入成本）` : ""}\n成本: ${cost.toFixed(4)} ${newCurrency}\n将从「${newBroker}」现金扣除: ${outlay.toFixed(2)} ${cur}${isHkConnect ? "（港股通已折人民币）" : ""}\n（现金不足会记为负余额=融资）`
+      : `Open ${newName.trim()} (${ticker})\nBuy: ${qty} @ ${price}${fee ? ` (fee ${fee.toFixed(2)}, folds into cost)` : ""}\nCost: ${cost.toFixed(4)} ${newCurrency}\nCash deduction from "${newBroker}": ${outlay.toFixed(2)} ${cur}${isHkConnect ? " (HK Connect → CNY)" : ""}\n(Shortfall becomes a negative balance = margin)`;
+    if (!confirm(confirmMsg)) return;
+    setSaving(true);
+    try {
+      await upsertPosition({
+        ticker, name: newName.trim(), market: newMarket, broker: newBroker,
+        quantity: qty, cost_price: cost, currency: newCurrency,
+      });
+      const cashRow = (data?.cash || []).find((c) => c.account === newBroker && c.currency === cur);
+      await updateCash({ account: newBroker, currency: cur, balance: (cashRow?.balance || 0) - outlay });
+      setOpeningNew(false); setNewTicker(""); setNewName("");
+      setBuyQty(""); setBuyPrice(""); setBuyFee("");
+      setMsg(`✅ ${zh ? "已开仓" : "Opened"}`); onRefresh();
+    } catch { setMsg("❌ Error"); } finally { setSaving(false); }
+  }
+
   /** Credit sale proceeds to signed cash (negative balances net margin
    *  automatically); 港股通 HK sales convert to CNY at the day's FX. */
   async function autoBookProceeds(amount: number) {
     if (!closeTarget) return;
     let proceeds = amount;
     let cur = closeTarget.currency;
-    const isHkConnect = closeTarget.market === "HK"
+    const isHkConnect = closeTarget.market === "港股"
       && !!acctSettings.find((s) => s.broker === closeTarget.broker)?.hk_connect;
     if (isHkConnect && cur !== "CNY") {
       const rate = data?.fx?.[cur] || 1.0;
@@ -2713,6 +3668,13 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                   <div className="text-[10px] text-gray-500 uppercase">{isEditing ? (zh ? "编辑持仓" : "Edit Position") : (zh ? "新增持仓" : "Add Position")}</div>
                   {isEditing && <button onClick={clearForm} className="text-[10px] text-blue-500 hover:text-blue-700">{zh ? "清空 / 新增" : "Clear / New"}</button>}
                 </div>
+                {!isEditing && (
+                  <div className="mb-2 text-[10px] text-gray-400 leading-relaxed">
+                    {zh
+                      ? "此处新增不联动现金，适合转仓入库/初始导入/照抄券商。正常买入请走「交易」→ 新开仓（自动扣现金）。"
+                      : "Adding here does NOT touch cash — meant for transfers-in, initial imports, or copying the broker. For a normal buy, use Trade → Open new position (cash auto-deducted)."}
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-2 mb-2">
                   <input className={inputCls} placeholder="Ticker" value={editTicker} onChange={(e) => setEditTicker(e.target.value.toUpperCase())} disabled={isEditing} />
                   <input className={inputCls} placeholder={zh ? "名称" : "Name"} value={editName} onChange={(e) => setEditName(e.target.value)} />
@@ -2757,13 +3719,55 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
           {tab === "close" && (
             <>
               <div className="text-[10px] text-gray-400 mb-3 leading-relaxed">
-                {zh ? "选择要平仓的持仓，输入卖出价格，系统自动计算盈亏并记录到已平仓交易。" : "Select a position to close. Enter sell price and the system will calculate P&L automatically."}
+                {zh ? "选择持仓进行买卖（卖出自动记盈亏、买入自动算新成本，现金联动扣减/入账），或新开仓买入当前没有的标的。" : "Pick a holding to buy/sell (P&L booked on sells, cost recomputed on buys, cash auto-adjusted), or open a brand-new position."}
               </div>
 
-              {!closeTarget ? (
+              {!closeTarget && openingNew ? (
+                <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-[10px] text-gray-500 uppercase">{zh ? "新开仓（买入新标的）" : "Open New Position"}</div>
+                    <button onClick={() => setOpeningNew(false)} className="text-xs text-blue-500 hover:text-blue-700">{zh ? "← 返回" : "← Back"}</button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    <input className={inputCls} placeholder="Ticker" value={newTicker} onChange={(e) => setNewTicker(e.target.value.toUpperCase())} />
+                    <input className={inputCls} placeholder={zh ? "名称" : "Name"} value={newName} onChange={(e) => setNewName(e.target.value)} />
+                    <select className={inputCls} value={newMarket}
+                      onChange={(e) => { setNewMarket(e.target.value); setNewCurrency(MARKET_DEFAULT_CCY[e.target.value] || "USD"); }}>
+                      {["A股", "港股", "美股", "日股", "B股", "基金"].map((m) => <option key={m} value={m}>{mktLabel(m, locale)}</option>)}
+                    </select>
+                    <div>
+                      <select className={inputCls} value={newBroker} onChange={(e) => setNewBroker(e.target.value)}>
+                        <option value="">{zh ? "— 选择账户 —" : "— Select account —"}</option>
+                        {acctSettings.map((s) => <option key={s.broker} value={s.broker}>{s.broker}</option>)}
+                      </select>
+                      {acctSettings.length === 0 && <div className="text-[9px] text-amber-500 mt-0.5">{zh ? "请先到「设置」添加账户" : "Add accounts in Settings first"}</div>}
+                    </div>
+                    <input className={inputCls} placeholder={zh ? "买入数量" : "Buy qty"} inputMode="decimal" value={buyQty} onChange={(e) => setBuyQty(e.target.value)} />
+                    <input className={inputCls} placeholder={zh ? "买入价格" : "Buy price"} inputMode="decimal" value={buyPrice} onChange={(e) => setBuyPrice(e.target.value)} />
+                    <input className={inputCls} placeholder={zh ? "手续费（选填，摊入成本）" : "Fees (optional)"} inputMode="decimal" value={buyFee} onChange={(e) => setBuyFee(e.target.value)} />
+                    <select className={inputCls} value={newCurrency} onChange={(e) => setNewCurrency(e.target.value)}>
+                      {["CNY", "HKD", "USD", "JPY"].map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  {parseFloat(buyQty) > 0 && parseFloat(buyPrice) > 0 && (
+                    <div className="mb-3 text-[10px] font-mono text-gray-500">
+                      {zh ? "成本" : "Cost"} {(((parseFloat(buyQty) || 0) * (parseFloat(buyPrice) || 0) + (parseFloat(buyFee) || 0)) / (parseFloat(buyQty) || 1)).toFixed(4)} · {zh ? "扣现金" : "cash out"} {((parseFloat(buyQty) || 0) * (parseFloat(buyPrice) || 0) + (parseFloat(buyFee) || 0)).toFixed(2)} {newCurrency}
+                    </div>
+                  )}
+                  <button onClick={handleOpenNew}
+                    disabled={saving || !newTicker.trim() || !newName.trim() || !newBroker || !(parseFloat(buyQty) > 0) || !(parseFloat(buyPrice) > 0)}
+                    className="w-full px-3 py-2 text-sm rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 font-medium">
+                    {saving ? "..." : (zh ? "确认开仓" : "Confirm Open")}
+                  </button>
+                </div>
+              ) : !closeTarget ? (
                 <>
                   <input className={`${inputCls} mb-2`} placeholder={zh ? "🔍 搜索持仓" : "🔍 Search positions"}
                     value={closeSearch} onChange={(e) => setCloseSearch(e.target.value)} />
+                  <button onClick={() => { setOpeningNew(true); setBuyQty(""); setBuyPrice(""); setBuyFee(""); setMsg(null); }}
+                    className="w-full mb-2 px-2 py-1.5 text-xs rounded border border-dashed border-green-400 dark:border-green-700 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/10 transition-colors">
+                    {zh ? "＋ 新开仓（买入当前没有的标的）" : "+ Open new position (buy a new ticker)"}
+                  </button>
                   <div className="max-h-[50vh] overflow-auto border border-gray-200 dark:border-gray-800 rounded">
                     {filteredClose.map((h) => (
                       <div key={`${h.ticker}-${h.broker}`} onClick={() => selectCloseTarget(h)}
@@ -3668,9 +4672,16 @@ export default function PortfolioPage() {
   const [ibkrRecon, setIbkrRecon] = useState<IbkrRecon | null>(null);
   useEffect(() => {
     getIbkrRecon().then((r) => {
-      if (r && r.diffs && r.diffs.length > 0) setIbkrRecon(r as IbkrRecon);
+      if (r && r.diffs && (r.diffs.length > 0 || (r.ignored || 0) > 0 || (r.cost_notes?.length || 0) > 0)) setIbkrRecon(r as IbkrRecon);
     }).catch(() => {});
   }, []);
+  // Risk fetch waits for holdings so the price cache is already warm
+  useEffect(() => {
+    if (data && data.holdings.length > 0 && !riskData) {
+      getRisk().then((r) => { if (r && r.nav != null) setRiskData(r); }).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
   const [panelEditHolding, setPanelEditHolding] = useState<PortfolioHolding | null>(null);
   const [panelTradeTarget, setPanelTradeTarget] = useState<PortfolioHolding | null>(null);
   const [panelTradeDir, setPanelTradeDir] = useState<"buy" | "sell" | null>(null);
@@ -3685,7 +4696,8 @@ export default function PortfolioPage() {
   const [portfolios, setPortfolios] = useState<PortfolioInfo[]>([]);
   const activePortfolio = portfolios.find((p) => p.active)?.name || "";
   const [refreshKey, setRefreshKey] = useState(0);
-  const [pageTab, setPageTab] = useState<"overview" | "holdings" | "performance" | "trades" | "events">("overview");
+  const [pageTab, setPageTab] = useState<"overview" | "holdings" | "performance" | "risk" | "trades" | "events">("overview");
+  const [riskData, setRiskData] = useState<Partial<RiskData> | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try { setLoading(true); setError(null);
@@ -3735,7 +4747,11 @@ export default function PortfolioPage() {
   const [weeklyByMkt, setWeeklyByMkt] = useState<{ market: string; pnl: number; pct?: number }[]>([]);
   const [allClosedTrades, setAllClosedTrades] = useState<ClosedTrade[]>([]);
   const [realizedPnl, setRealizedPnl] = useState<number | null>(null);
+  const [dividendsByTicker, setDividendsByTicker] = useState<Record<string, { net_cny: number }>>({});
   const closedCount = allClosedTrades.length;
+  useEffect(() => {
+    getDividends().then((d) => { if (d && d.by_ticker) setDividendsByTicker(d.by_ticker); }).catch(() => {});
+  }, [refreshKey]);
 
   useEffect(() => {
     if (!data) return;
@@ -3952,6 +4968,7 @@ export default function PortfolioPage() {
               { key: "overview", zh: "概览", en: "Overview" },
               { key: "holdings", zh: "持仓", en: "Holdings" },
               { key: "performance", zh: "表现", en: "Performance" },
+              { key: "risk", zh: "风险", en: "Risk" },
               { key: "trades", zh: "日志", en: "Journals" },
               { key: "events", zh: "动态", en: "Events" },
             ] as const).map((tab) => (
@@ -3992,7 +5009,17 @@ export default function PortfolioPage() {
           <>
             {/* Setup tips banner — shown after import until dismissed */}
             <SetupTipsBanner locale={locale} data={data} onOpenPanel={(tab) => { setPanelInitialTab(tab); setPanelOpen(true); }} />
-            {ibkrRecon && <IbkrReconBanner recon={ibkrRecon} locale={locale} />}
+            {ibkrRecon && (
+              <IbkrReconBanner
+                recon={ibkrRecon}
+                locale={locale}
+                onApplied={(next) => {
+                  setIbkrRecon(next && next.diffs ? (next as IbkrRecon) : null);
+                  silentRefresh();
+                }}
+              />
+            )}
+            <RiskAlertBanner risk={riskData} locale={locale} onGoRisk={() => setPageTab("risk")} />
 
             {/* ════════ OVERVIEW TAB ════════ */}
             {pageTab === "overview" && (
@@ -4072,20 +5099,21 @@ export default function PortfolioPage() {
                   );
                 })()}
 
-                {/* ── Asset Allocation ── */}
-                <SectionTitle>{locale === "zh" ? "资产配置" : "Asset Allocation"}</SectionTitle>
-                <div className="flex flex-wrap gap-6 mb-2">
-                  <AllocationBar title={locale === "zh" ? "按市场" : "By Market"} items={allocByMkt} locale={locale} />
-                  <AllocationBar title={locale === "zh" ? "按币种" : "By Currency"} items={allocByCur} locale={locale} />
-                  {allocBySector.length > 1 && <AllocationBar title={locale === "zh" ? "按行业" : "By Sector"} items={allocBySector} locale={locale} />}
-                </div>
-
               </>
             )}
 
             {/* ════════ HOLDINGS TAB ════════ */}
             {pageTab === "holdings" && (
               <>
+                {/* ── Asset Allocation — the natural companion of the position list ── */}
+                <div className="mt-2 mb-4 p-3 rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800">
+                  <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">{locale === "zh" ? "资产配置" : "Asset Allocation"}</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-8 gap-y-4">
+                    <AllocationBar title={locale === "zh" ? "按市场" : "By Market"} items={allocByMkt} locale={locale} />
+                    <AllocationBar title={locale === "zh" ? "按币种" : "By Currency"} items={allocByCur} locale={locale} />
+                    {allocBySector.length > 1 && <AllocationBar title={locale === "zh" ? "按行业" : "By Sector"} items={allocBySector} locale={locale} />}
+                  </div>
+                </div>
                 <HoldingsTable holdings={data.holdings} summary={data.summary} locale={locale}
                   onEdit={(h) => { setPanelEditHolding(h); setPanelOpen(true); }}
                   onTrade={(h, dir) => openTrade(h, dir)} />
@@ -4097,7 +5125,15 @@ export default function PortfolioPage() {
             {pageTab === "performance" && (
               <>
                 <PerformanceSection key={`perf-${refreshKey}`} locale={locale} />
-                <ReturnAttribution holdings={data.holdings} closedTrades={allClosedTrades} locale={locale} />
+                <ReturnAttribution holdings={data.holdings} closedTrades={allClosedTrades} dividends={dividendsByTicker} locale={locale} />
+              </>
+            )}
+
+            {/* ════════ RISK TAB ════════ */}
+            {pageTab === "risk" && (
+              <>
+                <RiskStressSection locale={locale} risk={riskData} />
+                <SustainabilitySection key={`sust-${refreshKey}`} locale={locale} />
               </>
             )}
 
@@ -4106,6 +5142,7 @@ export default function PortfolioPage() {
               <>
                 <PnlJournal key={`journal-${refreshKey}`} locale={locale} />
                 <ClosedTradesSection key={`trades-${refreshKey}`} locale={locale} />
+                <DividendJournal key={`divs-${refreshKey}`} locale={locale} />
               </>
             )}
 
