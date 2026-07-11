@@ -552,11 +552,23 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
         ]
         if missing_baseline:
             from backend.services.portfolio_db import record_ytd_baselines
+            # Two distinct cases share this backfill:
+            # - year rollover (no baselines for the year at all): baseline =
+            #   latest close (≈ year-end close), same rule as the snapshot
+            #   job. Using cost here would silently turn the whole year's
+            #   attribution into "since cost" — and INSERT OR IGNORE means
+            #   whoever writes first wins permanently.
+            # - a position opened mid-year: YTD starts from its cost.
+            year_rollover = not ytd_baselines
             ticker_data = {}
             for p in missing_baseline:
-                # Use cost_price as baseline: new mid-year positions start YTD from cost
+                if year_rollover:
+                    px, _ = fetch_price(p['ticker'])
+                    base = px if px is not None else p['cost_price']
+                else:
+                    base = p['cost_price']
                 ticker_data[(p['ticker'], p['broker'])] = (
-                    p['cost_price'], p['currency'], p['quantity'], p['cost_price']
+                    base, p['currency'], p['quantity'], p['cost_price']
                 )
             today_str = datetime.date.today().isoformat()
             record_ytd_baselines(conn, current_year, ticker_data, today_str, user_id=user_id)
@@ -571,6 +583,28 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
     total_pnl_cny = 0
     total_daily_pnl_cny = 0
     total_ytd_pnl_cny = 0
+
+    # Lifetime per-position extras for the Total Return column:
+    # realized P&L (closed_trades) + net dividends (dividend_log, Flex-fed).
+    # Convention-safe by construction: diluted partial sells fold gains into
+    # cost (no closed_trade row), and domestic dividends fold into diluted
+    # cost (never in the ledger) — so nothing is double counted.
+    realized_map: dict = {}
+    for r in _query(path, "SELECT ticker, broker, currency, realized_pnl, realized_pnl_cny "
+                          "FROM closed_trades WHERE user_id=? AND ticker IS NOT NULL", (user_id,)):
+        v = r['realized_pnl_cny']
+        if v is None:
+            v = (r['realized_pnl'] or 0) * fx.get(r['currency'], 1.0)
+        k = (r['ticker'], r['broker'])
+        realized_map[k] = realized_map.get(k, 0.0) + v
+    div_map: dict = {}  # (ticker, account) -> net CNY
+    try:
+        for r in _query(path, "SELECT ticker, account, currency, amount FROM dividend_log "
+                              "WHERE user_id=? AND ticker != ''", (user_id,)):
+            k = (r['ticker'], r['account'] or '')
+            div_map[k] = div_map.get(k, 0.0) + r['amount'] * fx.get(r['currency'], 1.0)
+    except Exception:
+        pass  # ledger table appears with the first Flex sync
 
     for pos in positions:
         ticker = pos['ticker']
@@ -665,6 +699,16 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
         if dcf_price and price and dcf_price > 0:
             mos_pct = round((dcf_price - price) / dcf_price * 100, 2)
 
+        # Total return = unrealized + lifetime realized + net dividends
+        # (attribution's 累计 tab uses the same three-ledger arithmetic)
+        realized_cny = realized_map.get((ticker, pos['broker']), 0.0)
+        dividends_cny = sum(
+            v for (dtk, acct), v in div_map.items()
+            if dtk == ticker and (not acct or acct in (pos['broker'] or '')))
+        total_return_cny = pnl_cny + realized_cny + dividends_cny
+        cost_cny = cost_total * rate
+        total_return_pct = (total_return_cny / cost_cny * 100) if cost_cny > 0 else None
+
         holdings.append({
             **pos,
             "price": price,
@@ -675,6 +719,10 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
             "pnl": pnl,
             "pnl_pct": round(pnl_pct, 2),
             "pnl_cny": pnl_cny,
+            "realized_cny": round(realized_cny, 2),
+            "dividends_cny": round(dividends_cny, 2),
+            "total_return_cny": round(total_return_cny, 2),
+            "total_return_pct": round(total_return_pct, 2) if total_return_pct is not None else None,
             "daily_pnl": daily_pnl,
             "daily_pnl_pct": round(daily_pnl_pct, 2) if daily_pnl_pct is not None else None,
             "daily_pnl_cny": daily_pnl_cny,
@@ -912,39 +960,94 @@ def get_nav_history(user_id: str = Depends(get_current_user)):
 
 @router.get("/benchmarks")
 def get_benchmarks(start: str = "2024-01-01"):
-    """Fetch benchmark index data (CSI 300, S&P 500, Hang Seng) via yfinance.
+    """Benchmark series in CNY terms: {name: [{date, close}, ...]}.
 
-    Returns {name: [{date, close}, ...]} for each benchmark.
+    Correctness measures (each one fixed an observed distortion):
+    - closes selected by explicit (Close, ticker) label — concurrent
+      yfinance downloads can return another symbol's data (see _FX_SANE)
+    - S&P 500 / Hang Seng converted to CNY — the portfolio TWR is
+      CNY-denominated; a USD-terms index hides the FX component (~1.7pp
+      YTD 2026) and overstates the alternative
+    - Yahoo's 000300.SS feed lags by days; when stale vs the other
+      benchmarks it falls back to the 510300 ETF as a CSI300 proxy
+      (rebased returns are what the chart uses, so the proxy is fine)
+    - the fetch window starts 10 days before `start` so the frontend can
+      rebase at the last close on/before the portfolio's first snapshot
+      (snapshots exist on Saturdays; indices don't)
+    - cached 1h — this endpoint used to re-download three series per view
     """
     try:
         import yfinance as yf
         import pandas as pd
     except ImportError:
         return {}
+    import bisect
+    import datetime as _dt
+    from backend import persistent_cache as pc
 
-    benchmarks = {
-        "CSI 300": "000300.SS",
-        "S&P 500": "^GSPC",
-        "Hang Seng": "^HSI",
-    }
+    cache_key = f"benchmarks_cny:{start}"
+    cached = pc.get(cache_key)
+    if cached is not None:
+        return cached
+
+    fetch_start = (_dt.date.fromisoformat(start) - _dt.timedelta(days=10)).isoformat()
     end = (pd.Timestamp.now() + pd.DateOffset(days=1)).strftime("%Y-%m-%d")
-    results: dict[str, list] = {}
-    for name, ticker in benchmarks.items():
+
+    def dl(ticker: str):
+        hist = yf.download(ticker, start=fetch_start, end=end,
+                           progress=False, auto_adjust=True)
+        if hist is None or hist.empty:
+            return None
+        close = (hist[("Close", ticker)] if isinstance(hist.columns, pd.MultiIndex)
+                 else hist["Close"]).dropna()
+        return close if not close.empty else None
+
+    series: dict[str, tuple] = {}  # name -> (close_series, ccy)
+    for name, ticker, ccy in (("CSI 300", "000300.SS", "CNY"),
+                              ("S&P 500", "^GSPC", "USD"),
+                              ("Hang Seng", "^HSI", "HKD")):
         try:
-            hist = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
-            if hist is not None and not hist.empty:
-                if isinstance(hist.columns, pd.MultiIndex):
-                    hist.columns = hist.columns.droplevel(1)
-                df = hist[["Close"]].reset_index()
-                df.columns = ["date", "close"]
-                # NaN rows (suspended sessions / tz quirks) make json.dumps
-                # blow up with "Out of range float values" → 500
-                df = df.dropna(subset=["close"])
-                df["close"] = df["close"].astype(float)
-                df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
-                results[name] = df.to_dict(orient="records")
+            s = dl(ticker)
+            if s is not None:
+                series[name] = (s, ccy)
         except Exception:
             pass
+
+    # Stale-feed fallback: if CSI300 trails the freshest benchmark by more
+    # than 4 days, use the 510300 ETF proxy instead
+    try:
+        if series:
+            latest = max(s.index[-1] for s, _ in series.values())
+            csi = series.get("CSI 300")
+            if csi is None or (latest - csi[0].index[-1]).days > 4:
+                proxy = dl("510300.SS")
+                if proxy is not None:
+                    series["CSI 300"] = (proxy, "CNY")
+    except Exception:
+        pass
+
+    results: dict[str, list] = {}
+    for name, (s, ccy) in series.items():
+        rates = _fx_history(ccy, fetch_start) if ccy != "CNY" else []
+        rd = [r[0] for r in rates]
+        rv = [r[1] for r in rates]
+        rows = []
+        for ts, close in zip(s.index, s):
+            d = pd.to_datetime(ts).strftime("%Y-%m-%d")
+            v = float(close)
+            if ccy != "CNY":
+                if not rd:
+                    rows = []
+                    break  # no sane FX series — drop rather than mislead
+                i = bisect.bisect_right(rd, d) - 1
+                if i < 0:
+                    continue
+                v *= rv[i]
+            rows.append({"date": d, "close": v})
+        if rows:
+            results[name] = rows
+    if results:
+        pc.put(cache_key, results, ttl=3600)
     return results
 
 
@@ -952,13 +1055,25 @@ _MARKET_CCY = {"A股": "CNY", "基金": "CNY", "B股": "HKD", "港股": "HKD",
                "日股": "JPY", "美股": "USD"}
 
 
+# Plausible {ccy}CNY bounds. Concurrent yfinance downloads (snapshot price
+# fetches racing fx-impact) have been observed returning another symbol's
+# data — e.g. the USDCNY series filled with a JP stock price — which then
+# poisons the 6h cache and blows up fx-impact by orders of magnitude.
+# Reject the whole series if any close falls outside the band.
+_FX_SANE = {"USD": (5.0, 10.0), "HKD": (0.6, 1.3), "JPY": (0.03, 0.09)}
+
+
 def _fx_history(ccy: str, start: str) -> list[tuple[str, float]]:
     """Daily {ccy}CNY closes since start, sorted asc. Cached 6h; [] on failure."""
     from backend import persistent_cache as _pc
     key = f"fxhist:{ccy}:{start}"
+    lo, hi = _FX_SANE.get(ccy, (0.0, float("inf")))
     cached = _pc.get(key)
     if cached is not None:
-        return cached
+        if all(lo <= c <= hi for _, c in cached):
+            return cached
+        # poisoned pre-validation cache entry — drop and refetch
+        _pc.delete(key)
     rows: list[tuple[str, float]] = []
     try:
         import yfinance as yf
@@ -968,11 +1083,19 @@ def _fx_history(ccy: str, start: str) -> list[tuple[str, float]]:
                            progress=False, auto_adjust=True)
         if hist is not None and not hist.empty:
             if isinstance(hist.columns, pd.MultiIndex):
-                hist.columns = hist.columns.droplevel(1)
-            df = hist[["Close"]].dropna().reset_index()
+                # select by explicit ticker label so a response carrying a
+                # different symbol's columns raises instead of slipping through
+                close = hist[("Close", f"{ccy}CNY=X")]
+            else:
+                close = hist["Close"]
+            close = close.dropna()
             rows = [(pd.to_datetime(d).strftime("%Y-%m-%d"), float(c))
-                    for d, c in zip(df[df.columns[0]], df["Close"])]
+                    for d, c in zip(close.index, close)]
     except Exception:
+        rows = []
+    if rows and not all(lo <= c <= hi for _, c in rows):
+        logger.warning("fx history %sCNY rejected: values out of sane range "
+                       "[%s, %s] (yfinance cross-talk?)", ccy, lo, hi)
         rows = []
     if rows:
         _pc.put(key, rows, ttl=6 * 3600)
@@ -1091,6 +1214,146 @@ def get_fx_impact(user_id: str = Depends(get_current_user)):
     }
 
 
+@router.get("/risk")
+def get_risk(user_id: str = Depends(get_current_user)):
+    """Leverage & margin stress view for a levered personal fund.
+
+    Marks positions at cached live prices (cost fallback), takes signed
+    cash by account/currency (negative = in-broker financing) plus
+    margin_balances liabilities, and rakes the book over an equity-shock ×
+    FX-shock grid. Coverage ratio = (broker MV + positive cash) / financing
+    — the 维持担保比例 convention. Brokers' true maintenance requirements
+    are position-specific, so thresholds are indicative, not exact.
+    """
+    path = _require_db()
+    from backend.services.portfolio_db import get_conn
+    from backend.services.portfolio_prices import (
+        fetch_price, get_fx_rates as _get_fx, refresh_all_prices)
+    fx = _get_fx(db_path=path)
+    refresh_all_prices(db_path=path)
+    with get_conn() as conn:
+        pos_rows = conn.execute(
+            "SELECT ticker, broker, currency, quantity, cost_price FROM positions "
+            "WHERE status='open' AND user_id=? AND quantity > 0", (user_id,)).fetchall()
+        cash_rows = conn.execute(
+            "SELECT account, currency, balance FROM cash_balances WHERE user_id=?",
+            (user_id,)).fetchall()
+        margin_rows = conn.execute(
+            "SELECT category, currency, amount FROM margin_balances WHERE user_id=?",
+            (user_id,)).fetchall()
+
+    positions = []
+    for r in pos_rows:
+        price, _ = fetch_price(r["ticker"])
+        if price is None:
+            price = r["cost_price"]
+        positions.append({
+            "broker": r["broker"], "ccy": r["currency"],
+            "mv": r["quantity"] * price * fx.get(r["currency"], 1.0),
+        })
+    cash = [{"account": r["account"], "ccy": r["currency"],
+             "cny": r["balance"] * fx.get(r["currency"], 1.0)} for r in cash_rows]
+    # margin_balances rows are liabilities (positive amounts owed)
+    liabs = [{"ccy": r["currency"], "category": r["category"],
+              "cny": r["amount"] * fx.get(r["currency"], 1.0)} for r in margin_rows]
+
+    def _shock(e: float, f: float) -> dict:
+        """Apply equity shock e to all positions and FX shock f to every
+        non-CNY exposure (assets and liabilities alike — a JPY loan hedges
+        JPY stocks through the same factor)."""
+        def fxm(ccy): return 1.0 + (f if ccy != "CNY" else 0.0)
+        mv = {}
+        for p in positions:
+            v = p["mv"] * (1 + e) * fxm(p["ccy"])
+            mv[p["broker"]] = mv.get(p["broker"], 0.0) + v
+        pos_cash, fin = {}, {}
+        for c in cash:
+            v = c["cny"] * fxm(c["ccy"])
+            if v >= 0:
+                pos_cash[c["account"]] = pos_cash.get(c["account"], 0.0) + v
+            else:
+                fin[c["account"]] = fin.get(c["account"], 0.0) + (-v)
+        liab_total = sum(l["cny"] * fxm(l["ccy"]) for l in liabs)
+        total_mv = sum(mv.values())
+        total_pos_cash = sum(pos_cash.values())
+        total_fin = sum(fin.values())
+        nav = total_mv + total_pos_cash - total_fin - liab_total
+        debt = total_fin + liab_total
+        brokers = []
+        for b in sorted(set(list(mv) + list(fin) + list(pos_cash))):
+            f_amt = fin.get(b, 0.0)
+            collateral = mv.get(b, 0.0) + pos_cash.get(b, 0.0)
+            brokers.append({
+                "broker": b, "mv": mv.get(b, 0.0), "pos_cash": pos_cash.get(b, 0.0),
+                "financing": f_amt,
+                "coverage": (collateral / f_amt) if f_amt > 1 else None,
+            })
+        covs = [b["coverage"] for b in brokers if b["coverage"] is not None]
+        return {"nav": nav, "debt": debt, "total_assets": total_mv + total_pos_cash,
+                "debt_to_nav": debt / nav if nav > 0 else None,
+                "gross_to_nav": (total_mv + total_pos_cash) / nav if nav > 0 else None,
+                "worst_coverage": min(covs) if covs else None,
+                "brokers": brokers}
+
+    base = _shock(0.0, 0.0)
+
+    # Per-broker distance to coverage thresholds (equity move only, FX flat):
+    # (MV·(1+x) + posCash) / fin = T  →  x = (T·fin − posCash)/MV − 1
+    for b in base["brokers"]:
+        if b["coverage"] is not None and b["mv"] > 0:
+            b["drop_to_150"] = min(0.0, (1.5 * b["financing"] - b["pos_cash"]) / b["mv"] - 1)
+            b["drop_to_130"] = min(0.0, (1.3 * b["financing"] - b["pos_cash"]) / b["mv"] - 1)
+        else:
+            b["drop_to_150"] = b["drop_to_130"] = None
+
+    # Net exposure by currency (assets − liabilities, signed cash folded in)
+    ccy_net: dict[str, float] = {}
+    for p in positions:
+        ccy_net[p["ccy"]] = ccy_net.get(p["ccy"], 0.0) + p["mv"]
+    for c in cash:
+        ccy_net[c["ccy"]] = ccy_net.get(c["ccy"], 0.0) + c["cny"]
+    for l in liabs:
+        ccy_net[l["ccy"]] = ccy_net.get(l["ccy"], 0.0) - l["cny"]
+    nav0 = base["nav"]
+    exposure = [{"ccy": k, "net_cny": round(v), "pct_nav": round(v / nav0 * 100, 1) if nav0 > 0 else None}
+                for k, v in sorted(ccy_net.items(), key=lambda kv: -abs(kv[1]))]
+
+    grid = []
+    for e in (0.0, -0.10, -0.20, -0.30, -0.40):
+        for f in (-0.10, -0.05, 0.0, 0.05):
+            s = _shock(e, f)
+            grid.append({
+                "equity_shock": e, "fx_shock": f,
+                "nav": round(s["nav"]),
+                "nav_pct": round((s["nav"] / nav0 - 1) * 100, 1) if nav0 > 0 else None,
+                "debt_to_nav": round(s["debt_to_nav"], 3) if s["debt_to_nav"] is not None else None,
+                "worst_coverage": round(s["worst_coverage"], 3) if s["worst_coverage"] is not None else None,
+                # per-account coverage so the grid isn't a black box that
+                # silently tracks whichever broker happens to be worst
+                "coverages": {b["broker"]: round(b["coverage"], 3)
+                              for b in s["brokers"] if b["coverage"] is not None},
+            })
+
+    for b in base["brokers"]:
+        for k in ("mv", "pos_cash", "financing"):
+            b[k] = round(b[k])
+        if b["coverage"] is not None:
+            b["coverage"] = round(b["coverage"], 3)
+
+    return {
+        "nav": round(base["nav"]),
+        "total_assets": round(base["total_assets"]),
+        "debt": round(base["debt"]),
+        "off_exchange": round(sum(l["cny"] for l in liabs if l["category"] == "off_exchange")),
+        "debt_to_nav": round(base["debt_to_nav"], 3) if base["debt_to_nav"] is not None else None,
+        "gross_to_nav": round(base["gross_to_nav"], 3) if base["gross_to_nav"] is not None else None,
+        "worst_coverage": base["worst_coverage"] and round(base["worst_coverage"], 3),
+        "brokers": base["brokers"],
+        "currency_exposure": exposure,
+        "grid": grid,
+    }
+
+
 @router.get("/ibkr-recon")
 def ibkr_recon(user_id: str = Depends(get_current_user)):
     """IBKR Flex reconciliation (review-only). {} when not configured.
@@ -1110,6 +1373,103 @@ def ibkr_recon(user_id: str = Depends(get_current_user)):
     except Exception as e:
         logger.warning("ibkr recon failed: %s", e)
         return {}
+
+
+class IbkrReconApplyItem(BaseModel):
+    kind: str
+    ticker: str
+
+
+class IbkrReconApplyRequest(BaseModel):
+    items: list[IbkrReconApplyItem]
+
+
+@router.post("/ibkr-recon/apply")
+def ibkr_recon_apply(req: IbkrReconApplyRequest,
+                     user_id: str = Depends(get_current_user)):
+    """One-click apply for mechanical recon diffs (cash / cost).
+
+    Amounts are re-derived server-side from the current Flex statement —
+    the client only names which diffs to apply. qty/missing_* are refused
+    (semantic entries via the Trade panel keep attribution intact).
+    """
+    from backend.services import ibkr_flex
+    if not ibkr_flex.enabled():
+        raise HTTPException(status_code=400, detail="IBKR Flex not configured")
+    _require_db()
+    from backend.services.portfolio_db import get_conn
+    with get_conn() as conn:
+        with conn:  # transaction — commit on success
+            res = ibkr_flex.apply_diffs(
+                conn, [i.model_dump() for i in req.items], user_id=user_id)
+    if res["applied"]:
+        logger.info("ibkr recon applied %d diff(s) for %s: %s",
+                    len(res["applied"]), user_id,
+                    [(d["kind"], d["ticker"]) for d in res["applied"]])
+    return res
+
+
+@router.post("/ibkr-recon/ignore")
+def ibkr_recon_ignore(req: IbkrReconApplyRequest,
+                      user_id: str = Depends(get_current_user)):
+    """Whitelist known intentional diffs (e.g. transfer-in cost conventions).
+
+    Pinned to both sides' current values — if tracker or IBKR moves, the
+    diff reappears in the banner.
+    """
+    from backend.services import ibkr_flex
+    if not ibkr_flex.enabled():
+        raise HTTPException(status_code=400, detail="IBKR Flex not configured")
+    _require_db()
+    from backend.services.portfolio_db import get_conn
+    with get_conn() as conn:
+        with conn:
+            res = ibkr_flex.ignore_diffs(
+                conn, [i.model_dump() for i in req.items], user_id=user_id)
+    return res
+
+
+@router.get("/dividends")
+def list_dividends(user_id: str = Depends(get_current_user)):
+    """Dividend ledger (broker-reported cash transactions) + per-ticker net.
+
+    net = dividends + payments-in-lieu − withholding tax, converted to CNY
+    at current rates (amounts are small relative to NAV; historical-rate
+    precision isn't worth the bookkeeping).
+    """
+    path = _require_db()
+    from backend.services.portfolio_db import get_conn
+    from backend.services.ibkr_flex import _ensure_dividend_table
+    from backend.services.portfolio_prices import get_fx_rates as _get_fx
+    fx = _get_fx(db_path=path)
+    with get_conn() as conn:
+        _ensure_dividend_table(conn)
+        rows = [dict(r) for r in conn.execute(
+            "SELECT ticker, type, currency, amount, date, description, account "
+            "FROM dividend_log WHERE user_id=? ORDER BY date DESC, id DESC",
+            (user_id,))]
+    by_ticker: dict[str, dict] = {}
+    for r in rows:
+        tk = r["ticker"] or "(cash)"
+        g = by_ticker.setdefault(tk, {"net_native": 0.0, "currency": r["currency"], "net_cny": 0.0})
+        g["net_native"] += r["amount"]
+        g["net_cny"] += r["amount"] * fx.get(r["currency"] or "CNY", 1.0)
+    for g in by_ticker.values():
+        g["net_native"] = round(g["net_native"], 2)
+        g["net_cny"] = round(g["net_cny"], 2)
+    return {"rows": rows, "by_ticker": by_ticker}
+
+
+@router.delete("/ibkr-recon/ignore")
+def ibkr_recon_clear_ignores(user_id: str = Depends(get_current_user)):
+    """Clear the whitelist — every ignored diff shows again."""
+    from backend.services import ibkr_flex
+    _require_db()
+    from backend.services.portfolio_db import get_conn
+    with get_conn() as conn:
+        with conn:
+            n = ibkr_flex.clear_ignores(conn, user_id=user_id)
+    return {"cleared": n}
 
 
 @router.post("/snapshot")
