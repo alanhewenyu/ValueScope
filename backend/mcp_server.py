@@ -42,6 +42,39 @@ DISCLAIMER = (
     "Model output for research reference only; not investment advice."
 )
 
+# How the calling model should present final results to the user. Returned
+# with every phase-2 response so output stays consistent across clients.
+PRESENTATION_GUIDE = """向用户呈现估值结果时，请遵循以下结构（用 Markdown，不要直接倾倒原始 JSON）：
+1. 结论卡：公司名（代码）｜每股内在价值 vs 当前市价｜上行/下行空间百分比｜一句话结论（|差异|>15% 才说"低估/高估"，否则说"接近合理区间"）。
+2. 关键假设表：每个参数一行——你采用的值、5年历史均值（来自第一步的历史区间）、一句话依据（引用你搜索到的指引/预期时注明来源）。标注哪些参数沿用了历史默认值。
+3. 价值构成（bridge）：PV(现金流) + PV(终值) + 现金及投资 − 债务及少数股东权益 → 每股价值，简短列出；提及终值占比（PV终值/企业价值），占比高说明估值主要押在远期。
+4. 敏感性：从 sensitivity 表提取估值对增长率/利润率/WACC 的敏感区间，给出一个"合理价值区间"而非单点数字。
+5. 反向 DCF：市价隐含的增长率/利润率 vs 你的假设，一句话点评市场定价了什么。
+6. 结尾：附 web_page_url（如有）并注明它是交互式估值页可自行调参，最后附免责声明。
+数字保留合理精度（价格两位小数、百分比一位）；若做了多情景，用一张情景对比表。"""
+
+
+def _verdict(diff_pct: float) -> str:
+    """One-word verdict, same ±15% thresholds as the web UI."""
+    if diff_pct > 0.15:
+        return "undervalued (低估)"
+    if diff_pct < -0.15:
+        return "overvalued (高估)"
+    return "fairly valued (接近合理)"
+
+
+def _friendly_error(exc: Exception, ticker: str, has_key: bool) -> ValueError:
+    """Wrap raw upstream failures (e.g. FMP 401) with actionable guidance."""
+    msg = str(exc)
+    if "401" in msg or "Unauthorized" in msg or "402" in msg:
+        return ValueError(
+            f"{ticker} 的数据需要 Financial Modeling Prep API key"
+            f"（美股/日股必须；A股/港股无需）。"
+            + ("当前提供的 fmp_api_key 无效或额度不足。" if has_key
+               else "请在调用时传入 fmp_api_key 参数。")
+        )
+    return ValueError(msg)
+
 mcp = FastMCP(
     "valuescope",
     instructions=(
@@ -145,14 +178,18 @@ def run_dcf(
     analysis_phase = all(v is None for v in core.values())
 
     # Fill omitted assumptions from 5Y-historical suggestions
+    defaults_used = []
     if any(v is None for v in core.values()):
         try:
             defaults = _get_dcf_defaults_endpoint(normalized, fmp_api_key)
         except HTTPException as e:
             raise ValueError(str(e.detail)) from e
+        except Exception as e:
+            raise _friendly_error(e, normalized, bool(fmp_api_key)) from e
         for key, val in core.items():
             if val is None:
                 core[key] = defaults["suggested"][key]
+                defaults_used.append(key)
 
     params = DCFParams(
         ticker=normalized,
@@ -166,11 +203,33 @@ def run_dcf(
         result = _run_dcf_endpoint(params)
     except HTTPException as e:
         raise ValueError(str(e.detail)) from e
+    except Exception as e:
+        raise _friendly_error(e, normalized, bool(fmp_api_key)) from e
 
-    result["report_url"] = f"https://valuescope.app/stock/{normalized.upper()}/dcf"
+    # US/JP pages need the visitor's own FMP key in browser settings, so the
+    # link is only unconditionally useful for A-shares/HK.
+    needs_key_on_web = "." not in normalized or normalized.upper().endswith(".T")
+    result["web_page_url"] = f"https://valuescope.app/stock/{normalized.upper()}/dcf"
+    result["web_page_note"] = (
+        "交互式估值页（可自行调参重算），不包含本次计算的参数与结果。"
+        + ("该美股/日股页面需访问者在网页设置中配置自己的 FMP key 才能加载数据。"
+           if needs_key_on_web else "")
+    )
     result["disclaimer"] = DISCLAIMER
 
     if not analysis_phase:
+        diff = result.get("diff_pct") or 0
+        result["summary"] = {
+            "company": result.get("company_name"),
+            "ticker": normalized.upper(),
+            "intrinsic_value_per_share": result.get("dcf_price_converted", result.get("dcf_price")),
+            "market_price": result.get("market_price"),
+            "currency": result.get("currency"),
+            "upside_pct": round(diff * 100, 1),
+            "verdict": _verdict(diff),
+            "assumptions_filled_from_historical_defaults": defaults_used or None,
+        }
+        result["presentation_guide"] = PRESENTATION_GUIDE
         return result
 
     # ── Phase 1: baseline + analyst guide ──
@@ -183,9 +242,17 @@ def run_dcf(
             "valuation_params", "ttm",
         )
     }
+    baseline_note = None
+    if (result.get("dcf_price") or 0) <= 0:
+        baseline_note = (
+            "基线每股价值为负/零：这是用 5 年历史均值机械外推的结果，常见于高再投入、"
+            "FCFF 尚为负的成长期公司，不代表公司没有价值——恰恰说明估值高度依赖前瞻"
+            "假设，第二步的参数分析才是关键。请勿把该基线数字直接呈现给用户当作结论。"
+        )
     return {
         "phase": "baseline",
         "baseline_from_5y_historical_averages": baseline,
+        "baseline_note": baseline_note,
         "parameter_history": defaults.get("history"),
         "suggested_parameters": defaults.get("suggested"),
         "parameter_analysis_guide": _build_analysis_guide(normalized, fmp_api_key),
