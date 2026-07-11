@@ -69,19 +69,23 @@ def calculate_wacc(base_year_data, company_profile, apikey, verbose=True, forex_
     beta = float(company_profile.get('beta', 1.0))
     cost_of_debt = float(base_year_data.get('Cost of Debt (%)', 0)) / 100
 
-    if pd.isna(total_debt) or total_debt == 0:
+    market_cap_missing = pd.isna(market_cap) or market_cap <= 0
+    if market_cap_missing:
+        # Quote fetch failed upstream (price/market cap unknown). Fall back to
+        # an all-equity structure: weighting equity at 0 would yield WACC≈0 and
+        # nonsense terminal values downstream.
         if verbose:
-            print("Warning: Total Debt is NaN or 0. Setting Debt Weighting to 0.")
-        debt_weighting = 0
+            print("Warning: Market Cap is NaN or 0. Falling back to 100% equity weighting.")
+        debt_weighting = 0.0
+        equity_weighting = 1.0
     else:
-        debt_weighting = total_debt / (total_debt + market_cap) if (total_debt + market_cap) != 0 else 0
-
-    if pd.isna(market_cap) or market_cap == 0:
-        if verbose:
-            print("Warning: Market Cap is NaN or 0. Setting Equity Weighting to 0.")
-        equity_weighting = 0
-    else:
-        equity_weighting = market_cap / (total_debt + market_cap) if (total_debt + market_cap) != 0 else 0
+        if pd.isna(total_debt) or total_debt < 0:
+            if verbose:
+                print("Warning: Total Debt is NaN. Setting Debt Weighting to 0.")
+            total_debt = 0.0
+        total_capital = total_debt + market_cap
+        debt_weighting = total_debt / total_capital
+        equity_weighting = market_cap / total_capital
 
     risk_free_rate = get_risk_free_rate(company_profile.get('country', 'United States'))
     cost_of_equity = risk_free_rate + total_equity_risk_premium * beta
@@ -97,6 +101,8 @@ def calculate_wacc(base_year_data, company_profile, apikey, verbose=True, forex_
         ("Equity weighting", f"{equity_weighting:.1%}"),
         ("Calculated WACC", f"{wacc:.1%}")
     ]
+    if market_cap_missing:
+        wacc_details.insert(-1, ("Note", "Market cap unavailable — assumed all-equity"))
 
     if verbose:
         print_wacc_details(wacc_details)

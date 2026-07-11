@@ -93,6 +93,17 @@ def get(key: str):
         return None
 
 
+def delete(key: str) -> None:
+    """Drop a cache entry. Silently no-ops on any failure."""
+    if not _ensure_init():
+        return
+    try:
+        with _connect() as conn:
+            conn.execute("DELETE FROM api_cache WHERE key=?", (key,))
+    except Exception as e:
+        logger.debug("Persistent cache delete failed for %s: %s", key, e)
+
+
 def put(key: str, value, ttl: int) -> None:
     """Store value with TTL in seconds. Silently no-ops on any failure."""
     global _put_count

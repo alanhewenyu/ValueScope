@@ -57,8 +57,11 @@ def _ensure_profile_complete(profile, financial_data, ticker):
     """
     if not (profile and financial_data):
         return profile
-    if profile.get('outstandingShares', 0) and profile.get('companyName'):
+    if (profile.get('outstandingShares', 0) and profile.get('companyName')
+            and float(profile.get('marketCap') or 0) > 0):
         return profile  # already complete
+    # marketCap may still be 0 with a valid price (quote source returned price
+    # only) — _fill_profile_from_financial_data derives it as price × shares.
     profile = _fill_profile_from_financial_data(profile, financial_data)
     update_profile_cache(ticker, profile)
     return profile
@@ -148,7 +151,13 @@ def get_wacc(
         "details": wacc_details,
         "risk_free_rate": get_risk_free_rate(profile.get("country", "United States")),
     })
-    cache_put(ck, result, ttl=1800)  # 30 min
+    # Degraded profile (no market cap → all-equity fallback in calculate_wacc):
+    # cache briefly so the real capital structure comes back once quotes recover.
+    try:
+        _mc = float(profile.get("marketCap") or 0)
+    except (TypeError, ValueError):
+        _mc = 0.0
+    cache_put(ck, result, ttl=1800 if _mc > 0 else 120)
     return result
 
 

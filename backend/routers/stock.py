@@ -31,6 +31,7 @@ from backend.cache import get as cache_get, put as cache_put, make_key
 from backend.data_cache import (
     get_historical_financials,
     get_company_profile as cached_get_profile,
+    update_profile_cache,
 )
 
 router = APIRouter()
@@ -324,12 +325,18 @@ def get_profile(
     # For A-shares and HK stocks, enrich with yfinance data if akshare returned minimal info
     company_name = profile.get("companyName", "")
     if is_a_share(normalized) or is_hk_stock(normalized):
-        # akshare may return ticker as companyName if its API failed
-        if not company_name or company_name == normalized:
+        # akshare may return ticker as companyName if its API failed; it can
+        # also return a valid name but no quote (price=0) when only the quote
+        # source is down — both cases need the yfinance fallback.
+        _price_missing = not profile.get("price") or profile.get("price", 0) <= 0
+        if not company_name or company_name == normalized or _price_missing:
             try:
                 import yfinance as yf
                 yf_info = yf.Ticker(normalized).info
-                company_name = yf_info.get("longName") or yf_info.get("shortName") or company_name
+                # Only take yfinance's (English) name when we don't have a real
+                # one — don't clobber a valid Chinese name on a price-only fallback
+                if not company_name or company_name == normalized:
+                    company_name = yf_info.get("longName") or yf_info.get("shortName") or company_name
                 if not profile.get("industry"):
                     profile["industry"] = yf_info.get("industry", "")
                 if not profile.get("sector"):
@@ -340,6 +347,13 @@ def get_profile(
                     profile["marketCap"] = yf_info.get("marketCap", 0)
                 if not profile.get("description"):
                     profile["description"] = yf_info.get("longBusinessSummary", "")
+                # Seed the shared profile cache with the recovered quote so
+                # WACC/DCF see a real market cap instead of the all-equity
+                # fallback. update_profile_cache refuses price<=0, so a failed
+                # yfinance fetch can't poison anything.
+                if company_name and company_name != normalized:
+                    profile["companyName"] = company_name
+                update_profile_cache(normalized, profile)
             except Exception as e:
                 logger.warning("yfinance enrichment failed for %s: %s", normalized, e)
 
@@ -361,7 +375,10 @@ def get_profile(
         exchange=profile.get("exchangeShortName") or profile.get("exchange", ""),
         image=profile.get("image", ""),
     )
-    cache_put(ck, result, ttl=1800)  # 30 min
+    # price=0 means the quote fetch failed upstream — cache briefly so a
+    # transient failure doesn't pin ¥0.00 on the page for 30 min, but crawler
+    # bursts still don't hammer akshare.
+    cache_put(ck, result, ttl=1800 if result.price > 0 else 120)
     return result
 
 

@@ -51,6 +51,21 @@ def _evict_if_needed():
             _locks.pop(k, None)
 
 
+def _has_valid_price(profile) -> bool:
+    """True if the profile carries a usable quote (price > 0, not NaN).
+
+    A failed akshare/Sina quote fetch produces price=0 profiles; caching those
+    poisons WACC (equity weight 0) and shows ¥0.00 on stock pages until TTL.
+    """
+    if not profile:
+        return False
+    try:
+        price = float(profile.get('price') or 0)
+    except (TypeError, ValueError):
+        return False
+    return price == price and price > 0  # NaN-safe
+
+
 def _get_lock(key: str) -> threading.Lock:
     with _global_lock:
         if key not in _locks:
@@ -160,9 +175,13 @@ def get_company_profile(ticker, apikey=''):
 
         disk = persistent_cache.get(cache_key)
         if disk is not None:
-            _cache[cache_key] = (time.monotonic(), copy.deepcopy(disk))
-            _evict_if_needed()
-            return disk
+            if _has_valid_price(disk):
+                _cache[cache_key] = (time.monotonic(), copy.deepcopy(disk))
+                _evict_if_needed()
+                return disk
+            # Poisoned entry (price=0 from a failed quote fetch) — drop it and
+            # fall through to a fresh fetch instead of serving it until TTL.
+            persistent_cache.delete(cache_key)
 
         from modeling.data import (
             fetch_company_profile as _raw_profile,
@@ -189,13 +208,16 @@ def get_company_profile(ticker, apikey=''):
         if fin_cached and (time.monotonic() - fin_cached[0]) < _TTL:
             profile = _fill_profile_from_financial_data(profile, fin_cached[1])
 
-        # Don't cache an obviously incomplete profile for A/HK shares — happens when
-        # push2.eastmoney.com is unreachable but datacenter-web (financials) still works.
+        # Don't cache an obviously incomplete profile — happens when the quote
+        # source (push2.eastmoney.com / Sina) is unreachable but datacenter-web
+        # (financials) still works: missing shares for A/HK, or price=0 anywhere.
         # Skipping cache lets the next request retry; meanwhile callers should call
         # update_profile_cache() after enriching with financial_data to seed the cache.
         from modeling.data import is_a_share, is_hk_stock
         _needs_shares = is_a_share(ticker) or is_hk_stock(ticker)
-        if not (_needs_shares and not profile.get('outstandingShares')):
+        _incomplete = ((_needs_shares and not profile.get('outstandingShares'))
+                       or not _has_valid_price(profile))
+        if not _incomplete:
             _cache[cache_key] = (time.monotonic(), copy.deepcopy(profile))
             _evict_if_needed()
             persistent_cache.put(cache_key, profile, _DISK_PROFILE_TTL)
@@ -210,5 +232,12 @@ def update_profile_cache(ticker, profile):
     would hold the un-enriched (e.g. outstandingShares=0) version.
     """
     cache_key = f"profile:{ticker}"
+    if not _has_valid_price(profile):
+        # Enrichment filled shares/name but the quote is still missing — don't
+        # persist a price=0 profile (it poisons WACC for the whole TTL). Drop
+        # any existing entry so the next request refetches instead.
+        _cache.pop(cache_key, None)
+        persistent_cache.delete(cache_key)
+        return
     _cache[cache_key] = (time.monotonic(), copy.deepcopy(profile))
     persistent_cache.put(cache_key, profile, _DISK_PROFILE_TTL)
