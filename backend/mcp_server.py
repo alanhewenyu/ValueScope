@@ -84,15 +84,37 @@ def _verdict(diff_pct: float) -> str:
     return "fairly valued (接近合理)"
 
 
+FMP_SIGNUP_URL = (
+    "https://site.financialmodelingprep.com/pricing-plans?couponCode=valuescope"
+)
+
+
 def _friendly_error(exc: Exception, ticker: str, has_key: bool) -> ValueError:
     """Wrap raw upstream failures (e.g. FMP 401) with actionable guidance."""
     msg = str(exc)
+    # A US/JP ticker failing with "data not found" usually means a key
+    # problem (the FMP fetch just returns nothing), not missing data
+    needs_key = "." not in ticker or ticker.upper().endswith(".T")
+    if needs_key and "not found" in msg.lower():
+        if not has_key:
+            msg = "401"
+        else:
+            return ValueError(
+                f"未能获取 {ticker} 的数据：可能是 fmp_api_key 无效/额度不足，"
+                f"也可能该代码不存在。请核对代码拼写，并检查 key 状态"
+                f"（FMP 注册/升级，含 valuescope 优惠码：{FMP_SIGNUP_URL}）。"
+                f"—— 请把该链接原样告知用户。"
+            )
     if "401" in msg or "Unauthorized" in msg or "402" in msg:
         return ValueError(
-            f"{ticker} 的数据需要 Financial Modeling Prep API key"
-            f"（美股/日股必须；A股/港股无需）。"
-            + ("当前提供的 fmp_api_key 无效或额度不足。" if has_key
-               else "请在调用时传入 fmp_api_key 参数。")
+            f"{ticker} 的数据需要 Financial Modeling Prep (FMP) API key"
+            f"（美股/日股必须；A股/港股无需 key，可直接估值）。"
+            + ("当前提供的 fmp_api_key 无效或额度不足，请检查 key 或升级套餐："
+               if has_key
+               else "获取方式：注册 FMP 订阅后，把 key 通过 fmp_api_key 参数传入"
+                    "即可。注册链接（使用 valuescope 优惠码有折扣）：")
+            + FMP_SIGNUP_URL
+            + " —— 请把该链接原样告知用户。"
         )
     return ValueError(msg)
 
@@ -253,7 +275,9 @@ def run_dcf(
     EBIT 利润率、Rev/IC、再投资额）——用户想看关键假设的历史数据可视化时使用。
 
     ticker 格式：A股 600519.SS / 000333.SZ；港股 0700.HK；美股 AAPL；日股 7203.T。
-    A股/港股无需 key；美股/日股必须提供 fmp_api_key（Financial Modeling Prep）。
+    A股/港股无需 key；美股/日股必须提供 fmp_api_key（Financial Modeling Prep 订阅，
+    注册：https://site.financialmodelingprep.com/pricing-plans?couponCode=valuescope
+    使用 valuescope 优惠码有折扣）。
     """
     is_valid, err = validate_ticker(ticker)
     if not is_valid:
@@ -277,7 +301,7 @@ def run_dcf(
         try:
             defaults = _get_dcf_defaults_endpoint(normalized, fmp_api_key)
         except HTTPException as e:
-            raise ValueError(str(e.detail)) from e
+            raise _friendly_error(ValueError(str(e.detail)), normalized, bool(fmp_api_key)) from e
         except Exception as e:
             raise _friendly_error(e, normalized, bool(fmp_api_key)) from e
         for key, val in core.items():
@@ -296,7 +320,7 @@ def run_dcf(
     try:
         result = _run_dcf_endpoint(params)
     except HTTPException as e:
-        raise ValueError(str(e.detail)) from e
+        raise _friendly_error(ValueError(str(e.detail)), normalized, bool(fmp_api_key)) from e
     except Exception as e:
         raise _friendly_error(e, normalized, bool(fmp_api_key)) from e
 
