@@ -16,10 +16,11 @@ MCP sampling request, can search the web for guidance/consensus):
 This server never calls an LLM itself.
 """
 
+import io
 import logging
 
 from fastapi import HTTPException
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP, Image
 
 from backend.routers.valuation import (
     DCFParams,
@@ -51,7 +52,27 @@ PRESENTATION_GUIDE = """向用户呈现估值结果时，请遵循以下结构�
 4. 敏感性：从 sensitivity 表提取估值对增长率/利润率/WACC 的敏感区间，给出一个"合理价值区间"而非单点数字。
 5. 反向 DCF：市价隐含的增长率/利润率 vs 你的假设，一句话点评市场定价了什么。
 6. 结尾：附 web_page_url（如有）并注明它是交互式估值页可自行调参，最后附免责声明。
-数字保留合理精度（价格两位小数、百分比一位）；若做了多情景，用一张情景对比表。"""
+数字保留合理精度（价格两位小数、百分比一位）；若做了多情景，用一张情景对比表。
+关键假设表建议带趋势列（parameter_history 里每个指标有现成的 sparkline 字段），例如：
+| 假设 | 采用值 | 5Y均值 | 历史区间 | 趋势 |。用户想看图表时，
+带 include_history_chart=true 重新调用本工具即可返回历史趋势图（PNG）。"""
+
+
+_SPARK_CHARS = "▁▂▃▄▅▆▇█"
+
+
+def _sparkline(values_by_year: dict) -> str:
+    """Unicode sparkline over chronologically-sorted yearly values."""
+    try:
+        pairs = sorted(values_by_year.items())
+        nums = [float(v) for _, v in pairs if v is not None]
+        if len(nums) < 2:
+            return ""
+        lo, hi = min(nums), max(nums)
+        span = (hi - lo) or 1.0
+        return "".join(_SPARK_CHARS[int((v - lo) / span * (len(_SPARK_CHARS) - 1))] for v in nums)
+    except Exception:
+        return ""
 
 
 def _verdict(diff_pct: float) -> str:
@@ -87,6 +108,75 @@ mcp = FastMCP(
     json_response=True,
     streamable_http_path="/",
 )
+
+
+def _render_history_chart(ticker: str, apikey: str) -> bytes:
+    """Render the four valuation-driver charts (same set as the website's
+    overview page) as one 2×2 PNG. Data comes from the backend cache, so
+    this is cheap after any prior call for the ticker."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import pandas as pd
+
+    financial_data = get_historical_financials(
+        ticker, "annual", apikey, HISTORICAL_DATA_PERIODS_ANNUAL
+    )
+    if financial_data is None:
+        raise ValueError(f"Financial data not found: {ticker}")
+    df = financial_data["summary"]
+    years = list(df.columns)[::-1]  # chronological
+
+    def series(name):
+        if name not in df.index:
+            return [None] * len(years)
+        row = pd.to_numeric(df.loc[name][::-1], errors="coerce")
+        return [None if pd.isna(v) else float(v) for v in row]
+
+    revenue = series("Revenue")
+    growth = series("Revenue Growth (%)")
+    margin = series("EBIT Margin (%)")
+    rev_ic = series("Revenue / IC")
+    reinvest = series("Total Reinvestment")
+    currency = ""
+    if "Reported Currency" in df.index:
+        currency = str(df.loc["Reported Currency"].iloc[0])
+
+    fig, axes = plt.subplots(2, 2, figsize=(10, 6.5), dpi=110)
+    fig.suptitle(f"{ticker} — Valuation Drivers (5Y)", fontsize=12, fontweight="bold")
+
+    ax = axes[0][0]
+    ax.bar(years, [v or 0 for v in revenue], color="#3b82f6", alpha=0.85)
+    ax.set_title(f"Revenue ({currency} M) & Growth", fontsize=10)
+    ax2 = ax.twinx()
+    ax2.plot(years, growth, color="#f59e0b", marker="o", linewidth=1.5)
+    ax2.axhline(0, color="#9ca3af", linewidth=0.6, linestyle="--")
+    ax2.set_ylabel("Growth %", fontsize=8)
+
+    ax = axes[0][1]
+    ax.plot(years, margin, color="#10b981", marker="o", linewidth=1.8)
+    ax.set_title("EBIT Margin %", fontsize=10)
+    ax.grid(axis="y", alpha=0.3)
+
+    ax = axes[1][0]
+    ax.plot(years, rev_ic, color="#8b5cf6", marker="o", linewidth=1.8)
+    ax.set_title("Revenue / Invested Capital (x)", fontsize=10)
+    ax.grid(axis="y", alpha=0.3)
+
+    ax = axes[1][1]
+    colors = ["#ef4444" if (v or 0) < 0 else "#3b82f6" for v in reinvest]
+    ax.bar(years, [v or 0 for v in reinvest], color=colors, alpha=0.85)
+    ax.axhline(0, color="#9ca3af", linewidth=0.6)
+    ax.set_title(f"Total Reinvestment ({currency} M)", fontsize=10)
+
+    for row_axes in axes:
+        for a in row_axes:
+            a.tick_params(labelsize=8)
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png")
+    plt.close(fig)
+    return buf.getvalue()
 
 
 def _build_analysis_guide(ticker: str, apikey: str) -> str:
@@ -142,8 +232,9 @@ def run_dcf(
     tax_rate: float | None = None,
     wacc: float | None = None,
     ronic_match_wacc: bool = False,
+    include_history_chart: bool = False,
     fmp_api_key: str = "",
-) -> dict:
+):
     """一站式 DCF 估值（10 年两阶段 FCFF 折现），分两步使用：
 
     第一步——不带任何假设参数调用：返回按 5 年历史均值计算的基线估值、每个参数的
@@ -157,6 +248,9 @@ def run_dcf(
     参数单位：增长率/利润率/税率/WACC 为百分数（10 表示 10%）；
     revenue_invested_capital_ratio 为倍数（如 2.0）；convergence 为收敛年数。
     省略 tax_rate/wacc 时由引擎按财报与市场数据自动计算。
+
+    include_history_chart=true 时额外返回一张历史趋势图（PNG，2×2：营收与增速、
+    EBIT 利润率、Rev/IC、再投资额）——用户想看关键假设的历史数据可视化时使用。
 
     ticker 格式：A股 600519.SS / 000333.SZ；港股 0700.HK；美股 AAPL；日股 7203.T。
     A股/港股无需 key；美股/日股必须提供 fmp_api_key（Financial Modeling Prep）。
@@ -211,7 +305,8 @@ def run_dcf(
     needs_key_on_web = "." not in normalized or normalized.upper().endswith(".T")
     result["web_page_url"] = f"https://valuescope.app/stock/{normalized.upper()}/dcf"
     result["web_page_note"] = (
-        "交互式估值页（可自行调参重算），不包含本次计算的参数与结果。"
+        "交互式估值页（可自行调参重算），不包含本次计算的参数与结果；"
+        f"历史财务趋势交互图表见概览页 https://valuescope.app/stock/{normalized.upper()}。"
         + ("该美股/日股页面需访问者在网页设置中配置自己的 FMP key 才能加载数据。"
            if needs_key_on_web else "")
     )
@@ -230,7 +325,7 @@ def run_dcf(
             "assumptions_filled_from_historical_defaults": defaults_used or None,
         }
         result["presentation_guide"] = PRESENTATION_GUIDE
-        return result
+        return _with_optional_chart(result, normalized, fmp_api_key, include_history_chart)
 
     # ── Phase 1: baseline + analyst guide ──
     # Trim the heavy tables — full detail comes with the phase-2 run.
@@ -242,6 +337,12 @@ def run_dcf(
             "valuation_params", "ttm",
         )
     }
+    # Enrich per-parameter history with unicode sparklines (chronological)
+    history = defaults.get("history") or {}
+    for metric in history.values():
+        if isinstance(metric, dict) and isinstance(metric.get("values"), dict):
+            metric["sparkline"] = _sparkline(metric["values"])
+
     baseline_note = None
     if (result.get("dcf_price") or 0) <= 0:
         baseline_note = (
@@ -249,11 +350,11 @@ def run_dcf(
             "FCFF 尚为负的成长期公司，不代表公司没有价值——恰恰说明估值高度依赖前瞻"
             "假设，第二步的参数分析才是关键。请勿把该基线数字直接呈现给用户当作结论。"
         )
-    return {
+    payload = {
         "phase": "baseline",
         "baseline_from_5y_historical_averages": baseline,
         "baseline_note": baseline_note,
-        "parameter_history": defaults.get("history"),
+        "parameter_history": history,
         "suggested_parameters": defaults.get("suggested"),
         "parameter_analysis_guide": _build_analysis_guide(normalized, fmp_api_key),
         "next_step": (
@@ -265,3 +366,17 @@ def run_dcf(
         ),
         "disclaimer": DISCLAIMER,
     }
+    return _with_optional_chart(payload, normalized, fmp_api_key, include_history_chart)
+
+
+def _with_optional_chart(payload: dict, ticker: str, apikey: str, include_chart: bool):
+    """Append the history chart as an MCP image content block when asked."""
+    if not include_chart:
+        return payload
+    try:
+        chart = Image(data=_render_history_chart(ticker, apikey), format="png")
+    except Exception as e:
+        logger.warning("history chart render failed for %s: %s", ticker, e)
+        payload["history_chart_error"] = str(e)
+        return payload
+    return [payload, chart]
