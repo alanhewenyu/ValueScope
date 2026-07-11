@@ -1593,8 +1593,13 @@ function MonthlyHeatmap({ snapshots, navHistory = [], locale }: {
 
   return (
     <div className="mt-4 mb-2">
-      <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">
+      <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">
         {zh ? "月度收益 (%)" : "Monthly Returns (%)"}
+      </div>
+      <div className="text-[9px] text-gray-400 mb-2">
+        {zh
+          ? "口径：TWR 净值环比（与上方曲线同源，出入金免疫，各月连乘=累计）；2026-03 前为周频 NAV/Capital 近似，月末=当月最后一个数据点"
+          : "Measure: month-over-month TWR unit NAV (flow-immune; months compound to the cumulative); pre-2026-03 approximated from weekly NAV/Capital"}
       </div>
       <div className="overflow-x-auto">
         <table className="text-[10px] font-mono border-collapse">
@@ -1638,7 +1643,15 @@ function PerformanceChart({ navHistory, snapshots = [], locale }: {
   navHistory: NavHistoryPoint[]; snapshots?: Snapshot[]; locale: string;
 }) {
   const [range, setRange] = useState<string>("2Y");
-  const [showBenchmarks, setShowBenchmarks] = useState(false);
+  // "twr" = indexed unit-NAV view (what the hero links to); "nav" = ¥ NAV/Capital.
+  // Both prefs persist — the benchmark toggle resetting on every visit is
+  // exactly how the TWR curve used to "disappear"
+  const [view, setViewRaw] = useState<"twr" | "nav">(() =>
+    (typeof window !== "undefined" && localStorage.getItem("vs_perf_view") === "nav") ? "nav" : "twr");
+  const setView = (v: "twr" | "nav") => { setViewRaw(v); try { localStorage.setItem("vs_perf_view", v); } catch { /* ignore */ } };
+  const [showBenchmarks, setShowBenchmarksRaw] = useState<boolean>(() =>
+    typeof window !== "undefined" && localStorage.getItem("vs_perf_bench") === "1");
+  const setShowBenchmarks = (b: boolean) => { setShowBenchmarksRaw(b); try { localStorage.setItem("vs_perf_bench", b ? "1" : "0"); } catch { /* ignore */ } };
   const [benchData, setBenchData] = useState<Record<string, BenchmarkPoint[]>>({});
   const [benchLoading, setBenchLoading] = useState(false);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
@@ -1681,7 +1694,7 @@ function PerformanceChart({ navHistory, snapshots = [], locale }: {
   // Benchmark mode: indexed return chart (base=100)
   const benchColors: Record<string, string> = { "CSI 300": "#ef4444", "S&P 500": "#22c55e", "Hang Seng": "#f59e0b" };
 
-  if (showBenchmarks && Object.keys(benchData).length > 0) {
+  if (view === "twr") {
     // Portfolio indexed return — a stitched, seamless series:
     // before T0 the legacy NAV/Capital ratio, from T0 the TWR unit NAV.
     // The inception seed equals NAV/Capital on T0, so the segments meet
@@ -1710,6 +1723,16 @@ function PerformanceChart({ navHistory, snapshots = [], locale }: {
     const portLabel = locale === "zh"
       ? (twrPts.length > 0 ? "组合净值 (TWR)" : "组合")
       : (twrPts.length > 0 ? "Portfolio (TWR)" : "Portfolio");
+    // Two rulers, one curve: the chart rebases the WINDOW start to 100
+    // (switching ranges moves the answer); the unit NAV is anchored at the
+    // accounting origin (1.0 = capital just paid in). Showing both with the
+    // conversion spelled out kills the "110% vs 1.70 don't match" confusion.
+    const lastUnitNav = twrPts.length > 0
+      ? (twrPts[twrPts.length - 1].unit_nav as number)
+      : (filteredNav[filteredNav.length - 1].capital_invested > 0
+        ? filteredNav[filteredNav.length - 1].net_asset_value / filteredNav[filteredNav.length - 1].capital_invested
+        : null);
+    const windowRet = portIndexed[portIndexed.length - 1].indexed - 100;
 
     // Build indexed benchmark returns (filter to date range)
     const startDate = portIndexed[0].date;
@@ -1761,17 +1784,28 @@ function PerformanceChart({ navHistory, snapshots = [], locale }: {
       <>
         <SectionTitle
           note={locale === "zh"
-            ? "* 标准化收益对比 (起始=100)，使用 equity_nav (NAV/Capital) 消除出入金影响\n* 基准均折算为人民币口径（标普×USDCNY、恒生×HKDCNY），与组合同币种可比；均为价格指数，不含股息\n* 沪深300 数据源滞后时自动切换 510300 ETF 代理"
-            : "* Indexed return comparison (base=100), flow-adjusted\n* Benchmarks converted to CNY (S&P × USDCNY, HSI × HKDCNY) to match the portfolio's denomination; price indices, ex-dividends"}>
+            ? "* 净值曲线 (起始=100)：T0(2026-07-04) 起为份额净值 (TWR)，之前为 NAV/Capital 比值无缝拼接——已剔除出入金影响\n* 勾选 Benchmarks 叠加基准：均折算人民币口径（标普×USDCNY、恒生×HKDCNY），与组合同币种可比；价格指数不含股息；沪深300 数据源滞后时自动切换 510300 ETF 代理"
+            : "* Unit-NAV curve (base=100): TWR unit NAV from T0, NAV/Capital ratio before — flow-adjusted\n* Benchmarks (toggle) converted to CNY to match the portfolio's denomination; price indices, ex-dividends"}>
           {locale === "zh" ? "业绩走势" : "Performance"}
         </SectionTitle>
         <div className="flex items-center gap-2 mb-3">
+          <span className={pillCls(true)}>{locale === "zh" ? "净值 (TWR)" : "Unit NAV (TWR)"}</span>
+          <span className={pillCls(false)} onClick={() => setView("nav")}>{locale === "zh" ? "金额 ¥" : "NAV ¥"}</span>
+          <span className="text-gray-300 dark:text-gray-700">|</span>
           {rangeOptions.map((r) => <button key={r} onClick={() => setRange(r)} className={pillCls(range === r)}>{r}</button>)}
           <span className="text-gray-300 dark:text-gray-700">|</span>
           <label className="flex items-center gap-1 text-[10px] text-gray-500 cursor-pointer select-none">
             <input type="checkbox" checked={showBenchmarks} onChange={(e) => setShowBenchmarks(e.target.checked)} className="w-3 h-3" />
-            Benchmarks
+            Benchmarks{benchLoading ? " ..." : ""}
           </label>
+        </div>
+        <div className="text-[10px] font-mono text-gray-400 mb-2"
+          title={locale === "zh"
+            ? "面值 1.0 = 净资产恰好等于实收资本的会计基准（非具体日期）；溢价 ≈ 累计总盈亏 ÷ 本金（方案A口径，含已消费利润）"
+            : "Par 1.0 = the accounting datum where NAV equals paid-in capital (not a date); the premium ≈ lifetime P&L / capital"}>
+          {locale === "zh"
+            ? `本区间 ${windowRet >= 0 ? "+" : ""}${windowRet.toFixed(1)}%（${portIndexed[0].date} 起点=100）${lastUnitNav != null ? ` · 当前单位净值 ${lastUnitNav.toFixed(4)}，相对面值 1.0 溢价 ${lastUnitNav >= 1 ? "+" : ""}${((lastUnitNav - 1) * 100).toFixed(1)}% ≈ 累计盈亏/本金` : ""} —— 同一条曲线，两把量尺`
+            : `Window ${windowRet >= 0 ? "+" : ""}${windowRet.toFixed(1)}% (base=100 at ${portIndexed[0].date})${lastUnitNav != null ? ` · unit NAV ${lastUnitNav.toFixed(4)}, ${lastUnitNav >= 1 ? "+" : ""}${((lastUnitNav - 1) * 100).toFixed(1)}% over par (≈ lifetime P&L / capital)` : ""}`}
         </div>
         <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4 mb-2">
           <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full cursor-crosshair" style={{ maxHeight: 300 }}
@@ -1907,12 +1941,10 @@ function PerformanceChart({ navHistory, snapshots = [], locale }: {
       </SectionTitle>
 
       <div className="flex items-center gap-2 mb-3">
-        {rangeOptions.map((r) => <button key={r} onClick={() => setRange(r)} className={pillCls(range === r)}>{r}</button>)}
+        <span className={pillCls(false)} onClick={() => setView("twr")}>{locale === "zh" ? "净值 (TWR)" : "Unit NAV (TWR)"}</span>
+        <span className={pillCls(true)}>{locale === "zh" ? "金额 ¥" : "NAV ¥"}</span>
         <span className="text-gray-300 dark:text-gray-700">|</span>
-        <label className="flex items-center gap-1 text-[10px] text-gray-500 cursor-pointer select-none">
-          <input type="checkbox" checked={showBenchmarks} onChange={(e) => setShowBenchmarks(e.target.checked)} className="w-3 h-3" />
-          Benchmarks{benchLoading ? " ..." : ""}
-        </label>
+        {rangeOptions.map((r) => <button key={r} onClick={() => setRange(r)} className={pillCls(range === r)}>{r}</button>)}
       </div>
 
       <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4 mb-2">
