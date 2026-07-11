@@ -70,7 +70,7 @@ if _fmp_key:
 
 from contextlib import asynccontextmanager
 
-from backend.mcp_server import mcp as valuescope_mcp
+from backend.mcp_server import MCPRequestMetaMiddleware, mcp as valuescope_mcp
 
 
 @asynccontextmanager
@@ -89,6 +89,9 @@ app = FastAPI(
 
 # GZip — compress responses >= 500 bytes (~50% reduction for JSON)
 app.add_middleware(GZipMiddleware, minimum_size=500)
+
+# Capture client IP + X-FMP-Key for MCP quota/trial handling
+app.add_middleware(MCPRequestMetaMiddleware)
 
 # CORS — allow Next.js dev server and production domains
 app.add_middleware(

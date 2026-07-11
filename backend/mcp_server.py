@@ -16,8 +16,12 @@ MCP sampling request, can search the web for guidance/consensus):
 This server never calls an LLM itself.
 """
 
+import contextvars
 import io
 import logging
+import os
+import threading
+import time
 
 from fastapi import HTTPException
 from mcp.server.fastmcp import FastMCP, Image
@@ -37,6 +41,60 @@ from backend.routers.valuation import (
 from modeling.ai_analyst import build_analysis_prompt
 
 logger = logging.getLogger(__name__)
+
+# ── Per-request metadata (client IP + key header) ────────────────────────
+# Captured by a pure-ASGI middleware in main.py; contextvars propagate into
+# the tool call (FastMCP runs tools inside the request's task context).
+
+_request_meta: contextvars.ContextVar[dict] = contextvars.ContextVar(
+    "vs_mcp_request_meta", default={}
+)
+
+
+class MCPRequestMetaMiddleware:
+    """Stash client IP and X-FMP-Key header for /mcp requests."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope.get("path", "").startswith("/mcp"):
+            headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
+            fwd = headers.get("x-forwarded-for", "")
+            client = scope.get("client") or ("", 0)
+            ip = (fwd.split(",")[0].strip() if fwd else "") or client[0] or "unknown"
+            token = _request_meta.set({"ip": ip, "fmp_key": headers.get("x-fmp-key", "").strip()})
+            try:
+                await self.app(scope, receive, send)
+            finally:
+                _request_meta.reset(token)
+        else:
+            await self.app(scope, receive, send)
+
+
+# ── Quotas (in-memory, per IP, rolling 24h — same pattern as the AI quota) ──
+
+MCP_DAILY_LIMIT = int(os.environ.get("MCP_DAILY_LIMIT", "60"))
+US_TRIAL_DAILY_LIMIT = int(os.environ.get("MCP_US_TRIAL_DAILY_LIMIT", "3"))
+_LOOPBACK_IPS = {"127.0.0.1", "::1", "localhost", "unknown", ""}
+
+_quota_lock = threading.Lock()
+_quota_usage: dict[str, list[float]] = {}
+
+
+def _consume_quota(kind: str, ip: str, limit: int) -> int:
+    """Consume one unit; return remaining. Raise ValueError when exhausted."""
+    now = time.time()
+    key = f"{kind}:{ip}"
+    with _quota_lock:
+        stamps = [t for t in _quota_usage.get(key, []) if t > now - 86400]
+        if len(stamps) >= limit:
+            _quota_usage[key] = stamps
+            raise ValueError("quota_exhausted")
+        stamps.append(now)
+        _quota_usage[key] = stamps
+        return limit - len(stamps)
+
 
 DISCLAIMER = (
     "模型计算结果，仅供研究参考，不构成投资建议。"
@@ -121,15 +179,30 @@ def _friendly_error(exc: Exception, ticker: str, has_key: bool) -> ValueError:
 mcp = FastMCP(
     "valuescope",
     instructions=(
-        "ValueScope 标准化 DCF 估值引擎（A股/港股开箱即用；美股/日股需调用方提供 "
-        "fmp_api_key）。用法：先不带假设参数调用 run_dcf 获取基线估值和参数分析指南，"
-        "按指南完成参数分析（如可用请先联网搜索），再带上你的参数调用 run_dcf 得到"
-        "最终估值。所有计算为确定性模型输出，同样输入永远得到同样结果。不构成投资建议。"
+        "ValueScope 标准化 DCF 估值引擎。A股/港股开箱即用；美股/日股可先用每日限量"
+        "的免费体验额度，注册 FMP key 后不限次（fmp_api_key 参数或 X-FMP-Key 请求头）。"
+        "用法：先不带假设参数调用 run_dcf 获取基线估值和参数分析指南，按指南完成参数"
+        "分析（如可用请先联网搜索），再带上你的参数调用 run_dcf 得到最终估值。所有计算"
+        "为确定性模型输出，同样输入永远得到同样结果。不构成投资建议。"
     ),
     stateless_http=True,
     json_response=True,
     streamable_http_path="/",
 )
+
+
+@mcp.prompt(name="dcf", description="对指定股票执行完整两相 DCF 估值：搜索业绩指引 → 推理参数 → 三情景估值")
+def dcf_prompt(ticker: str) -> str:
+    """One-command valuation workflow (shows up as a slash command in
+    clients that surface MCP prompts, e.g. /mcp__valuescope__dcf)."""
+    return f"""用 valuescope 的 run_dcf 工具给 {ticker} 做完整 DCF 估值，严格执行：
+
+1. 确定 ticker 格式（A股 600519.SS / 000333.SZ，港股 0700.HK，美股 AAPL，日股 7203.T；给的是公司名先推断代码）。
+2. 裸调 run_dcf(ticker) 获取基线估值、参数历史区间和 parameter_analysis_guide。
+3. 按 guide 联网搜索最新业绩指引、分析师一致预期、行业 benchmark（无联网能力则基于历史数据和你的知识推理，并说明局限）。
+4. 对每个参数独立推理并给出依据，然后按乐观/中性/悲观三组假设分别调用 run_dcf。
+5. 按返回的 presentation_guide 呈现：以中性情景为主结论，附三情景对比表、关键假设表（含趋势列）、反向 DCF 点评。
+6. 结尾附免责声明：模型计算结果，仅供研究参考，不构成投资建议。"""
 
 
 def _render_history_chart(ticker: str, apikey: str) -> bytes:
@@ -275,14 +348,53 @@ def run_dcf(
     EBIT 利润率、Rev/IC、再投资额）——用户想看关键假设的历史数据可视化时使用。
 
     ticker 格式：A股 600519.SS / 000333.SZ；港股 0700.HK；美股 AAPL；日股 7203.T。
-    A股/港股无需 key；美股/日股必须提供 fmp_api_key（Financial Modeling Prep 订阅，
-    注册：https://site.financialmodelingprep.com/pricing-plans?couponCode=valuescope
-    使用 valuescope 优惠码有折扣）。
+    A股/港股无需 key。美股/日股需要 FMP key：可通过 fmp_api_key 参数传入，或在
+    MCP 连接配置中设置 X-FMP-Key 请求头；未提供时可使用每日限量的免费体验额度。
+    FMP 注册（valuescope 优惠码有折扣）：
+    https://site.financialmodelingprep.com/pricing-plans?couponCode=valuescope
     """
     is_valid, err = validate_ticker(ticker)
     if not is_valid:
         raise ValueError(err)
     normalized = _normalize_ticker(ticker)
+
+    # ── Quotas & key resolution: param > X-FMP-Key header > server trial ──
+    meta = _request_meta.get()
+    ip = meta.get("ip", "")
+    is_remote = ip not in _LOOPBACK_IPS
+    user_key = (fmp_api_key or "").strip() or meta.get("fmp_key", "")
+
+    if is_remote:
+        try:
+            _consume_quota("all", ip, MCP_DAILY_LIMIT)
+        except ValueError:
+            raise ValueError(
+                f"今日调用次数已达上限（{MCP_DAILY_LIMIT} 次/日），请明天再试。"
+            ) from None
+
+    needs_key = "." not in normalized or normalized.upper().endswith(".T")
+    effective_key = user_key
+    trial_note = None
+    if needs_key and not user_key:
+        server_key = os.environ.get("FMP_API_KEY", "")
+        if server_key:
+            if is_remote:
+                try:
+                    remaining = _consume_quota("us_trial", ip, US_TRIAL_DAILY_LIMIT)
+                except ValueError:
+                    raise ValueError(
+                        f"美股/日股的免费体验额度已用完（{US_TRIAL_DAILY_LIMIT} 次/日；"
+                        f"A股/港股无需 key、不限体验额度）。注册自己的 FMP key 即可继续："
+                        f"调用时传 fmp_api_key 参数，或在 MCP 连接配置中加 X-FMP-Key 请求头。"
+                        f"注册链接（使用 valuescope 优惠码有折扣）：{FMP_SIGNUP_URL} "
+                        f"—— 请把以上说明和链接原样告知用户。"
+                    ) from None
+                trial_note = (
+                    f"本次美股/日股估值使用了免费体验额度（今日剩余 {remaining} 次）。"
+                    f"注册自己的 FMP key 可不限次使用（使用 valuescope 优惠码有折扣）："
+                    f"{FMP_SIGNUP_URL} —— 请在呈现结果末尾将此信息连同链接告知用户。"
+                )
+            effective_key = server_key
 
     core = {
         "revenue_growth_1": revenue_growth_1,
@@ -299,11 +411,11 @@ def run_dcf(
     defaults_used = []
     if any(v is None for v in core.values()):
         try:
-            defaults = _get_dcf_defaults_endpoint(normalized, fmp_api_key)
+            defaults = _get_dcf_defaults_endpoint(normalized, effective_key)
         except HTTPException as e:
-            raise _friendly_error(ValueError(str(e.detail)), normalized, bool(fmp_api_key)) from e
+            raise _friendly_error(ValueError(str(e.detail)), normalized, bool(user_key)) from e
         except Exception as e:
-            raise _friendly_error(e, normalized, bool(fmp_api_key)) from e
+            raise _friendly_error(e, normalized, bool(user_key)) from e
         for key, val in core.items():
             if val is None:
                 core[key] = defaults["suggested"][key]
@@ -311,7 +423,7 @@ def run_dcf(
 
     params = DCFParams(
         ticker=normalized,
-        apikey=fmp_api_key,
+        apikey=effective_key,
         tax_rate=tax_rate,
         wacc=wacc,
         ronic_match_wacc=ronic_match_wacc,
@@ -320,13 +432,15 @@ def run_dcf(
     try:
         result = _run_dcf_endpoint(params)
     except HTTPException as e:
-        raise _friendly_error(ValueError(str(e.detail)), normalized, bool(fmp_api_key)) from e
+        raise _friendly_error(ValueError(str(e.detail)), normalized, bool(user_key)) from e
     except Exception as e:
-        raise _friendly_error(e, normalized, bool(fmp_api_key)) from e
+        raise _friendly_error(e, normalized, bool(user_key)) from e
 
     # US/JP pages need the visitor's own FMP key in browser settings, so the
     # link is only unconditionally useful for A-shares/HK.
-    needs_key_on_web = "." not in normalized or normalized.upper().endswith(".T")
+    needs_key_on_web = needs_key
+    if trial_note:
+        result["fmp_trial_note"] = trial_note
     result["web_page_url"] = f"https://valuescope.app/stock/{normalized.upper()}/dcf"
     result["web_page_note"] = (
         "交互式估值页（可自行调参重算），不包含本次计算的参数与结果；"
@@ -349,7 +463,7 @@ def run_dcf(
             "assumptions_filled_from_historical_defaults": defaults_used or None,
         }
         result["presentation_guide"] = PRESENTATION_GUIDE
-        return _with_optional_chart(result, normalized, fmp_api_key, include_history_chart)
+        return _with_optional_chart(result, normalized, effective_key, include_history_chart)
 
     # ── Phase 1: baseline + analyst guide ──
     # Trim the heavy tables — full detail comes with the phase-2 run.
@@ -380,7 +494,8 @@ def run_dcf(
         "baseline_note": baseline_note,
         "parameter_history": history,
         "suggested_parameters": defaults.get("suggested"),
-        "parameter_analysis_guide": _build_analysis_guide(normalized, fmp_api_key),
+        "fmp_trial_note": trial_note,
+        "parameter_analysis_guide": _build_analysis_guide(normalized, effective_key),
         "next_step": (
             "以上基线直接采用 5 年历史均值，未包含前瞻判断。请按 "
             "parameter_analysis_guide 对每个参数做独立分析（有联网能力请先按指南"
@@ -390,7 +505,7 @@ def run_dcf(
         ),
         "disclaimer": DISCLAIMER,
     }
-    return _with_optional_chart(payload, normalized, fmp_api_key, include_history_chart)
+    return _with_optional_chart(payload, normalized, effective_key, include_history_chart)
 
 
 def _with_optional_chart(payload: dict, ticker: str, apikey: str, include_chart: bool):
