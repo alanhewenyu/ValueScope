@@ -1005,6 +1005,7 @@ def get_benchmarks(start: str = "2024-01-01"):
     series: dict[str, tuple] = {}  # name -> (close_series, ccy)
     for name, ticker, ccy in (("CSI 300", "000300.SS", "CNY"),
                               ("S&P 500", "^GSPC", "USD"),
+                              ("Nasdaq 100", "^NDX", "USD"),
                               ("Hang Seng", "^HSI", "HKD")):
         try:
             s = dl(ticker)

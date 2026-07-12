@@ -219,8 +219,8 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
   if (series.length < 2) return null;
 
   const benchLabels: Record<string, string> = zh
-    ? { "CSI 300": "沪深300", "S&P 500": "标普500", "Hang Seng": "恒生" }
-    : { "CSI 300": "CSI 300", "S&P 500": "S&P 500", "Hang Seng": "HSI" };
+    ? { "CSI 300": "沪深300", "S&P 500": "标普500", "Nasdaq 100": "纳指100", "Hang Seng": "恒生" }
+    : { "CSI 300": "CSI 300", "S&P 500": "S&P 500", "Nasdaq 100": "NDX", "Hang Seng": "HSI" };
   // Rebase at the last index close ON OR BEFORE the portfolio's first
   // snapshot (the endpoint returns a 10-day lead-in for exactly this):
   // snapshots exist on Saturdays pricing Friday's close, so taking the
@@ -1692,7 +1692,7 @@ function PerformanceChart({ navHistory, snapshots = [], locale }: {
   const lastPnl = filteredNav[filteredNav.length - 1].pnl;
 
   // Benchmark mode: indexed return chart (base=100)
-  const benchColors: Record<string, string> = { "CSI 300": "#ef4444", "S&P 500": "#22c55e", "Hang Seng": "#f59e0b" };
+  const benchColors: Record<string, string> = { "CSI 300": "#ef4444", "S&P 500": "#22c55e", "Nasdaq 100": "#8b5cf6", "Hang Seng": "#f59e0b" };
 
   if (view === "twr") {
     // Portfolio indexed return — a stitched, seamless series:
