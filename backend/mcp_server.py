@@ -25,6 +25,7 @@ import time
 
 from fastapi import HTTPException
 from mcp.server.fastmcp import FastMCP, Image
+from mcp.server.transport_security import TransportSecuritySettings
 
 from backend.routers.valuation import (
     DCFParams,
@@ -188,6 +189,14 @@ mcp = FastMCP(
     stateless_http=True,
     json_response=True,
     streamable_http_path="/",
+    # Public remote server: the SDK's DNS-rebinding protection defaults to
+    # localhost-only Host headers and rejects the Railway/custom domains.
+    # Rebinding attacks target localhost servers with ambient credentials;
+    # this endpoint is public, unauthenticated, and IP-rate-limited, so the
+    # protection does not apply.
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=False
+    ),
 )
 
 
