@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Capture web GUI screenshots from running Streamlit app for README."""
 
+import os
 import time
 from playwright.sync_api import sync_playwright
 
 URL = "http://localhost:8501"
-OUTPUT_DIR = "/Users/Alan/valuescope/assets"
+OUTPUT_DIR = os.path.dirname(os.path.abspath(__file__))
 TICKER = "600519.SS"
 
 def main():

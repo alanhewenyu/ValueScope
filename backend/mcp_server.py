@@ -84,7 +84,13 @@ class MCPRequestMetaMiddleware:
 
 MCP_DAILY_LIMIT = int(os.environ.get("MCP_DAILY_LIMIT", "60"))
 US_TRIAL_DAILY_LIMIT = int(os.environ.get("MCP_US_TRIAL_DAILY_LIMIT", "3"))
+# Global cap on trial calls served by the SERVER's FMP key across all IPs.
+# The per-IP trial limit alone doesn't bound cost — a public endpoint can be
+# hit from rotating IPs — so this is the hard ceiling on how much of the
+# owner's FMP quota the free trial can burn per day.
+MCP_US_TRIAL_GLOBAL_DAILY = int(os.environ.get("MCP_US_TRIAL_GLOBAL_DAILY", "200"))
 _LOOPBACK_IPS = {"127.0.0.1", "::1", "localhost", "unknown", ""}
+_GLOBAL_QUOTA_KEY = "__global__"
 
 _quota_lock = threading.Lock()
 _quota_usage: dict[str, list[float]] = {}
@@ -395,16 +401,25 @@ def run_dcf(
         server_key = os.environ.get("FMP_API_KEY", "")
         if server_key:
             if is_remote:
+                _trial_exhausted = (
+                    "美股/日股的免费体验额度已用完（A股/港股无需 key、不限体验额度）。"
+                    "注册自己的 FMP key 即可继续："
+                    "调用时传 fmp_api_key 参数，或在 MCP 连接配置中加 X-FMP-Key 请求头。"
+                    f"注册链接（使用 valuescope 优惠码有折扣）：{FMP_SIGNUP_URL} "
+                    "—— 请把以上说明和链接原样告知用户。"
+                )
+                # Per-IP limit first (so a single IP hitting its own cap
+                # doesn't consume a global slot), then the global ceiling on
+                # the owner's FMP key (bounds total cost under IP rotation).
                 try:
                     remaining = _consume_quota("us_trial", ip, US_TRIAL_DAILY_LIMIT)
                 except ValueError:
-                    raise ValueError(
-                        f"美股/日股的免费体验额度已用完（{US_TRIAL_DAILY_LIMIT} 次/日；"
-                        f"A股/港股无需 key、不限体验额度）。注册自己的 FMP key 即可继续："
-                        f"调用时传 fmp_api_key 参数，或在 MCP 连接配置中加 X-FMP-Key 请求头。"
-                        f"注册链接（使用 valuescope 优惠码有折扣）：{FMP_SIGNUP_URL} "
-                        f"—— 请把以上说明和链接原样告知用户。"
-                    ) from None
+                    raise ValueError(_trial_exhausted) from None
+                try:
+                    _consume_quota("us_trial_global", _GLOBAL_QUOTA_KEY,
+                                   MCP_US_TRIAL_GLOBAL_DAILY)
+                except ValueError:
+                    raise ValueError(_trial_exhausted) from None
                 trial_note = (
                     f"本次美股/日股估值使用了免费体验额度（今日剩余 {remaining} 次）。"
                     f"注册自己的 FMP key 可不限次使用（使用 valuescope 优惠码有折扣）："

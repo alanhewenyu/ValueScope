@@ -6,22 +6,80 @@
 
 # ValueScope
 
-**AI-powered stock valuation & analysis platform — DCF valuation, relative valuation, multi-dimensional scoring, and financial analysis.**
+**A standardized DCF valuation engine your AI can call — deterministic, reproducible, and built for A-shares / HK / US / JP.**
 
 [![Try Online](https://img.shields.io/badge/🌐_Try_Online-valuescope.app-2563eb?style=for-the-badge)](https://valuescope.app)
+[![MCP](https://img.shields.io/badge/MCP-mcp.valuescope.app-7c3aed?style=for-the-badge)](https://mcp.valuescope.app/mcp)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
-[![Next.js](https://img.shields.io/badge/Next.js-15-black.svg)](https://nextjs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)](https://nextjs.org/)
 
 ---
 
 ## What is ValueScope?
 
-ValueScope is an AI-powered stock valuation platform built on a **standardized Damodaran FCFF DCF engine** — 10-year explicit forecast, terminal value, WACC, and sensitivity analysis in a fixed, reproducible framework. Unlike asking an LLM to "value this stock" (where every conversation may use a different method), ValueScope produces **consistent, comparable results** across companies and time periods.
+ValueScope is a **standardized Damodaran FCFF DCF engine** — 10-year explicit forecast, terminal value, WACC, sensitivity analysis, and reverse DCF in a fixed, reproducible framework.
 
-Think of it as having an equity research analyst sitting next to you: AI searches for earnings guidance, analyst consensus, and industry benchmarks, then suggests valuation parameters — but the underlying model is always rigorous, transparent, and under your control.
+Ask an LLM to "value this stock" and every conversation may use a different data source, accounting convention, and model — you can't tell whether a changed valuation means the fundamentals moved or the AI just felt different this time. ValueScope solves that with a clean division of labor:
 
-**Supported Markets:** 🇺🇸 US &nbsp; 🇭🇰 Hong Kong &nbsp; 🇨🇳 A-shares &nbsp; 🇯🇵 Japan
+- **Your AI does the judgment** — searches earnings guidance, analyst consensus, and industry benchmarks, then reasons about each assumption.
+- **The engine does the data and the math** — A-share deducted-NI convention, non-operating-item EBIT adjustment, 10-year FCFF discounting, sensitivity, reverse DCF. **Same inputs always yield the same output.**
+
+Your AI brings the intelligence; ValueScope brings the framework and the discipline. The engine itself never calls an LLM.
+
+**Supported Markets:** 🇨🇳 A-shares &nbsp; 🇭🇰 Hong Kong &nbsp; 🇺🇸 US &nbsp; 🇯🇵 Japan
+
+**Three ways to use it:** the [MCP server](#mcp-server) (call it from your own AI), the [web app](#web-app) (manual operator console), and the [terminal CLI](#terminal-cli).
+
+---
+
+## MCP Server
+
+The MCP ([Model Context Protocol](https://modelcontextprotocol.io)) server lets any MCP-capable AI client — Claude, ChatGPT, Cherry Studio, Dify, and others — call the same deterministic DCF engine the web app uses. This is the recommended way to use ValueScope.
+
+**Endpoint:** `https://mcp.valuescope.app/mcp`
+
+### Connect in two minutes
+
+**Claude Code** (terminal and desktop app share one config):
+
+```bash
+claude mcp add valuescope --transport http https://mcp.valuescope.app/mcp
+```
+
+**Claude web / mobile app:** Settings → Connectors → add a custom connector, paste `https://mcp.valuescope.app/mcp`.
+
+**Cherry Studio and other desktop clients:** add an MCP server of type HTTP with the same URL.
+
+Then just ask in natural language: *"Value Kweichow Moutai with a DCF"* — no commands to learn.
+
+### How it works — one tool, two phases
+
+The server exposes a single `run_dcf` tool that mirrors an equity analyst's workflow, with the calling model playing the analyst:
+
+1. **Baseline** — call `run_dcf(ticker)` with no assumptions. Returns a baseline valuation from 5-year historical averages, each parameter's historical range, and an analyst guide telling the model how to evaluate every assumption.
+2. **Final** — the model searches the web for guidance and consensus, reasons about each parameter, then calls `run_dcf(ticker, <assumptions>)` for the final valuation: intrinsic value, value bridge, forecast table, sensitivity matrix, and reverse DCF (what the market price implies).
+
+A `dcf` MCP prompt is also exposed, surfacing a one-command workflow (baseline → search → reason → three scenarios) in clients that support MCP prompts.
+
+Ticker format: A-shares `600519.SS` / `000333.SZ`, HK `0700.HK`, US `AAPL`, JP `7203.T`.
+
+### FMP key for US / JP
+
+A-shares and HK need no key. US / JP data comes from FMP (see [Data Sources](#data-sources--fmp-api-key)). US/JP tickers get a small daily free trial served by the server; beyond that, provide your own key one of two ways:
+
+**Configure once (recommended)** — pass it as a request header so every conversation uses it automatically. If you already added the server without a key, remove and re-add it:
+
+```bash
+claude mcp remove valuescope
+claude mcp add valuescope --transport http https://mcp.valuescope.app/mcp --header "X-FMP-Key: YOUR_KEY"
+```
+
+**Per-conversation** — just say *"my FMP key is …"* in the chat; the model passes it on each call (only valid for that conversation).
+
+### Self-hosting the MCP server
+
+The server is mounted on the FastAPI backend at `/mcp` (streamable HTTP). Run the backend (see [Installation](#option-3-self-host-the-backend--mcp)) and it's available at `http://localhost:8000/mcp`. Set `FMP_API_KEY` in the environment to enable the US/JP trial; tune `MCP_DAILY_LIMIT` and `MCP_US_TRIAL_DAILY_LIMIT` for rate limits.
 
 ---
 
@@ -29,57 +87,40 @@ Think of it as having an equity research analyst sitting next to you: AI searche
 
 Try it at **[valuescope.app](https://valuescope.app)** — no installation required.
 
-### Web App — Landing Page
+The web app is the **manual operator console**: dial in DCF parameters by hand, watch the valuation update live, read sensitivity tables, and eyeball relative-valuation percentiles and multi-factor scores. If you like driving the assumptions yourself, it's a solid DCF calculator.
 
-![Web App Landing](assets/web-landing.png)
+### Features
 
-### Web App — Overview & Valuation Drivers
+- **DCF Valuation** — Damodaran FCFF framework with interactive parameter controls, 10-year forecast table, dual sensitivity analysis (Growth×Margin, WACC), and bridge-to-value breakdown.
+- **Relative Valuation** — Current multiples (PE, PB, PS, EV/EBITDA) vs historical percentiles across 3/5/10-year windows.
+- **4-Dimension Scoring** — Valuation, Quality, Growth, and Momentum in a radar chart with transparent sub-factor breakdown.
+- **Financial Overview** — Key drivers (revenue growth, EBIT margin, ROIC, FCF), balance sheet highlights, and historical financial table.
+- **Bilingual UI** — English and Chinese with one-click toggle.
 
 ![Web App Overview](assets/web-overview.png)
-
-### Web App — DCF Valuation
-
 ![Web App Valuation](assets/web-valuation.png)
 
 ---
 
-## Key Features
+## Terminal CLI
 
-### Web App ([valuescope.app](https://valuescope.app))
+For local use with your own AI CLI subscription. Requires Python 3.8+.
 
-- **DCF Valuation** — Damodaran FCFF framework with interactive parameter controls, 10-year forecast table, dual sensitivity analysis (Growth×Margin, WACC), and bridge-to-value breakdown.
-- **AI One-Click Valuation** — Cloud AI (DeepSeek R1 + Serper web search) analyzes earnings guidance, analyst consensus, and industry data to suggest all DCF parameters with detailed reasoning. Free quota included; bring your own keys for unlimited use.
-- **Gap Analysis** — AI compares your DCF estimate against market price, considering sentiment, analyst targets, and risk factors.
-- **Relative Valuation** — Current multiples (PE, PB, PS, EV/EBITDA) vs historical percentiles across 3/5/10-year windows.
-- **4-Dimension Scoring** — Valuation, Quality, Growth, and Momentum condensed into a radar chart with transparent sub-factor breakdown.
-- **Financial Overview** — Key drivers (revenue growth, EBIT margin, ROIC, FCF), balance sheet highlights, and historical financial table.
-- **Bilingual UI** — English and Chinese with one-click toggle.
+- **AI Copilot** — local AI engine (Claude / Gemini / Qwen) suggests parameters; you review and adjust interactively.
+- **Custom Valuation** — full manual control with `--manual`. No AI or API key required.
+- **Auto Mode** — fully automated with `--auto`: AI → accept → export Excel.
+- **Excel Export** — formatted `.xlsx` with valuation results, historical data, and AI reasoning.
 
-### Terminal CLI
+| Engine | Install | Notes |
+|--------|---------|-------|
+| **Claude** | `npm install -g @anthropic-ai/claude-code` | Default if available. |
+| **Gemini** | `npm install -g @google/gemini-cli` | Free with a Google account. |
+| **Qwen** | `npm install -g @anthropic-ai/qwen-code` | Free with a qwen.ai account. |
 
-- **AI Copilot** — Three local AI engines (Claude, Gemini, Qwen). AI suggests parameters; you review and adjust interactively.
-- **Custom Valuation** — Full manual control with `--manual`. No AI or API key required.
-- **Auto Mode** — Fully automated: AI → accept → export Excel with `--auto`.
-- **Excel Export** — Formatted `.xlsx` workbook with valuation results, historical data, and AI analysis.
-
-### Terminal Demo
+Auto-detects installed engines (priority: Claude > Gemini > Qwen), or force one with `--engine`. If none is found, falls back to manual mode.
 
 ![Historical Data](assets/demo-1-historical.png)
-![AI Analysis](assets/demo-2-ai-params.png)
 ![DCF Result](assets/demo-3-dcf-result.png)
-
----
-
-## Architecture
-
-```
-valuescope/
-├── frontend/          # Next.js 15 (React) — web UI
-├── backend/           # FastAPI — REST API server
-├── modeling/          # Core valuation engine (shared by CLI & backend)
-├── main.py            # Terminal CLI entry point
-└── Dockerfile         # Backend container
-```
 
 ---
 
@@ -92,59 +133,40 @@ valuescope/
 | **US** | FMP | FMP key required |
 | **Japan** | FMP | FMP key required |
 
-> 💡 **[Get FMP API Key →](https://site.financialmodelingprep.com/pricing-plans?couponCode=valuescope)**
+> 💡 **[Get an FMP API Key →](https://site.financialmodelingprep.com/pricing-plans?couponCode=valuescope)**
 >
-> FMP (Financial Modeling Prep) provides high-quality financial data for US, HK, and JP markets. **Buy through this link for a discounted price** — it also supports ValueScope's ongoing development.
-
----
-
-## AI Engines
-
-### Cloud AI (Web App)
-
-The web app at [valuescope.app](https://valuescope.app) uses built-in Cloud AI — no installation required:
-
-- **DeepSeek R1** — Deep chain-of-thought reasoning for financial analysis
-- **Serper** — Google search + page scraping for earnings guidance, analyst forecasts, and industry data
-- **Free quota included** — bring your own Serper + DeepSeek keys for unlimited use
-
-### Local AI Engines (Terminal CLI)
-
-ValueScope supports three local AI CLI tools. Auto-detects installed engines (priority: Claude > Gemini > Qwen), or force one with `--engine`.
-
-| Engine | Install | Notes |
-|--------|---------|-------|
-| **Claude** | `npm install -g @anthropic-ai/claude-code` | Default if available. Requires [Anthropic](https://docs.anthropic.com/en/docs/claude-code) account. |
-| **Gemini** | `npm install -g @google/gemini-cli` | Free with [Google](https://github.com/google-gemini/gemini-cli) account. |
-| **Qwen** | `npm install -g @anthropic-ai/qwen-code` | Free with [qwen.ai](https://github.com/QwenLM/qwen-code) account. |
-
-If no AI engine is detected, ValueScope falls back to custom valuation mode (manual input).
+> FMP (Financial Modeling Prep) provides high-quality financial data for US, HK, and JP markets. **Subscribing through this link (coupon `valuescope` included) is discounted** — and supports ValueScope's ongoing development.
 
 ---
 
 ## Installation & Usage
 
-### Option 1: Use the Web App (Recommended)
+### Option 1: MCP Server (Recommended)
+
+No installation — connect your AI to `https://mcp.valuescope.app/mcp` (see [MCP Server](#mcp-server) above).
+
+### Option 2: Web App
 
 Visit **[valuescope.app](https://valuescope.app)** — no installation needed.
 
-### Option 2: Terminal CLI
+### Option 3: Self-host (CLI + backend + MCP)
 
 Requires Python 3.8+.
 
 ```bash
 git clone https://github.com/alanhewenyu/ValueScope.git
 cd ValueScope
-pip install -r requirements.txt
+pip install -r requirements.txt          # CLI
+pip install -r requirements-api.txt      # backend + MCP server
 ```
 
-Set FMP API Key (required for US/Japan):
+Set your FMP API key (required for US/Japan):
 
 ```bash
 export FMP_API_KEY='your_api_key_here'
 ```
 
-Run:
+Run the CLI:
 
 ```bash
 python main.py                    # AI copilot (default)
@@ -152,7 +174,27 @@ python main.py --manual           # Manual input
 python main.py --auto             # Fully automated
 ```
 
-Additional flags: `--engine claude|gemini|qwen`, `--apikey YOUR_KEY`.
+Or run the backend (serves the REST API and the MCP server at `/mcp`):
+
+```bash
+uvicorn backend.main:app --host 0.0.0.0 --port 8000
+```
+
+---
+
+## Architecture
+
+```
+valuescope/
+├── frontend/              # Next.js (React) — web UI
+├── backend/              # FastAPI — REST API + MCP server
+│   └── mcp_server.py     # MCP tool (run_dcf) + dcf prompt
+├── modeling/             # Core valuation engine (shared by CLI, backend, MCP)
+├── main.py               # Terminal CLI entry point
+└── Dockerfile            # Backend container
+```
+
+The `modeling/` engine is the single source of truth — the CLI, the web backend, and the MCP server all call it, so a valuation is identical no matter how you reach it.
 
 ---
 
@@ -160,7 +202,7 @@ Additional flags: `--engine claude|gemini|qwen`, `--apikey YOUR_KEY`.
 
 | Parameter | Description |
 |-----------|-------------|
-| **Revenue Growth (Year 1)** | Next year's revenue forecast. AI prioritizes company guidance, then analyst consensus. |
+| **Revenue Growth (Year 1)** | Next year's revenue forecast. Prioritize company guidance, then analyst consensus. |
 | **Revenue Growth (Years 2-5)** | Compound annual growth rate (CAGR) for years 2-5. |
 | **Target EBIT Margin** | Expected EBIT margin at maturity. |
 | **Revenue/Invested Capital** | Capital efficiency ratio for different periods. |
@@ -183,6 +225,6 @@ For more on company valuation, visit [jianshan.co](https://jianshan.co) or scan 
 
 This project is licensed under the [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).
 
-This means you are free to use, modify, and distribute this software, but any modified version — including use as a network service (SaaS) — must also be open-sourced under AGPL-3.0.
+You are free to use, modify, and distribute this software, but any modified version — including use as a network service (SaaS) or a hosted MCP server — must also be open-sourced under AGPL-3.0.
 
 © 2025-2026 Alan He

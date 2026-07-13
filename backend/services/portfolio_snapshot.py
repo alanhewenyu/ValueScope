@@ -9,7 +9,7 @@ Usage:
     python3 -m backend.services.portfolio_snapshot --dry-run    # print without writing
 
 Cron (run at 06:00 Beijing time every day):
-    0 6 * * * cd /Users/Alan/valuescope && python3 -m backend.services.portfolio_snapshot >> data/snapshot.log 2>&1
+    0 6 * * * cd /path/to/valuescope && python3 -m backend.services.portfolio_snapshot >> data/snapshot.log 2>&1
 """
 
 from __future__ import annotations
