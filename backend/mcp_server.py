@@ -61,6 +61,13 @@ class MCPRequestMetaMiddleware:
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http" and scope.get("path", "").startswith("/mcp"):
             headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
+            # Railway terminates TLS at the edge and forwards plain HTTP, so
+            # the app's scheme is "http" and the trailing-slash redirect
+            # (/mcp → /mcp/) would downgrade to http:// — which MCP clients
+            # refuse to follow. Honor X-Forwarded-Proto so the redirect (and
+            # any generated URL) stays https.
+            if headers.get("x-forwarded-proto", "").split(",")[0].strip() == "https":
+                scope = dict(scope, scheme="https")
             fwd = headers.get("x-forwarded-for", "")
             client = scope.get("client") or ("", 0)
             ip = (fwd.split(",")[0].strip() if fwd else "") or client[0] or "unknown"
