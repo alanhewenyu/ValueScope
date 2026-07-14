@@ -102,15 +102,19 @@ def get_historical_financials(ticker, period, apikey, historical_periods):
             return disk
 
         from modeling.data import get_historical_financials as _raw
+        from backend.fetch_guard import fetch_slot
 
-        data = _raw(ticker, period, apikey, historical_periods)
-        if data is not None and period == "annual":
-            try:
-                from modeling.freshness import check_data_freshness
-                data, freshness_info = check_data_freshness(ticker, data, apikey)
-                data["_freshness_info"] = freshness_info
-            except Exception:
-                data["_freshness_info"] = {"is_stale": False, "data_source": "api"}
+        # Bound concurrent real fetches (freshness check also hits akshare) so
+        # a burst of slow A-share fetches can't saturate the thread pool.
+        with fetch_slot():
+            data = _raw(ticker, period, apikey, historical_periods)
+            if data is not None and period == "annual":
+                try:
+                    from modeling.freshness import check_data_freshness
+                    data, freshness_info = check_data_freshness(ticker, data, apikey)
+                    data["_freshness_info"] = freshness_info
+                except Exception:
+                    data["_freshness_info"] = {"is_stale": False, "data_source": "api"}
 
         if data is not None:
             _cache[cache_key] = (time.monotonic(), copy.deepcopy(data))
@@ -188,19 +192,22 @@ def get_company_profile(ticker, apikey=''):
             _fill_profile_from_financial_data,
             is_a_share,
         )
+        from backend.fetch_guard import fetch_slot
 
         _is_a = is_a_share(ticker)
 
-        if _is_a:
-            # Parallelize profile API call + beta calculation
-            # (profile uses Eastmoney, beta uses Sina — no rate-limit conflict)
-            with ThreadPoolExecutor(max_workers=2) as ex:
-                fut_prof = ex.submit(_raw_profile, ticker, apikey)
-                fut_beta = ex.submit(get_beta, ticker)
-                profile = fut_prof.result()
-                profile["beta"] = fut_beta.result()
-        else:
-            profile = _raw_profile(ticker, apikey)
+        # Bound concurrent real fetches so a burst can't saturate the pool.
+        with fetch_slot():
+            if _is_a:
+                # Parallelize profile API call + beta calculation
+                # (profile uses Eastmoney, beta uses Sina — no rate-limit conflict)
+                with ThreadPoolExecutor(max_workers=2) as ex:
+                    fut_prof = ex.submit(_raw_profile, ticker, apikey)
+                    fut_beta = ex.submit(get_beta, ticker)
+                    profile = fut_prof.result()
+                    profile["beta"] = fut_beta.result()
+            else:
+                profile = _raw_profile(ticker, apikey)
 
         # Enrich profile with financial data if available
         fin_key = f"{ticker}:annual"

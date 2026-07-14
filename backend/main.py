@@ -70,11 +70,24 @@ if _fmp_key:
 
 from contextlib import asynccontextmanager
 
+from fastapi.responses import JSONResponse
+
+from backend.fetch_guard import UpstreamBusy
 from backend.mcp_server import MCPRequestMetaMiddleware, mcp as valuescope_mcp
 
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    # Sync route handlers (most of the API) run on anyio's shared thread pool,
+    # default 40 tokens. Slow/hanging akshare fetches to Chinese data sources
+    # (30-70s each, worse under the per-ticker lock's pile-ups) can hold every
+    # thread and take the whole service down — even async /api/health and the
+    # MCP handshake then time out. Raise the ceiling so a burst of slow A-share
+    # fetches leaves headroom for light endpoints. Threads blocked on network
+    # I/O are cheap; the real fix (bounding akshare concurrency) is separate.
+    anyio.to_thread.current_default_thread_limiter().total_tokens = int(
+        os.environ.get("THREAD_POOL_SIZE", "128")
+    )
     # MCP streamable-HTTP transport needs its session manager running
     async with valuescope_mcp.session_manager.run():
         yield
@@ -92,6 +105,15 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 
 # Capture client IP + X-FMP-Key for MCP quota/trial handling
 app.add_middleware(MCPRequestMetaMiddleware)
+
+
+@app.exception_handler(UpstreamBusy)
+async def _upstream_busy_handler(request: Request, exc: UpstreamBusy):
+    """Concurrent-fetch limit reached → fail fast with 503 + Retry-After,
+    instead of holding a worker thread and risking pool saturation."""
+    return JSONResponse(
+        status_code=503, content={"detail": str(exc)}, headers={"Retry-After": "5"}
+    )
 
 # CORS — allow Next.js dev server and production domains
 app.add_middleware(
