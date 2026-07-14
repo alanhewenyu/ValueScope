@@ -40,8 +40,23 @@ from backend.routers.valuation import (
     validate_ticker,
 )
 from modeling.ai_analyst import build_analysis_prompt
+from backend import analytics
 
 logger = logging.getLogger(__name__)
+
+
+def _market(ticker: str) -> str:
+    """Coarse market bucket for analytics."""
+    t = ticker.upper()
+    if t.endswith(".SS") or t.endswith(".SZ"):
+        return "a"
+    if t.endswith(".HK"):
+        return "hk"
+    if t.endswith(".T"):
+        return "jp"
+    if "." not in t:
+        return "us"
+    return "other"
 
 # ── Per-request metadata (client IP + key header) ────────────────────────
 # Captured by a pure-ASGI middleware in main.py; contextvars propagate into
@@ -494,6 +509,13 @@ def run_dcf(
             "assumptions_filled_from_historical_defaults": defaults_used or None,
         }
         result["presentation_guide"] = PRESENTATION_GUIDE
+        analytics.track("mcp_run_dcf", ip, {
+            "phase": "valuation",
+            "market": _market(normalized),
+            "ticker": normalized.upper(),
+            "verdict": result["summary"]["verdict"].split(" ")[0],
+            "used_trial": "true" if trial_note else "false",
+        })
         return _with_optional_chart(result, normalized, effective_key, include_history_chart)
 
     # ── Phase 1: baseline + analyst guide ──
@@ -536,6 +558,12 @@ def run_dcf(
         ),
         "disclaimer": DISCLAIMER,
     }
+    analytics.track("mcp_run_dcf", ip, {
+        "phase": "baseline",
+        "market": _market(normalized),
+        "ticker": normalized.upper(),
+        "used_trial": "true" if trial_note else "false",
+    })
     return _with_optional_chart(payload, normalized, effective_key, include_history_chart)
 
 
