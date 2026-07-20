@@ -220,7 +220,7 @@ export default function GuidePage() {
         <strong className="text-gray-800 dark:text-gray-200">快照有一天的定价时滞。</strong>每日 06:10 的快照定价的是<em>前一交易日</em>收盘（此时全球市场均已收盘），所以日期 D 的快照 ≈ D−1 的收盘净值；「上周五收盘」对应的是周六日期的快照。概览页单位净值旁的「· MM-DD收」标注即此含义。
       </P>
       <P>
-        <strong className="text-gray-800 dark:text-gray-200">与基准的 beating/trailing 是「双方各自最新可得价」的对比。</strong>组合侧实时（含盘前），基准侧最多滞后 10 分钟（缓存）、美元指数按日频汇率折人民币——盘中极端行情的一小时里可能有零点几 pp 的误差，日常无感。
+        <strong className="text-gray-800 dark:text-gray-200">与基准的 beating/trailing 按「共同截止时点」比较。</strong>基准尚无最新交易日时（如周一晚间美股未开盘），组合侧同步截断到基准的最后收盘再算 pp 差，文案标注「截至 MM-DD收」——不会拿组合多出的一个交易日去「跑赢」一个还没开盘的指数。基准数据最多滞后 10 分钟（缓存）、美元指数按日频汇率折人民币，盘中极端行情下仍可能有零点几 pp 的误差。
       </P>
 
       <H2 id="ops">九、日常操作对照表</H2>

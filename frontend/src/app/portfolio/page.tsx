@@ -245,9 +245,33 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
        ...benchRaw.filter((p) => p.date > series[0].date).map((p) => ({ date: p.date, val: p.close }))]
     : [];
 
+  const officialNav = unitNav ?? series[series.length - 1].val;
+  const liveEst = unitNavEst != null && Math.abs(unitNavEst - officialNav) >= 0.0001 ? unitNavEst : null;
+
   const portRet = (series[series.length - 1].val / series[0].val - 1) * 100;
   const benchRet = bench.length >= 2 ? (bench[bench.length - 1].val / bench[0].val - 1) * 100 : null;
-  const diff = benchRet != null ? portRet - benchRet : null;
+  // Same-window guard for the vs-benchmark line: the live portfolio can run
+  // ahead of the benchmark's newest close (Monday evening: portfolio carries
+  // today's A-share close + US pre-market while ^NDX hasn't opened). Compare
+  // at the BENCHMARK's end date — truncate the portfolio side to the point
+  // priced on/before it (snapshot dated D prices D-1's close; the live point,
+  // priced "now", only qualifies when the benchmark itself reaches today).
+  const _todayStr = new Intl.DateTimeFormat("sv-SE").format(new Date());
+  const benchEndDate = bench.length >= 2 ? bench[bench.length - 1].date : null;
+  const portEndVal = (() => {
+    if (!benchEndDate) return series[series.length - 1].val;
+    const c = new Date(benchEndDate + "T12:00:00Z");
+    c.setUTCDate(c.getUTCDate() + 1);
+    const cut = c.toISOString().slice(0, 10);
+    for (let i = series.length - 1; i >= 0; i--) {
+      const p = series[i];
+      const isLivePt = liveEst != null && p.date === _todayStr;
+      if (isLivePt ? benchEndDate >= _todayStr : p.date <= cut) return p.val;
+    }
+    return series[series.length - 1].val;
+  })();
+  const diff = benchRet != null ? (portEndVal / series[0].val - 1) * 100 - benchRet : null;
+  const diffTruncated = portEndVal !== series[series.length - 1].val;
 
   // Indexed to 100 for the mini chart
   const norm = (pts: { val: number }[]) => pts.map((p) => (p.val / pts[0].val) * 100);
@@ -291,8 +315,6 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
     return k;
   };
 
-  const officialNav = unitNav ?? series[series.length - 1].val;
-  const liveEst = unitNavEst != null && Math.abs(unitNavEst - officialNav) >= 0.0001 ? unitNavEst : null;
   // The snapshot dated D prices D-1's close — surface that close date on the
   // official row ("07-18收") instead of a relative "prev close", which reads
   // wrong on weekends (Sunday's official NAV is Friday's close, not
@@ -327,11 +349,11 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
           {diff != null && (
             <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5"
               title={zh
-                ? `基准同窗口（自 ${series[0].date}）、已折算人民币口径——与行情软件的"年初至今/本币"数字不可比`
-                : `Benchmark over the same window (since ${series[0].date}), converted to CNY — not comparable to quote-app YTD figures`}>
+                ? `基准同窗口（自 ${series[0].date}${diffTruncated && benchEndDate ? `，截至 ${benchEndDate} 收盘——该基准尚无更新交易日，组合侧也截断到同一时点` : ""}）、已折算人民币口径——与行情软件的"年初至今/本币"数字不可比`
+                : `Benchmark over the same window (since ${series[0].date}${diffTruncated && benchEndDate ? `, through ${benchEndDate}'s close — the portfolio side is truncated to match` : ""}), converted to CNY — not comparable to quote-app YTD figures`}>
               {zh
-                ? `${diff >= 0 ? "跑赢" : "跑输"}${benchLabels[benchName]} ${Math.abs(diff).toFixed(1)}pp（同窗口·¥口径）`
-                : `${diff >= 0 ? "beating" : "trailing"} ${benchLabels[benchName]} by ${Math.abs(diff).toFixed(1)}pp (same window, CNY)`}
+                ? `${diff >= 0 ? "跑赢" : "跑输"}${benchLabels[benchName]} ${Math.abs(diff).toFixed(1)}pp（同窗口·¥口径${diffTruncated && benchEndDate ? `·截至${benchEndDate.slice(5)}收` : ""}）`
+                : `${diff >= 0 ? "beating" : "trailing"} ${benchLabels[benchName]} by ${Math.abs(diff).toFixed(1)}pp (same window${diffTruncated && benchEndDate ? ` to ${benchEndDate.slice(5)} close` : ""}, CNY)`}
             </div>
           )}
         </div>
