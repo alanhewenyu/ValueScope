@@ -4861,15 +4861,19 @@ export default function PortfolioPage() {
       setAllClosedTrades(trades);
       setRealizedPnl(trades.reduce((s, t) => s + (t.realized_pnl_cny || 0), 0));
 
-      // ── Compute last Friday in Beijing time ──
+      // ── "This Week" base = last Friday's CLOSE. A snapshot dated D prices
+      // D-1's close (the 06:10 run), so Friday's close lives in the
+      // SATURDAY-dated snapshot — cut off at Saturday, not Friday, or the
+      // week would silently start from Thursday's close. ──
       const sorted = [...snaps].sort((a, b) => a.date.localeCompare(b.date));
       const now = new Date();
       const bjNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Shanghai" }));
       const dow = bjNow.getDay();
       const daysBack = dow === 0 ? 2 : dow === 6 ? 1 : dow + 2;
       const lastFri = new Date(bjNow.getTime() - daysBack * 86400000);
-      const lastFriStr = lastFri.toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" }).slice(0, 10);
-      const weekCandidates = sorted.filter((s) => s.date <= lastFriStr);
+      const lastSatStr = new Date(lastFri.getTime() + 86400000)
+        .toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" }).slice(0, 10);
+      const weekCandidates = sorted.filter((s) => s.date <= lastSatStr);
 
       // ── KPI Weekly P&L ──
       const currentNetAssets = data.summary.net_assets;
