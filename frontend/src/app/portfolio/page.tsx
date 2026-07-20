@@ -293,6 +293,16 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
 
   const officialNav = unitNav ?? series[series.length - 1].val;
   const liveEst = unitNavEst != null && Math.abs(unitNavEst - officialNav) >= 0.0001 ? unitNavEst : null;
+  // The snapshot dated D prices D-1's close — surface that close date on the
+  // official row ("07-18收") instead of a relative "prev close", which reads
+  // wrong on weekends (Sunday's official NAV is Friday's close, not
+  // yesterday's). Noon-UTC anchor sidesteps timezone/DST edge cases.
+  const navCloseDate = (() => {
+    if (!unitNavDate) return null;
+    const d = new Date(unitNavDate + "T12:00:00Z");
+    d.setUTCDate(d.getUTCDate() - 1);
+    return d.toISOString().slice(5, 10);
+  })();
   return (
     <div onClick={onGoPerformance}
       className="mb-4 p-4 rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 cursor-pointer hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
@@ -327,8 +337,11 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-0.5 sm:block sm:space-y-1 sm:border-t sm:border-gray-100 sm:dark:border-gray-800 sm:pt-2 sm:mt-2">
           <div className="flex gap-1.5 sm:gap-0 sm:justify-between text-[11px] text-gray-500 dark:text-gray-400"
-            title={unitNavDate ? (zh ? `快照 ${unitNavDate}` : `snapshot ${unitNavDate}`) : undefined}>
-            <span>{zh ? "单位净值" : "Unit NAV"}</span>
+            title={unitNavDate ? (zh ? `官方净值，快照 ${unitNavDate}（定价前一交易日收盘）` : `Official NAV from the ${unitNavDate} snapshot (prices the prior session's close)`) : undefined}>
+            <span>
+              {zh ? "单位净值" : "Unit NAV"}
+              {navCloseDate && <span className="text-gray-400 dark:text-gray-500">{zh ? ` · ${navCloseDate}收` : ` · ${navCloseDate} cl.`}</span>}
+            </span>
             <span className="font-mono">{officialNav.toFixed(4)}</span>
           </div>
           {liveEst != null && (
