@@ -1422,20 +1422,25 @@ function PerformanceSection({ locale, hideChart, hideRisk, liveUnitNav, liveNetA
 
   const snapshotsSorted = [...snapshots].sort((a, b) => a.date.localeCompare(b.date));
 
-  // Chart-only live extension: append today's 盘中 point when no official
-  // snapshot exists for today yet. Local date (not UTC) — snapshots are
-  // Beijing-dated and an evening session would otherwise lag a day.
+  // Chart-only live extension (盘中估值): if today has no official snapshot
+  // yet, append a "today" point; if today's snapshot exists (06:10 run,
+  // priced at yesterday's close), replace its value with the live estimate
+  // so the curve tracks the current session either way. Next morning's
+  // snapshot restores the official value. Local date (not UTC) — snapshots
+  // are Beijing-dated and an evening session would otherwise lag a day.
   const today = new Intl.DateTimeFormat("sv-SE").format(new Date());
   const lastSnap = snapshotsSorted[snapshotsSorted.length - 1];
-  const hasLive = !!(liveUnitNav && liveNetAssets && lastSnap && today > lastSnap.date);
+  const hasLive = !!(liveUnitNav && liveNetAssets && lastSnap && today >= lastSnap.date);
   const chartSnapshots = hasLive
-    ? [...snapshotsSorted, { ...lastSnap, date: today, unit_nav: liveUnitNav!, net_assets: liveNetAssets! }]
+    ? [...snapshotsSorted.slice(0, today === lastSnap.date ? -1 : undefined),
+       { ...lastSnap, date: today, unit_nav: liveUnitNav!, net_assets: liveNetAssets! }]
     : snapshotsSorted;
   const chartNav = hasLive
     ? (() => {
-        const lastNav = navSorted[navSorted.length - 1];
-        const cap = lastSnap.capital ?? lastNav?.capital_invested ?? 0;
-        return [...navSorted, {
+        const base = navSorted[navSorted.length - 1]?.date === today
+          ? navSorted.slice(0, -1) : navSorted;
+        const cap = lastSnap.capital ?? base[base.length - 1]?.capital_invested ?? 0;
+        return [...base, {
           date: today,
           net_asset_value: liveNetAssets!,
           capital_invested: cap,
