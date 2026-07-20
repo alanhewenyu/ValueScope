@@ -21,7 +21,7 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://valuescope.app"),
   title: "ValueScope — 让你的 AI 学会 DCF 估值 | Teach Your AI to Run DCF Valuations",
   description:
-    "把标准化 DCF 估值引擎接进你的 Claude / ChatGPT：AI 负责前瞻判断，ValueScope 负责数据和计算，同样的输入永远得到同样的结果。A股港股完全免费，支持美股、日股。AI brings the intelligence, ValueScope brings the framework and discipline.",
+    "把标准化 DCF 估值引擎接进你的 Claude / ChatGPT：AI 负责搜索指引、推理假设，引擎负责数据和计算，同样的输入永远得到同样的结果。A股港股完全免费，支持美股、日股。Your AI brings the judgment, ValueScope brings the discipline.",
   keywords: [
     "DCF估值", "股票估值", "内在价值", "现金流折现", "AI估值", "MCP",
     "估值MCP", "A股估值", "港股估值", "美股估值", "WACC", "免费估值工具",

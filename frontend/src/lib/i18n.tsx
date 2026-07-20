@@ -25,7 +25,7 @@ const en = {
 
   // Home page
   heroSubtitle: "Teach your AI to run DCF valuations",
-  heroTagline: "AI brings the intelligence, ValueScope brings the framework and discipline — same inputs, same result, every time",
+  heroTagline: "Your AI brings the judgment, ValueScope brings the discipline — same inputs, same valuation, every time",
   heroFeatures: "DCF Valuation · Relative Valuation · Multi-Dimensional Scoring · Financial Analysis",
   heroSupports: "Supports A-shares (600519.SS), HK stocks (0700.HK), US stocks (AAPL), JP stocks (6758.T)",
   mcpBannerTitle: "Use it inside your AI",
@@ -456,11 +456,11 @@ const zh: Translations = {
   auto: "自动",
 
   heroSubtitle: "让你的 AI 学会 DCF 估值",
-  heroTagline: "AI 提供智能，ValueScope 提供框架和纪律 — 同样的输入，永远得到同样的结果",
+  heroTagline: "你的 AI 提供智能，ValueScope 提供纪律 — 同样的输入，永远得到同样的估值结果",
   heroFeatures: "DCF 估值 · 相对估值 · 多维评分 · 财务分析",
   heroSupports: "支持 A 股 (600519.SS)、港股 (0700.HK)、美股 (AAPL)、日股 (6758.T)",
   mcpBannerTitle: "在你的 AI 里直接用",
-  mcpBannerDesc: "不再让你通过网页调用 AI，而是让 AI 来调用 ValueScope：AI 负责前瞻判断，引擎负责数据和计算。A股港股完全免费，接入即可使用。",
+  mcpBannerDesc: "把标准化 DCF 估值引擎接进 Claude、ChatGPT 或 Cherry Studio：AI 负责搜索业绩指引、推理假设参数，引擎负责数据和计算。A股港股完全免费。",
   mcpBannerCta: "两分钟接入 →",
   featureDCFTitle: "DCF 估值",
   featureDCFDesc: "基于 Damodaran FCFF 框架，支持 AI 估算参数、敏感性分析与市场价差诊断。内含 Buffett Quick Valuation — 基于股东盈余法的自动估值，无需手动输入。",
