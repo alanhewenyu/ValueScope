@@ -29,6 +29,13 @@ export default function Home() {
     <div className="min-h-screen flex flex-col">
       {/* Floating top-right nav — links hidden on mobile to avoid overlap */}
       <div className="absolute top-4 right-4 z-40 flex items-center gap-3 sm:gap-4 text-sm text-gray-500 dark:text-gray-400">
+        <Link
+          href="/mcp"
+          onClick={() => trackEvent("mcp_docs_click", { source: "home_nav" })}
+          className="font-medium text-violet-600 dark:text-violet-400 hover:text-violet-800 dark:hover:text-violet-300 transition-colors"
+        >
+          🔌 MCP
+        </Link>
         <Link href="/history" className="hidden sm:inline hover:text-gray-900 dark:hover:text-white transition-colors">
           {locale === "zh" ? "估值记录" : "History"}
         </Link>
@@ -69,9 +76,7 @@ export default function Home() {
         )}
       </div>
       {/* Hero section */}
-      {/* pt keeps the vertically-centered hero clear of the absolute top-right nav
-          now that the page is short enough to center high on small viewports */}
-      <main className="flex-1 flex flex-col items-center justify-center px-4 pt-20">
+      <main className="flex-1 flex flex-col items-center justify-center px-4">
         <div className="text-center w-full max-w-2xl mx-auto">
           <h1 className="text-3xl sm:text-5xl font-bold text-gray-900 dark:text-white mb-3 tracking-tight">
             <span className="text-3xl sm:text-4xl mr-2">🎯</span> ValueScope
@@ -90,38 +95,67 @@ export default function Home() {
           </p>
         </div>
 
-        {/* MCP flagship banner */}
-        <Link
-          href="/mcp"
-          onClick={() => trackEvent("mcp_docs_click", { source: "home_banner" })}
-          className="block w-full max-w-4xl mx-auto mt-8 sm:mt-16"
-        >
-          <div className="bg-gradient-to-r from-violet-50 to-blue-50 dark:from-violet-950/40 dark:to-blue-950/40 rounded-xl border border-violet-200 dark:border-violet-900 p-6 hover:shadow-md transition-shadow">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6">
-              <span className="text-3xl">🔌</span>
-              <div className="flex-1">
-                <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
-                  {t.mcpBannerTitle}
-                  <span className="ml-2 text-[10px] font-medium text-violet-700 bg-violet-100 dark:bg-violet-950 dark:text-violet-300 px-2 py-0.5 rounded-full align-middle">
-                    MCP
-                  </span>
-                </h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
-                  {t.mcpBannerDesc}
-                </p>
-              </div>
-              <span className="shrink-0 text-sm font-medium text-violet-700 dark:text-violet-300">
-                {t.mcpBannerCta}
-              </span>
-            </div>
-          </div>
-        </Link>
-
-        {/* Feature hint — one muted line; the stock pages themselves do the showing */}
-        <p className="text-xs text-gray-400 dark:text-gray-500 mt-6 mb-10">
-          {t.heroFeatures}
-        </p>
+        {/* Feature cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 max-w-4xl mx-auto mt-8 sm:mt-16">
+          <FeatureCard
+            icon="📊"
+            title={t.featureDCFTitle}
+            description={t.featureDCFDesc}
+          />
+          <FeatureCard
+            icon="📈"
+            title={t.featureRelTitle}
+            description={t.featureRelDesc}
+          />
+          <FeatureCard
+            icon="📐"
+            title={t.featureScoringTitle}
+            description={t.featureScoringDesc}
+          />
+          <FeatureCard
+            icon="💼"
+            title={t.featurePortfolioTitle}
+            description={t.featurePortfolioDesc}
+          />
+        </div>
       </main>
     </div>
   );
+}
+
+function FeatureCard({
+  icon,
+  title,
+  description,
+  badge,
+  href,
+  actionLabel,
+}: {
+  icon: string;
+  title: string;
+  description: string;
+  badge?: string;
+  href?: string;
+  actionLabel?: string;
+}) {
+  const card = (
+    <div className={`bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 hover:shadow-md transition-shadow ${href ? "cursor-pointer" : ""}`}>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-2xl">{icon}</span>
+        <h3 className="font-semibold text-gray-900 dark:text-white">{title}</h3>
+        {badge && (
+          <span className="text-[10px] font-medium text-blue-600 bg-blue-50 dark:bg-blue-950 dark:text-blue-400 px-2 py-0.5 rounded-full">
+            {badge}
+          </span>
+        )}
+      </div>
+      <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+        {description}
+      </p>
+      {actionLabel && (
+        <p className="mt-3 text-xs font-medium text-blue-600 dark:text-blue-400">{actionLabel}</p>
+      )}
+    </div>
+  );
+  return href ? <Link href={href}>{card}</Link> : card;
 }
