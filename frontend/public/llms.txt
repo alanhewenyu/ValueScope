@@ -1,0 +1,37 @@
+# ValueScope
+
+> A deterministic DCF (discounted cash flow) valuation engine for stocks.
+> Primary interface: an MCP (Model Context Protocol) server any AI client can
+> call. Secondary interface: a web console for manual analysis at
+> https://valuescope.app. Same input always produces the same output; the
+> calling AI plays the analyst (researches and reasons about assumptions),
+> the engine does the math.
+
+## MCP server (recommended)
+
+- Endpoint: https://mcp.valuescope.app/mcp (streamable HTTP)
+- Setup guide: https://valuescope.app/mcp
+- Claude Code: `claude mcp add valuescope --transport http https://mcp.valuescope.app/mcp`
+- Claude web/mobile: Settings -> Connectors -> add custom connector with the endpoint URL
+- One tool, `run_dcf`, two phases: call bare for a baseline valuation +
+  per-parameter historical ranges + an analyst guide; then call again with
+  reasoned assumptions for the final valuation (intrinsic value, value bridge,
+  forecast table, sensitivity matrix, reverse DCF).
+- An MCP prompt `dcf` surfaces a one-command workflow in supporting clients.
+
+## Markets
+
+- A-shares (600519.SS / 000333.SZ) and Hong Kong (0700.HK): no key needed.
+- US (AAPL) and Japan (7203.T): small free daily trial served by the server;
+  beyond that bring your own FMP key via the `X-FMP-Key` request header or a
+  `fmp_api_key` tool parameter.
+
+## Other pages
+
+- Web console: https://valuescope.app (DCF, relative valuation, 4-dimension
+  scoring, portfolio tracker)
+- Stock pages: https://valuescope.app/stock/<ticker>
+- Source (AGPL-3.0): https://github.com/alanhewenyu/ValueScope
+
+All valuations are deterministic model outputs for research reference only —
+not investment advice.

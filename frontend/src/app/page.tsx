@@ -7,6 +7,7 @@ import SearchBar from "@/components/SearchBar";
 import LanguageToggle from "@/components/LanguageToggle";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth-context";
+import { trackEvent } from "@/lib/gtag";
 
 export default function Home() {
   const { t, locale } = useI18n();
@@ -73,8 +74,11 @@ export default function Home() {
           <h1 className="text-3xl sm:text-5xl font-bold text-gray-900 dark:text-white mb-3 tracking-tight">
             <span className="text-3xl sm:text-4xl mr-2">🎯</span> ValueScope
           </h1>
-          <p className="text-base sm:text-lg text-gray-500 dark:text-gray-400 mb-8">
+          <p className="text-base sm:text-lg text-gray-500 dark:text-gray-400 mb-2">
             {t.heroSubtitle}
+          </p>
+          <p className="text-xs sm:text-sm text-gray-400 dark:text-gray-500 mb-8">
+            {t.heroTagline}
           </p>
 
           <SearchBar size="lg" className="w-full mb-6" />
@@ -84,8 +88,35 @@ export default function Home() {
           </p>
         </div>
 
+        {/* MCP flagship banner */}
+        <Link
+          href="/mcp"
+          onClick={() => trackEvent("mcp_docs_click", { source: "home_banner" })}
+          className="block w-full max-w-4xl mx-auto mt-8 sm:mt-16"
+        >
+          <div className="bg-gradient-to-r from-violet-50 to-blue-50 dark:from-violet-950/40 dark:to-blue-950/40 rounded-xl border border-violet-200 dark:border-violet-900 p-6 hover:shadow-md transition-shadow">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6">
+              <span className="text-3xl">🔌</span>
+              <div className="flex-1">
+                <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
+                  {t.mcpBannerTitle}
+                  <span className="ml-2 text-[10px] font-medium text-violet-700 bg-violet-100 dark:bg-violet-950 dark:text-violet-300 px-2 py-0.5 rounded-full align-middle">
+                    MCP
+                  </span>
+                </h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+                  {t.mcpBannerDesc}
+                </p>
+              </div>
+              <span className="shrink-0 text-sm font-medium text-violet-700 dark:text-violet-300">
+                {t.mcpBannerCta}
+              </span>
+            </div>
+          </div>
+        </Link>
+
         {/* Feature cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 max-w-4xl mx-auto mt-8 sm:mt-16">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 max-w-4xl mx-auto mt-4">
           <FeatureCard
             icon="📊"
             title={t.featureDCFTitle}
