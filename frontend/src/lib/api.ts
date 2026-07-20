@@ -1062,6 +1062,12 @@ export interface IbkrRecon {
   // in their own books.
   cost_notes?: IbkrReconDiff[];
   ignored?: number; // whitelisted known diffs currently hidden
+  // Fetch-freshness: stale=true means the recon ran against the last
+  // successfully cached statement (IBKR gateway currently unreachable);
+  // unavailable=true means no statement at all — gateway down, no cache.
+  stale?: boolean;
+  fetched_at?: string | null;
+  unavailable?: boolean;
 }
 
 export async function getIbkrRecon(): Promise<Partial<IbkrRecon>> {

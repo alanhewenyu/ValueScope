@@ -229,7 +229,7 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
 
   const benchLabels: Record<string, string> = zh
     ? { "CSI 300": "沪深300", "S&P 500": "标普500", "Nasdaq 100": "纳指100", "Hang Seng": "恒生" }
-    : { "CSI 300": "CSI 300", "S&P 500": "S&P 500", "Nasdaq 100": "NDX", "Hang Seng": "HSI" };
+    : { "CSI 300": "CSI 300", "S&P 500": "S&P 500", "Nasdaq 100": "NDX 100", "Hang Seng": "HSI" };
   // Rebase at the last index close ON OR BEFORE the portfolio's first
   // snapshot (the endpoint returns a 10-day lead-in for exactly this):
   // snapshots exist on Saturdays pricing Friday's close, so taking the
@@ -2893,6 +2893,23 @@ function IbkrReconBanner({ recon, locale, onApplied }: {
       onApplied(next && next.diffs && (next.diffs.length > 0 || (next.ignored || 0) > 0 || (next.cost_notes?.length || 0) > 0) ? next : null);
     } catch { /* ignore */ }
   };
+  if (recon.unavailable) {
+    return (
+      <div className="mb-3 px-4 py-1.5 text-xs text-gray-400 flex items-center gap-2">
+        <span>⚠</span>
+        <span>
+          {zh
+            ? "盈透对账暂不可用（IBKR 网关维护中，通常北京时间上午；页面刷新会自动重试）"
+            : "IBKR recon unavailable (gateway maintenance window; retries on next page load)"}
+        </span>
+      </div>
+    );
+  }
+  // Recon ran against the last cached statement because the gateway is down
+  // — the data is still yesterday's EOD either way, so just annotate it
+  const staleNote = recon.stale && recon.fetched_at
+    ? (zh ? `，缓存于 ${recon.fetched_at}` : `, cached ${recon.fetched_at}`)
+    : "";
   if (!recon.diffs || (recon.diffs.length === 0 && ignoredCount === 0 && costNotes.length === 0)) return null;
   if (recon.diffs.length === 0) {
     // reconciled — quiet line; cost-basis convention gaps expandable
@@ -2902,8 +2919,8 @@ function IbkrReconBanner({ recon, locale, onApplied }: {
           <span>✓</span>
           <span>
             {zh
-              ? `盈透对账一致（报表日 ${recon.report_date}${ignoredCount ? `，${ignoredCount} 项已忽略` : ""}${costNotes.length ? `，${costNotes.length} 项成本口径差异仅供参考` : ""}）`
-              : `IBKR reconciled (${recon.report_date}${ignoredCount ? `, ${ignoredCount} ignored` : ""}${costNotes.length ? `, ${costNotes.length} cost-basis notes` : ""})`}
+              ? `盈透对账一致（报表日 ${recon.report_date}${staleNote}${ignoredCount ? `，${ignoredCount} 项已忽略` : ""}${costNotes.length ? `，${costNotes.length} 项成本口径差异仅供参考` : ""}）`
+              : `IBKR reconciled (${recon.report_date}${staleNote}${ignoredCount ? `, ${ignoredCount} ignored` : ""}${costNotes.length ? `, ${costNotes.length} cost-basis notes` : ""})`}
           </span>
           {costNotes.length > 0 && (
             <button onClick={() => setOpen(!open)} className="underline hover:text-gray-600">{open ? (zh ? "收起" : "hide") : (zh ? "查看" : "view")}</button>
@@ -2965,8 +2982,8 @@ function IbkrReconBanner({ recon, locale, onApplied }: {
         <span>🔄</span>
         <span className="text-amber-800 dark:text-amber-300 font-medium">
           {zh
-            ? `盈透对账：${recon.diffs.length} 项差异待确认（报表日 ${recon.report_date}）`
-            : `IBKR recon: ${recon.diffs.length} difference(s), statement ${recon.report_date}`}
+            ? `盈透对账：${recon.diffs.length} 项差异待确认（报表日 ${recon.report_date}${staleNote}）`
+            : `IBKR recon: ${recon.diffs.length} difference(s), statement ${recon.report_date}${staleNote}`}
         </span>
         <span className="ml-auto text-amber-600 dark:text-amber-400 text-xs">{open ? (zh ? "收起 ▲" : "Hide ▲") : (zh ? "查看 ▼" : "View ▼")}</span>
       </button>
@@ -4749,7 +4766,7 @@ export default function PortfolioPage() {
   const [ibkrRecon, setIbkrRecon] = useState<IbkrRecon | null>(null);
   useEffect(() => {
     getIbkrRecon().then((r) => {
-      if (r && r.diffs && (r.diffs.length > 0 || (r.ignored || 0) > 0 || (r.cost_notes?.length || 0) > 0)) setIbkrRecon(r as IbkrRecon);
+      if (r && (r.unavailable || (r.diffs && (r.diffs.length > 0 || (r.ignored || 0) > 0 || (r.cost_notes?.length || 0) > 0)))) setIbkrRecon(r as IbkrRecon);
     }).catch(() => {});
   }, []);
   // Risk fetch waits for holdings so the price cache is already warm

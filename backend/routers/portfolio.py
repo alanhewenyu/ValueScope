@@ -1002,17 +1002,31 @@ def get_benchmarks(start: str = "2024-01-01"):
                  else hist["Close"]).dropna()
         return close if not close.empty else None
 
+    expected = (("CSI 300", "000300.SS", "CNY"),
+                ("S&P 500", "^GSPC", "USD"),
+                ("Nasdaq 100", "^NDX", "USD"),
+                ("Hang Seng", "^HSI", "HKD"))
     series: dict[str, tuple] = {}  # name -> (close_series, ccy)
-    for name, ticker, ccy in (("CSI 300", "000300.SS", "CNY"),
-                              ("S&P 500", "^GSPC", "USD"),
-                              ("Nasdaq 100", "^NDX", "USD"),
-                              ("Hang Seng", "^HSI", "HKD")):
-        try:
-            s = dl(ticker)
-            if s is not None:
-                series[name] = (s, ccy)
-        except Exception:
-            pass
+    for name, ticker, ccy in expected:
+        for _attempt in range(2):  # one retry — Yahoo flakes transiently
+            try:
+                s = dl(ticker)
+                if s is not None:
+                    series[name] = (s, ccy)
+                    break
+            except Exception:
+                pass
+
+    # ETF proxy fallback for the US indices (same idea as 510300 for CSI300:
+    # the chart uses rebased returns, so a tracking ETF is fine)
+    for name, proxy in (("Nasdaq 100", "QQQ"), ("S&P 500", "SPY")):
+        if name not in series:
+            try:
+                s = dl(proxy)
+                if s is not None:
+                    series[name] = (s, "USD")
+            except Exception:
+                pass
 
     # Stale-feed fallback: if CSI300 trails the freshest benchmark by more
     # than 4 days, use the 510300 ETF proxy instead
@@ -1048,7 +1062,20 @@ def get_benchmarks(start: str = "2024-01-01"):
         if rows:
             results[name] = rows
     if results:
-        pc.put(cache_key, results, ttl=3600)
+        # A series that failed every fetch would otherwise vanish from the
+        # chart for the whole cache TTL — backfill it from the last complete
+        # response, and keep partial results cached only briefly so the gap
+        # heals on the next request instead of an hour later.
+        lastgood_key = f"benchmarks_cny_lastgood:{start}"
+        prev = pc.get(lastgood_key) or {}
+        for name, _, _ in expected:
+            if name not in results and name in prev:
+                results[name] = prev[name]
+        pc.put(lastgood_key, results, ttl=7 * 86400)
+        complete = all(name in results for name, _, _ in expected)
+        # 10 min, not 1h: the hero/perf charts now show a live intraday
+        # portfolio point, so a stale benchmark would skew beating/trailing
+        pc.put(cache_key, results, ttl=600 if complete else 300)
     return results
 
 
@@ -1370,10 +1397,12 @@ def ibkr_recon(user_id: str = Depends(get_current_user)):
     try:
         with get_conn() as conn:
             res = ibkr_flex.reconcile(conn, user_id=user_id)
-        return res or {}
+        # None with the feature enabled = gateway down and no cached
+        # statement — surface that instead of silently showing nothing
+        return res or {"unavailable": True}
     except Exception as e:
         logger.warning("ibkr recon failed: %s", e)
-        return {}
+        return {"unavailable": True}
 
 
 class IbkrReconApplyItem(BaseModel):

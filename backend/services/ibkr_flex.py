@@ -21,6 +21,11 @@ logger = logging.getLogger("valuescope.ibkr_flex")
 _BASE = "https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService"
 _CACHE_KEY = "ibkr_flex_stmt"
 _CACHE_TTL = 1800  # report is EOD; 30min is plenty
+_LASTGOOD_KEY = "ibkr_flex_stmt_lastgood"
+_LASTGOOD_TTL = 3 * 86400  # fallback when IBKR's gateway is in its
+                           # maintenance window — the statement is EOD, so
+                           # yesterday evening's pull is still the newest
+                           # data that exists until the next US close
 _COOLDOWN_KEY = "ibkr_flex_cooldown"
 _COOLDOWN_TTL = 900  # after a failure, back off — hammering during IBKR's
                      # maintenance windows escalates 1001 into a 1025 lockout
@@ -48,8 +53,23 @@ def map_ticker(symbol: str, exchange: str | None, currency: str | None) -> str:
     return sym
 
 
+def _last_good(pc) -> dict | None:
+    """Most recent successful statement, marked stale for the caller."""
+    lg = pc.get(_LASTGOOD_KEY)
+    if lg is not None and "accounts" in lg:
+        return {**lg, "stale": True}
+    return None
+
+
 def fetch_statement(force: bool = False) -> dict | None:
-    """Two-step Flex pull. Returns parsed dict or None (disabled/failure)."""
+    """Two-step Flex pull. Returns parsed dict or None (disabled/failure).
+
+    On gateway failure (IBKR's nightly maintenance window regularly rejects
+    or drops requests during Beijing daytime) falls back to the last
+    successful statement with stale=True — an EOD report doesn't get any
+    fresher by retrying, and a review-only recon against yesterday's close
+    beats silently showing nothing.
+    """
     if not enabled():
         return None
     from backend import persistent_cache as pc
@@ -58,7 +78,7 @@ def fetch_statement(force: bool = False) -> dict | None:
         if cached is not None and "accounts" in cached:
             return cached
         if pc.get(_COOLDOWN_KEY) is not None:
-            return None
+            return _last_good(pc)
 
     tok = os.getenv("IBKR_FLEX_TOKEN")
     qid = os.getenv("IBKR_FLEX_QUERY_ID")
@@ -73,7 +93,7 @@ def fetch_statement(force: bool = False) -> dict | None:
             # Single attempt + cooldown; the next page load after TTL retries.
             logger.warning("Flex SendRequest failed: %s", r1[:160])
             pc.put(_COOLDOWN_KEY, 1, ttl=_COOLDOWN_TTL)
-            return None
+            return _last_good(pc)
         ref = m.group(1)
         xml = None
         for _ in range(6):
@@ -88,14 +108,18 @@ def fetch_statement(force: bool = False) -> dict | None:
         if xml is None:
             logger.warning("Flex report not ready after polling")
             pc.put(_COOLDOWN_KEY, 1, ttl=_COOLDOWN_TTL)
-            return None
+            return _last_good(pc)
         data = _parse(xml)
     except Exception as e:
         logger.warning("Flex fetch failed: %s: %s", type(e).__name__, e)
         pc.put(_COOLDOWN_KEY, 1, ttl=_COOLDOWN_TTL)
-        return None
+        return _last_good(pc)
     if data:
+        from datetime import datetime
+        data["fetched_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+        data["stale"] = False
         pc.put(_CACHE_KEY, data, ttl=_CACHE_TTL)
+        pc.put(_LASTGOOD_KEY, data, ttl=_LASTGOOD_TTL)
         # keep the raw XML a day for debugging field availability
         # (e.g. whether the query carries openPrice) without extra pulls
         pc.put("ibkr_flex_raw", xml, ttl=86400)
@@ -308,7 +332,8 @@ def reconcile(conn, user_id: str = "local", broker_prefix: str = "盈透") -> di
     (dividends/tax/interest) are appended to dividend_log — a deduped
     fact feed, not a bookkeeping decision.
     """
-    stmt = _pick_statement(fetch_statement())
+    fetched = fetch_statement()
+    stmt = _pick_statement(fetched)
     if stmt is None:
         return None
     _sync_cash_transactions(conn, stmt, user_id)
@@ -385,6 +410,8 @@ def reconcile(conn, user_id: str = "local", broker_prefix: str = "盈透") -> di
         "diffs": visible,
         "cost_notes": cost_notes,
         "ignored": ignored,
+        "stale": bool(fetched.get("stale")),
+        "fetched_at": fetched.get("fetched_at"),
     }
 
 
@@ -415,6 +442,35 @@ def clear_ignores(conn, user_id: str = "local") -> int:
     _ensure_ignore_table(conn)
     cur = conn.execute("DELETE FROM ibkr_recon_ignores WHERE user_id=?", (user_id,))
     return cur.rowcount
+
+
+def scheduled_pull(attempts: int = 3, wait: int = 120) -> bool:
+    """Evening cron entry: force-refresh the statement caches.
+
+    Runs after the Flex statement lands (~14:00-20:00 Beijing) so page loads
+    the next morning — inside IBKR's maintenance window — hit last-good
+    instead of a dead gateway. Retries because single failures are common
+    even in the good window.
+
+    Usage (launchd, daily 19:10):
+        python3 -m backend.services.ibkr_flex
+    """
+    if not enabled():
+        print("IBKR Flex not configured (IBKR_FLEX_TOKEN/QUERY_ID missing)")
+        return False
+    for i in range(attempts):
+        if i:
+            time.sleep(wait)
+        data = fetch_statement(force=True)
+        # a stale last-good fallback is NOT success for the cron — the whole
+        # point of the evening run is refreshing that fallback
+        if data and data.get("accounts") and not data.get("stale"):
+            accts = data["accounts"]
+            print(f"✓ Flex statement cached: {len(accts)} account(s), "
+                  f"report date {next(iter(accts.values()))['report_date']}")
+            return True
+        print(f"  attempt {i + 1}/{attempts} failed")
+    return False
 
 
 # Every diff kind is auto-appliable when the statement carries enough data;
@@ -606,3 +662,18 @@ def apply_diffs(conn, items: list[dict], user_id: str = "local",
             applied.append({"kind": kind, "ticker": tk, "value": amt})
     return {"applied": applied, "skipped": skipped,
             "report_date": recon["report_date"]}
+
+
+if __name__ == "__main__":
+    import sys
+    from datetime import datetime as _dt
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
+    except ImportError:
+        pass
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    print(f"[{_dt.now():%Y-%m-%d %H:%M:%S}] IBKR Flex scheduled pull")
+    ok = scheduled_pull()
+    sys.exit(0 if ok else 1)
