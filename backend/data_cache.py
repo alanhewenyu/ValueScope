@@ -30,6 +30,24 @@ _DISK_FIN_TTL = 86400        # 24 hours
 _DISK_PROFILE_TTL = 3600     # 1 hour (price drifts, but router already caches 30 min)
 _DISK_BETA_TTL = 7 * 86400   # 7 days
 
+# Negative cache: a failed financials fetch (delisted ticker, no data at the
+# source) is otherwise retried by every endpoint on every page visit — one
+# crawler hit on a dead ticker triggered ~6 full yfinance/akshare fetch
+# attempts (2026-07-20 OOM incident). Failures are remembered briefly so the
+# burst collapses to one attempt; kept short in case the failure was transient.
+_NO_DATA = "__NO_DATA__"     # marker value in the in-memory cache
+_NEG_TTL = 1800              # 30 min in memory
+_DISK_NEG_TTL = 6 * 3600     # 6 hours on disk (survives worker recycling)
+
+# Incomplete profiles (dead ticker, or quote source down) are deliberately
+# not cached in the main layers so a healthy source retries soon — but each
+# retry costs a ~1s upstream probe, and one crawler page-visit fires ~6 of
+# them. Short-lived side cache: within the TTL, callers get the same
+# incomplete profile back without a new probe.
+_NEG_PROFILE_TTL = 300       # 5 min — matches the main _TTL retry cadence
+_neg_profiles: dict[str, tuple[float, dict]] = {}
+_MAX_NEG_PROFILES = 64
+
 
 def _evict_if_needed():
     """Evict expired entries, then oldest entries if cache exceeds max size."""
@@ -81,18 +99,27 @@ def get_historical_financials(ticker, period, apikey, historical_periods):
     """
     cache_key = f"{ticker}:{period}"
 
+    def _memory_hit(entry):
+        """Valid-entry check covering both real data and the negative marker."""
+        if not entry:
+            return None
+        age = time.monotonic() - entry[0]
+        if entry[1] == _NO_DATA:
+            return (None,) if age < _NEG_TTL else None
+        return (copy.deepcopy(entry[1]),) if age < _TTL else None
+
     # Fast path: cache hit (no lock needed)
-    cached = _cache.get(cache_key)
-    if cached and (time.monotonic() - cached[0]) < _TTL:
-        return copy.deepcopy(cached[1])
+    hit = _memory_hit(_cache.get(cache_key))
+    if hit:
+        return hit[0]
 
     # Slow path: acquire per-ticker lock so only one thread fetches
     lock = _get_lock(cache_key)
     with lock:
         # Double-check after acquiring lock (another thread may have populated cache)
-        cached = _cache.get(cache_key)
-        if cached and (time.monotonic() - cached[0]) < _TTL:
-            return copy.deepcopy(cached[1])
+        hit = _memory_hit(_cache.get(cache_key))
+        if hit:
+            return hit[0]
 
         # Warm layer: disk cache survives restarts and covers cold tickers
         disk = persistent_cache.get(f"fin:{cache_key}")
@@ -100,6 +127,12 @@ def get_historical_financials(ticker, period, apikey, historical_periods):
             _cache[cache_key] = (time.monotonic(), copy.deepcopy(disk))
             _evict_if_needed()
             return disk
+
+        # Negative disk cache: recent failed fetch — don't hammer the source
+        if persistent_cache.get(f"finneg:{cache_key}") is not None:
+            _cache[cache_key] = (time.monotonic(), _NO_DATA)
+            _evict_if_needed()
+            return None
 
         from modeling.data import get_historical_financials as _raw
         from backend.fetch_guard import fetch_slot
@@ -120,6 +153,12 @@ def get_historical_financials(ticker, period, apikey, historical_periods):
             _cache[cache_key] = (time.monotonic(), copy.deepcopy(data))
             _evict_if_needed()
             persistent_cache.put(f"fin:{cache_key}", data, _DISK_FIN_TTL)
+        else:
+            # Remember the failure so the other endpoints serving this page
+            # visit (and the crawler's next sweep) don't repeat the fetch.
+            _cache[cache_key] = (time.monotonic(), _NO_DATA)
+            _evict_if_needed()
+            persistent_cache.put(f"finneg:{cache_key}", True, _DISK_NEG_TTL)
 
         return data
 
@@ -171,11 +210,19 @@ def get_company_profile(ticker, apikey=''):
     if cached and (time.monotonic() - cached[0]) < _PROFILE_TTL:
         return copy.deepcopy(cached[1])
 
+    neg = _neg_profiles.get(cache_key)
+    if neg and (time.monotonic() - neg[0]) < _NEG_PROFILE_TTL:
+        return copy.deepcopy(neg[1])
+
     lock = _get_lock(cache_key)
     with lock:
         cached = _cache.get(cache_key)
         if cached and (time.monotonic() - cached[0]) < _PROFILE_TTL:
             return copy.deepcopy(cached[1])
+
+        neg = _neg_profiles.get(cache_key)
+        if neg and (time.monotonic() - neg[0]) < _NEG_PROFILE_TTL:
+            return copy.deepcopy(neg[1])
 
         disk = persistent_cache.get(cache_key)
         if disk is not None:
@@ -209,10 +256,12 @@ def get_company_profile(ticker, apikey=''):
             else:
                 profile = _raw_profile(ticker, apikey)
 
-        # Enrich profile with financial data if available
+        # Enrich profile with financial data if available (skip the negative
+        # marker — it's a plain string, not a financials dict)
         fin_key = f"{ticker}:annual"
         fin_cached = _cache.get(fin_key)
-        if fin_cached and (time.monotonic() - fin_cached[0]) < _TTL:
+        if (fin_cached and fin_cached[1] != _NO_DATA
+                and (time.monotonic() - fin_cached[0]) < _TTL):
             profile = _fill_profile_from_financial_data(profile, fin_cached[1])
 
         # Don't cache an obviously incomplete profile — happens when the quote
@@ -225,9 +274,18 @@ def get_company_profile(ticker, apikey=''):
         _incomplete = ((_needs_shares and not profile.get('outstandingShares'))
                        or not _has_valid_price(profile))
         if not _incomplete:
+            _neg_profiles.pop(cache_key, None)
             _cache[cache_key] = (time.monotonic(), copy.deepcopy(profile))
             _evict_if_needed()
             persistent_cache.put(cache_key, profile, _DISK_PROFILE_TTL)
+        else:
+            if len(_neg_profiles) >= _MAX_NEG_PROFILES:
+                now = time.monotonic()
+                for k in [k for k, (ts, _) in _neg_profiles.items()
+                          if now - ts > _NEG_PROFILE_TTL] or \
+                         [min(_neg_profiles, key=lambda k: _neg_profiles[k][0])]:
+                    _neg_profiles.pop(k, None)
+            _neg_profiles[cache_key] = (time.monotonic(), copy.deepcopy(profile))
         return profile
 
 
@@ -246,5 +304,6 @@ def update_profile_cache(ticker, profile):
         _cache.pop(cache_key, None)
         persistent_cache.delete(cache_key)
         return
+    _neg_profiles.pop(cache_key, None)
     _cache[cache_key] = (time.monotonic(), copy.deepcopy(profile))
     persistent_cache.put(cache_key, profile, _DISK_PROFILE_TTL)

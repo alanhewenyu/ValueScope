@@ -40,6 +40,19 @@ COPY backend/  ./backend/
 
 EXPOSE 8000
 
-# Run with 1 uvicorn worker (sufficient for current traffic).
-# Memory is controlled by cache eviction in data_cache.py instead of worker recycling.
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# gunicorn master + 1 uvicorn worker, recycled every ~2000 requests.
+# Cache eviction bounds Python-object memory, but glibc heap fragmentation
+# still grows RSS ~linearly under sustained crawler churn (2026-07-20 OOM:
+# ~140MB/h to the 8GB kill). Recycling resets RSS; the master holds the
+# listen socket so requests queue (not fail) during the ~5s worker swap.
+# Single worker: in-memory caches stay unified and snapshot_scheduler
+# runs once. Jitter avoids recycling at a predictable request count.
+CMD ["gunicorn", "backend.main:app", \
+     "-k", "uvicorn_worker.UvicornWorker", \
+     "--bind", "0.0.0.0:8000", \
+     "--workers", "1", \
+     "--max-requests", "2000", \
+     "--max-requests-jitter", "200", \
+     "--timeout", "180", \
+     "--graceful-timeout", "45", \
+     "--keep-alive", "5"]

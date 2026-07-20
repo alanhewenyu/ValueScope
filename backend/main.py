@@ -68,6 +68,33 @@ if _fmp_key:
     threading.Thread(target=fetch_forex_data, args=(_fmp_key,), daemon=True).start()
     threading.Thread(target=fetch_market_risk_premium, args=(_fmp_key,), daemon=True).start()
 
+
+def _malloc_trim_loop():
+    """Periodically return freed heap pages to the OS (Linux/glibc only).
+
+    Python objects are released fine, but glibc keeps the freed pages: under
+    sustained crawler churn of pandas DataFrames RSS climbed ~140MB/h to
+    Railway's 8GB kill (2026-07-20 OOM). malloc_trim(0) walks the arenas and
+    gives fully-freed pages back; gunicorn --max-requests recycling is the
+    backstop for what fragmentation still pins.
+    """
+    import ctypes
+    import time as _t
+    try:
+        libc = ctypes.CDLL("libc.so.6")
+        libc.malloc_trim  # AttributeError on non-glibc
+    except (OSError, AttributeError):
+        return  # macOS/musl: allocator returns memory on its own
+    while True:
+        _t.sleep(300)
+        try:
+            libc.malloc_trim(0)
+        except Exception:
+            pass
+
+
+threading.Thread(target=_malloc_trim_loop, daemon=True).start()
+
 from contextlib import asynccontextmanager
 
 from fastapi.responses import JSONResponse
@@ -105,6 +132,11 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 
 # Capture client IP + X-FMP-Key for MCP quota/trial handling
 app.add_middleware(MCPRequestMetaMiddleware)
+
+# Per-IP budgets on unauthenticated /api/ traffic — outermost so throttled
+# crawler requests are answered before touching the thread pool
+from backend.rate_limit import RateLimitMiddleware
+app.add_middleware(RateLimitMiddleware)
 
 
 @app.exception_handler(UpstreamBusy)
