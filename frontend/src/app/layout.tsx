@@ -19,9 +19,9 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://valuescope.app"),
-  title: "ValueScope — 你的 AI 也能调用的 DCF 估值引擎 | The DCF Valuation Engine Your AI Can Call",
+  title: "ValueScope — 让你的 AI 学会 DCF 估值 | Teach Your AI to Run DCF Valuations",
   description:
-    "确定性 DCF 估值引擎：通过 MCP 接入 Claude / ChatGPT 等任意 AI，对话中完成两相 DCF 估值；网页控制台支持手动分析。支持 A 股、港股、美股、日股。A deterministic DCF valuation engine — MCP server for any AI, web console for manual analysis.",
+    "把标准化 DCF 估值引擎接进你的 Claude / ChatGPT：AI 负责搜索指引、推理假设，引擎负责数据和计算，同样的输入永远得到同样的结果。A股港股完全免费，支持美股、日股。Your AI brings the judgment, ValueScope brings the discipline.",
   keywords: [
     "DCF估值", "股票估值", "内在价值", "现金流折现", "AI估值", "MCP",
     "估值MCP", "A股估值", "港股估值", "美股估值", "WACC", "免费估值工具",

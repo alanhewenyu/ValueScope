@@ -21,10 +21,13 @@
 
 ## Markets
 
-- A-shares (600519.SS / 000333.SZ) and Hong Kong (0700.HK): no key needed.
-- US (AAPL) and Japan (7203.T): small free daily trial served by the server;
-  beyond that bring your own FMP key via the `X-FMP-Key` request header or a
-  `fmp_api_key` tool parameter.
+- A-shares (600519.SS / 000333.SZ) and Hong Kong (0700.HK): completely free,
+  no key needed.
+- US (AAPL) and Japan (7203.T): 3 free trial valuations per day served by the
+  server; beyond that bring your own FMP key via the `X-FMP-Key` request
+  header or a `fmp_api_key` tool parameter. Discounted FMP signup (coupon
+  code `valuescope`):
+  https://site.financialmodelingprep.com/pricing-plans?couponCode=valuescope
 
 ## Other pages
 
