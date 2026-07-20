@@ -634,8 +634,12 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
 
         # Non-trading day handling is done at the data source level:
         # - Eastmoney: f86 timestamp check → prev_close = price when data is stale
-        # - yfinance (non-USD): bar date check → prev_close = last bar close when not today
-        # - yfinance (USD extended): prev_close = reg_price (same-day close)
+        # - yfinance (non-USD): weekend + newest-bar-date checks (covers
+        #   exchange holidays, e.g. JP 海の日) → prev_close = price when the
+        #   exchange has no session today
+        # - yfinance (USD extended): prev_close = last regular close; live
+        #   pre-market (marketState PRE) counts as today's move, weekends and
+        #   holidays (CLOSED) are zeroed
         # - Fund NAV: nav_date check → prev_nav = nav when stale
         # When prev_close == price, daily_pnl naturally = 0.
 

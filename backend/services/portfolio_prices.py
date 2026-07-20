@@ -262,20 +262,28 @@ def _fetch_us_extended(t, currency):
     else:
         price = info.get('preMarketPrice') or info.get('postMarketPrice') or reg_price
         prev_close = reg_price
-        # No session today in the exchange's timezone (weekend/holiday):
-        # zero the daily P&L instead of showing Friday's move / stale
-        # after-hours drift as "today"
-        try:
-            from zoneinfo import ZoneInfo
-            ts = info.get('regularMarketTime')
-            tz = ZoneInfo(info.get('exchangeTimezoneName') or 'America/New_York')
-            if ts and datetime.datetime.fromtimestamp(int(ts), tz).date() < datetime.datetime.now(tz).date():
-                prev_close = price
-            elif not ts and _exchange_weekend(getattr(t, 'ticker', '')):
-                prev_close = price
-        except Exception:
-            if _exchange_weekend(getattr(t, 'ticker', '')):
-                prev_close = price
+        if market_state == 'PRE' and info.get('preMarketPrice'):
+            # Live pre-market on a scheduled trading day (holidays stay
+            # CLOSED, never PRE): the pre-market move vs the last regular
+            # close IS today's move — keep it. The stale-date zeroing below
+            # would wipe it, because regularMarketTime still points at the
+            # previous session until today's open.
+            pass
+        else:
+            # No session today in the exchange's timezone (weekend/holiday):
+            # zero the daily P&L instead of showing Friday's move / stale
+            # after-hours drift as "today"
+            try:
+                from zoneinfo import ZoneInfo
+                ts = info.get('regularMarketTime')
+                tz = ZoneInfo(info.get('exchangeTimezoneName') or 'America/New_York')
+                if ts and datetime.datetime.fromtimestamp(int(ts), tz).date() < datetime.datetime.now(tz).date():
+                    prev_close = price
+                elif not ts and _exchange_weekend(getattr(t, 'ticker', '')):
+                    prev_close = price
+            except Exception:
+                if _exchange_weekend(getattr(t, 'ticker', '')):
+                    prev_close = price
 
     if price is not None:
         price = float(price)
@@ -293,20 +301,22 @@ _EXCHANGE_TZ_BY_SUFFIX = [
 ]
 
 
+def _exchange_tz(ticker: str) -> str:
+    """Exchange timezone name from the ticker suffix (no network calls)."""
+    tu = (ticker or '').upper()
+    if tu.isdigit():  # CN mutual funds (bare 6-digit codes)
+        return 'Asia/Shanghai'
+    for suffix, tz in _EXCHANGE_TZ_BY_SUFFIX:
+        if tu.endswith(suffix):
+            return tz
+    return 'America/New_York'
+
+
 def _exchange_weekend(ticker: str) -> bool:
     """True when it's Sat/Sun in the ticker's exchange timezone (suffix-based,
     no network calls — deterministic even when data sources are rate-limited)."""
     from zoneinfo import ZoneInfo
-    tu = (ticker or '').upper()
-    if tu.isdigit():  # CN mutual funds (bare 6-digit codes)
-        tz_name = 'Asia/Shanghai'
-    else:
-        tz_name = 'America/New_York'
-        for suffix, tz in _EXCHANGE_TZ_BY_SUFFIX:
-            if tu.endswith(suffix):
-                tz_name = tz
-                break
-    return datetime.datetime.now(ZoneInfo(tz_name)).weekday() >= 5
+    return datetime.datetime.now(ZoneInfo(_exchange_tz(ticker))).weekday() >= 5
 
 
 def _fetch_yfinance(ticker, currency, regular_only=False):
@@ -349,6 +359,24 @@ def _fetch_yfinance(ticker, currency, regular_only=False):
         # that gets rate-limited and would silently disable this guard.
         if prev_close is not None and _exchange_weekend(ticker):
             prev_close = price
+        # Holiday guard (e.g. Japan's 海の日 falls on a Monday): the weekday
+        # check can't see exchange holidays, and fast_info then pairs the last
+        # session's close with the one before — showing that whole session as
+        # "today". If the newest daily bar is older than today in the
+        # exchange's timezone there is no session today (holiday, or simply
+        # pre-open after midnight): zero the move.
+        elif prev_close is not None and prev_close != price:
+            try:
+                from zoneinfo import ZoneInfo
+                hist = t.history(period='5d')
+                if hist is not None and not hist.empty:
+                    _bar = hist.index[-1]
+                    _bar_date = _bar.date() if hasattr(_bar, 'date') else None
+                    _today = datetime.datetime.now(ZoneInfo(_exchange_tz(ticker))).date()
+                    if _bar_date and _bar_date < _today:
+                        prev_close = price
+            except Exception:
+                pass  # guard is best-effort; a failed check keeps fast_info's pair
         # Fall back to history if fast_info.previous_close unavailable
         if prev_close is None:
             hist = t.history(period='5d')
