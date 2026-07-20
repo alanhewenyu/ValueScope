@@ -318,9 +318,9 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
               <span
                 className="ml-1.5 align-middle text-[10px] font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/50 px-1.5 py-0.5 rounded-full"
                 title={zh
-                  ? "含盘中实时估值，随刷新变动；官方净值以每日快照为准"
-                  : "Includes the intraday estimate (moves with refresh); official unit NAV is the daily snapshot"}>
-                {zh ? "盘中" : "live"}
+                  ? "含实时估算（各市场最新可得行情），随刷新变动；官方净值以每日快照为准"
+                  : "Includes the live estimate (latest available prices per market, moves with refresh); official unit NAV is the daily snapshot"}>
+                {zh ? "实时" : "live"}
               </span>
             )}
           </div>
@@ -346,7 +346,7 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
           </div>
           {liveEst != null && (
             <div className="flex gap-1.5 sm:gap-0 sm:justify-between text-[11px] text-gray-500 dark:text-gray-400">
-              <span>{zh ? "盘中估算" : "Intraday est."}</span>
+              <span>{zh ? "实时估算" : "Live est."}</span>
               <span className={`font-mono ${pnlColor(liveEst - officialNav)}`}>{liveEst.toFixed(4)}</span>
             </div>
           )}
@@ -1868,7 +1868,7 @@ function PerformanceChart({ navHistory, snapshots = [], locale, liveLast }: {
             ? "* 净值曲线 (起始=100)：T0(2026-07-04) 起为份额净值 (TWR)，之前为 NAV/Capital 比值无缝拼接——已剔除出入金影响\n* 勾选 Benchmarks 叠加基准：均折算人民币口径（标普×USDCNY、恒生×HKDCNY），与组合同币种可比；价格指数不含股息；沪深300 数据源滞后时自动切换 510300 ETF 代理"
             : "* Unit-NAV curve (base=100): TWR unit NAV from T0, NAV/Capital ratio before — flow-adjusted\n* Benchmarks (toggle) converted to CNY to match the portfolio's denomination; price indices, ex-dividends")
             + (liveLast
-              ? (locale === "zh" ? "\n* 末端空心点为盘中实时估值（随刷新变动），次日快照落定为官方净值" : "\n* Hollow end-dot is the intraday estimate (moves with refresh); the next daily snapshot makes it official")
+              ? (locale === "zh" ? "\n* 末端空心点为实时估算（各市场最新可得行情，随刷新变动），次日快照落定为官方净值" : "\n* Hollow end-dot is the live estimate (latest available prices per market, moves with refresh); the next daily snapshot makes it official")
               : "")}>
           {locale === "zh" ? "业绩走势" : "Performance"}
         </SectionTitle>
