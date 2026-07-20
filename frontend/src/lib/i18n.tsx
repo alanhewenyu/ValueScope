@@ -25,7 +25,7 @@ const en = {
 
   // Home page
   heroSubtitle: "The DCF valuation engine your AI can call",
-  heroTagline: "Deterministic DCF · MCP server for Claude / ChatGPT / any AI · web console for manual analysis",
+  heroTagline: "Standardized DCF · MCP server for Claude / ChatGPT / any AI · Web console for manual analysis",
   heroFeatures: "DCF Valuation · Relative Valuation · Multi-Dimensional Scoring · Financial Analysis",
   heroSupports: "Supports A-shares (600519.SS), HK stocks (0700.HK), US stocks (AAPL), JP stocks (6758.T)",
   mcpBannerTitle: "Use it inside your AI",
@@ -456,7 +456,7 @@ const zh: Translations = {
   auto: "自动",
 
   heroSubtitle: "你的 AI 也能调用的 DCF 估值引擎",
-  heroTagline: "确定性 DCF · MCP 接入 Claude / ChatGPT / 任意 AI · 网页控制台手动分析",
+  heroTagline: "标准化 DCF · MCP 接入 Claude / ChatGPT / 任意 AI · 网页控制台手动分析",
   heroFeatures: "DCF 估值 · 相对估值 · 多维评分 · 财务分析",
   heroSupports: "支持 A 股 (600519.SS)、港股 (0700.HK)、美股 (AAPL)、日股 (6758.T)",
   mcpBannerTitle: "在你的 AI 里直接用",
