@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "MCP 接入指南 — 让你的 AI 学会 DCF 估值 | ValueScope MCP Setup",
+  title: "MCP 接入指南 — 你的 AI 也能调用的 DCF 估值引擎 | ValueScope MCP Setup",
   description:
     "两分钟把 ValueScope 标准化 DCF 估值引擎接进 Claude、ChatGPT、Cherry Studio：AI 负责前瞻判断，ValueScope 负责数据和计算，同样的输入永远得到同样的结果。A股港股完全免费。Endpoint: https://mcp.valuescope.app/mcp",
   alternates: { canonical: "https://valuescope.app/mcp" },
@@ -37,7 +37,7 @@ export default function McpGuide() {
         </Link>
 
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white mt-4 mb-2">
-          🔌 让你的 AI 学会 DCF 估值
+          🔌 你的 AI 也能调用的 DCF 估值引擎
         </h1>
         <P>
           MCP（<a href="https://modelcontextprotocol.io" className="text-blue-600 dark:text-blue-400 hover:underline">Model Context Protocol</a>）可以理解为

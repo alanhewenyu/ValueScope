@@ -8,6 +8,7 @@ import LanguageToggle from "./LanguageToggle";
 import SettingsDrawer from "./SettingsDrawer";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth-context";
+import { trackEvent } from "@/lib/gtag";
 
 export default function Navbar() {
   const { t, locale } = useI18n();
@@ -67,6 +68,13 @@ export default function Navbar() {
             </Link>
             <Link href="/portfolio" className="hover:text-gray-900 dark:hover:text-white transition-colors">
               {locale === "zh" ? "投资组合" : "Portfolio Tracker"}
+            </Link>
+            <Link
+              href="/mcp"
+              onClick={() => trackEvent("mcp_docs_click", { source: "navbar" })}
+              className="font-medium text-violet-600 dark:text-violet-400 hover:text-violet-800 dark:hover:text-violet-300 transition-colors"
+            >
+              🔌 MCP
             </Link>
             {isAdmin && (
               <Link href="/admin" className="hover:text-gray-900 dark:hover:text-white transition-colors text-amber-600 dark:text-amber-400">
@@ -162,6 +170,13 @@ export default function Navbar() {
                   className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
                 >
                   {locale === "zh" ? "投资组合" : "Portfolio Tracker"}
+                </Link>
+                <Link
+                  href="/mcp"
+                  onClick={() => { trackEvent("mcp_docs_click", { source: "navbar" }); setMobileMenuOpen(false); }}
+                  className="block px-4 py-2 text-sm font-medium text-violet-600 dark:text-violet-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+                >
+                  🔌 MCP
                 </Link>
                 {isAdmin && (
                   <Link
