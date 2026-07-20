@@ -210,8 +210,11 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
         .filter((p) => Number.isFinite(p.val));
       // Fold in the intraday estimate (same rule as PerformanceChart): the
       // YTD % and sparkline then track the live session, not yesterday's
-      // close. Official unit NAV stays untouched in the rows below.
-      if (unitNavEst && pts.length) {
+      // close. Official unit NAV stays untouched in the rows below. The
+      // divergence gate keeps weekends/holidays on the pure official series
+      // (closed markets ⇒ estimate == official).
+      if (unitNavEst && pts.length
+          && Math.abs(unitNavEst - pts[pts.length - 1].val) >= 0.0001) {
         const today = new Intl.DateTimeFormat("sv-SE").format(new Date());
         const last = pts[pts.length - 1];
         if (today > last.date) pts.push({ date: today, val: unitNavEst });
@@ -301,6 +304,15 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
           </div>
           <div className={`text-2xl sm:text-3xl font-semibold leading-tight ${pnlColor(portRet)}`}>
             {portRet >= 0 ? "+" : ""}{portRet.toFixed(1)}%
+            {liveEst != null && (
+              <span
+                className="ml-1.5 align-middle text-[10px] font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/50 px-1.5 py-0.5 rounded-full"
+                title={zh
+                  ? "含盘中实时估值，随刷新变动；官方净值以每日快照为准"
+                  : "Includes the intraday estimate (moves with refresh); official unit NAV is the daily snapshot"}>
+                {zh ? "盘中" : "live"}
+              </span>
+            )}
           </div>
           {diff != null && (
             <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5"
@@ -1437,9 +1449,18 @@ function PerformanceSection({ locale, hideChart, hideRisk, liveUnitNav, liveNetA
   // so the curve tracks the current session either way. Next morning's
   // snapshot restores the official value. Local date (not UTC) — snapshots
   // are Beijing-dated and an evening session would otherwise lag a day.
+  // Divergence gate: with markets closed the estimate equals the official
+  // value — skip the live point then, so weekends don't grow a flat tail
+  // dated on non-trading days and the 盘中 note only shows mid-session.
   const today = new Intl.DateTimeFormat("sv-SE").format(new Date());
   const lastSnap = snapshotsSorted[snapshotsSorted.length - 1];
-  const hasLive = !!(liveUnitNav && liveNetAssets && lastSnap && today >= lastSnap.date);
+  const lastSnapVal = lastSnap
+    ? (lastSnap.unit_nav != null && lastSnap.unit_nav > 0 ? lastSnap.unit_nav
+       : (lastSnap.capital && lastSnap.capital > 0 && lastSnap.net_assets != null
+          ? lastSnap.net_assets / lastSnap.capital : null))
+    : null;
+  const hasLive = !!(liveUnitNav && liveNetAssets && lastSnap && today >= lastSnap.date
+    && lastSnapVal != null && Math.abs(liveUnitNav - lastSnapVal) >= 0.0001);
   const chartSnapshots = hasLive
     ? [...snapshotsSorted.slice(0, today === lastSnap.date ? -1 : undefined),
        { ...lastSnap, date: today, unit_nav: liveUnitNav!, net_assets: liveNetAssets! }]
@@ -1545,7 +1566,7 @@ function PerformanceSection({ locale, hideChart, hideRisk, liveUnitNav, liveNetA
   return (
     <>
       {/* Performance Chart (NAV + Capital) */}
-      {!hideChart && navSorted.length > 2 && <PerformanceChart navHistory={chartNav} snapshots={chartSnapshots} locale={locale} />}
+      {!hideChart && navSorted.length > 2 && <PerformanceChart navHistory={chartNav} snapshots={chartSnapshots} locale={locale} liveLast={hasLive} />}
       {!hideChart && <MonthlyHeatmap snapshots={snapshotsSorted} navHistory={navHistory} locale={locale} />}
 
       {/* Risk Analytics */}
@@ -1684,8 +1705,10 @@ function MonthlyHeatmap({ snapshots, navHistory = [], locale }: {
 // Performance Chart (SVG line chart)
 // ══════════════════════════════════════════
 
-function PerformanceChart({ navHistory, snapshots = [], locale }: {
+function PerformanceChart({ navHistory, snapshots = [], locale, liveLast }: {
   navHistory: NavHistoryPoint[]; snapshots?: Snapshot[]; locale: string;
+  /** True when the last point is the intraday estimate, not an official snapshot. */
+  liveLast?: boolean;
 }) {
   const [range, setRange] = useState<string>("2Y");
   // "twr" = indexed unit-NAV view (what the hero links to); "nav" = ¥ NAV/Capital.
@@ -1828,9 +1851,12 @@ function PerformanceChart({ navHistory, snapshots = [], locale }: {
     return (
       <>
         <SectionTitle
-          note={locale === "zh"
+          note={(locale === "zh"
             ? "* 净值曲线 (起始=100)：T0(2026-07-04) 起为份额净值 (TWR)，之前为 NAV/Capital 比值无缝拼接——已剔除出入金影响\n* 勾选 Benchmarks 叠加基准：均折算人民币口径（标普×USDCNY、恒生×HKDCNY），与组合同币种可比；价格指数不含股息；沪深300 数据源滞后时自动切换 510300 ETF 代理"
-            : "* Unit-NAV curve (base=100): TWR unit NAV from T0, NAV/Capital ratio before — flow-adjusted\n* Benchmarks (toggle) converted to CNY to match the portfolio's denomination; price indices, ex-dividends"}>
+            : "* Unit-NAV curve (base=100): TWR unit NAV from T0, NAV/Capital ratio before — flow-adjusted\n* Benchmarks (toggle) converted to CNY to match the portfolio's denomination; price indices, ex-dividends")
+            + (liveLast
+              ? (locale === "zh" ? "\n* 末端空心点为盘中实时估值（随刷新变动），次日快照落定为官方净值" : "\n* Hollow end-dot is the intraday estimate (moves with refresh); the next daily snapshot makes it official")
+              : "")}>
           {locale === "zh" ? "业绩走势" : "Performance"}
         </SectionTitle>
         <div className="flex items-center gap-2 mb-3">
@@ -1885,9 +1911,11 @@ function PerformanceChart({ navHistory, snapshots = [], locale }: {
               }).join(" ");
               return <path key={name} d={path} fill="none" stroke={benchColors[name] || "#8b949e"} strokeWidth="1.5" strokeDasharray="4,3" />;
             })}
-            {/* Portfolio line */}
+            {/* Portfolio line; hollow end-dot = intraday estimate, solid = official snapshot */}
             <path d={portPath} fill="none" stroke="#3b82f6" strokeWidth="2.5" />
-            <circle cx={toX(portIndexed.length - 1, portIndexed.length)} cy={toY(portIndexed[portIndexed.length - 1].indexed)} r="3" fill="#3b82f6" />
+            {liveLast
+              ? <circle cx={toX(portIndexed.length - 1, portIndexed.length)} cy={toY(portIndexed[portIndexed.length - 1].indexed)} r="3.5" fill="var(--background, #fff)" stroke="#3b82f6" strokeWidth="2" />
+              : <circle cx={toX(portIndexed.length - 1, portIndexed.length)} cy={toY(portIndexed[portIndexed.length - 1].indexed)} r="3" fill="#3b82f6" />}
             {/* Hover crosshair + tooltip */}
             {hoverIdx != null && (() => {
               const hp = portIndexed[hoverIdx];
