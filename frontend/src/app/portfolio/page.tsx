@@ -208,13 +208,22 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
             : (s.capital && s.capital > 0 && s.net_assets != null ? s.net_assets / s.capital : NaN),
         }))
         .filter((p) => Number.isFinite(p.val));
+      // Fold in the intraday estimate (same rule as PerformanceChart): the
+      // YTD % and sparkline then track the live session, not yesterday's
+      // close. Official unit NAV stays untouched in the rows below.
+      if (unitNavEst && pts.length) {
+        const today = new Intl.DateTimeFormat("sv-SE").format(new Date());
+        const last = pts[pts.length - 1];
+        if (today > last.date) pts.push({ date: today, val: unitNavEst });
+        else if (today === last.date) last.val = unitNavEst;
+      }
       setSeries(pts);
       if (pts.length >= 2) {
         getBenchmarks(pts[0].date).then(setBenchData).catch(() => {});
       }
     }).catch(() => {});
     getFxImpact().then((r) => { if (r && r.fx_pp != null) setFxImpact(r as FxImpact); }).catch(() => {});
-  }, []);
+  }, [unitNavEst]);
 
   if (series.length < 2) return null;
 
