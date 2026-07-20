@@ -24,6 +24,16 @@ GA_API_SECRET = os.environ.get("GA_API_SECRET", "")
 _GA_ENDPOINT = "https://www.google-analytics.com/mp/collect"
 _CLIENT_ID_SALT = os.environ.get("GA_CLIENT_ID_SALT", "valuescope-mcp")
 
+# The owner's own MCP calls come through the Measurement Protocol from the
+# server's egress IP, so GA's IP-based internal-traffic rule (which only sees
+# gtag hits) can't catch them. Tag events from these caller IPs with
+# traffic_type=internal so the active Internal Traffic data filter excludes
+# them — keeping the north-star metric (unique external mcp_run_dcf callers)
+# clean. Comma-separated list, e.g. "89.187.185.11,1.2.3.4".
+_INTERNAL_IPS = {
+    ip.strip() for ip in os.environ.get("VS_INTERNAL_IPS", "").split(",") if ip.strip()
+}
+
 
 def _client_id(ip: str) -> str:
     """Stable pseudonymous client_id per IP (hashed, no raw IP sent to GA)."""
@@ -51,6 +61,8 @@ def track(event_name: str, ip: str, params: dict | None = None) -> None:
     # GA4 needs engagement_time_msec + session_id for events to surface in
     # standard reports (not just DebugView / realtime).
     event_params = {"engagement_time_msec": "1", "session_id": _client_id(ip)}
+    if ip in _INTERNAL_IPS:
+        event_params["traffic_type"] = "internal"
     for k, v in (params or {}).items():
         if v is not None:
             event_params[k] = v

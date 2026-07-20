@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { formatCurrency, formatLargeNumber } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
+import { trackEvent } from "@/lib/gtag";
 
 interface CompanyHeaderProps {
   companyName: string;
@@ -57,6 +59,13 @@ export default function CompanyHeader({
               {exchange}
             </span>
           )}
+          <Link
+            href="/mcp"
+            onClick={() => trackEvent("mcp_docs_click", { source: "stock_header", ticker })}
+            className="text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/50 px-2 py-0.5 rounded hover:bg-violet-100 dark:hover:bg-violet-900/50 transition-colors"
+          >
+            {t.mcpStockChip}
+          </Link>
         </div>
         <div className="flex items-center gap-4 mt-2 text-sm text-gray-500 dark:text-gray-400 flex-wrap">
           {price > 0 && (
