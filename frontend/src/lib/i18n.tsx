@@ -26,19 +26,11 @@ const en = {
   // Home page
   heroSubtitle: "The DCF valuation engine your AI can call",
   heroTagline: "Standardized DCF · MCP server for Claude / ChatGPT / any AI · Web console for manual analysis",
-  heroFeatures: "DCF Valuation · Relative Valuation · Multi-Dimensional Scoring · Financial Analysis",
+  heroFeatures: "DCF Valuation · Relative Valuation · 4-Dimension Scoring · Portfolio Tracker",
   heroSupports: "Supports A-shares (600519.SS), HK stocks (0700.HK), US stocks (AAPL), JP stocks (6758.T)",
   mcpBannerTitle: "Use it inside your AI",
   mcpBannerDesc: "Plug the standardized DCF engine into Claude, ChatGPT or Cherry Studio. Your AI researches guidance and reasons about assumptions; the engine owns the data and the math. A-shares & HK are completely free.",
   mcpBannerCta: "Connect in 2 minutes →",
-  featureDCFTitle: "DCF Valuation",
-  featureDCFDesc: "Damodaran FCFF framework with AI parameter estimation, sensitivity analysis, and market-gap diagnostics. Includes Buffett Quick Valuation — an automated Owner Earnings estimate with zero input required.",
-  featureRelTitle: "Relative Valuation",
-  featureRelDesc: "Current multiples vs historical percentiles across 3/5/10-year windows — see where the price sits in its own history.",
-  featureScoringTitle: "4-Dimension Scoring",
-  featureScoringDesc: "Valuation, Quality, Growth, and Momentum condensed into a single radar chart with transparent sub-factor breakdown.",
-  featurePortfolioTitle: "Portfolio Tracker",
-  featurePortfolioDesc: "Cross-market, cross-account portfolio tracking — real-time P&L, asset allocation, NAV benchmarking, risk analysis & return attribution.",
 
   // Search
   searchPlaceholder: "600519.SS, 0700.HK, AAPL ...",
@@ -457,19 +449,11 @@ const zh: Translations = {
 
   heroSubtitle: "你的 AI 也能调用的 DCF 估值引擎",
   heroTagline: "标准化 DCF · MCP 接入 Claude / ChatGPT / 任意 AI · 网页控制台手动分析",
-  heroFeatures: "DCF 估值 · 相对估值 · 多维评分 · 财务分析",
+  heroFeatures: "DCF 估值 · 相对估值 · 四维评分 · 投资组合追踪",
   heroSupports: "支持 A 股 (600519.SS)、港股 (0700.HK)、美股 (AAPL)、日股 (6758.T)",
   mcpBannerTitle: "在你的 AI 里直接用",
   mcpBannerDesc: "把标准化 DCF 估值引擎接进 Claude、ChatGPT 或 Cherry Studio：AI 负责搜索业绩指引、推理假设参数，引擎负责数据和计算。A股港股完全免费。",
   mcpBannerCta: "两分钟接入 →",
-  featureDCFTitle: "DCF 估值",
-  featureDCFDesc: "基于 Damodaran FCFF 框架，支持 AI 估算参数、敏感性分析与市场价差诊断。内含 Buffett Quick Valuation — 基于股东盈余法的自动估值，无需手动输入。",
-  featureRelTitle: "相对估值",
-  featureRelDesc: "当前估值倍数对比 3/5/10 年历史分位，一眼看出当前价格在自身历史中的位置。",
-  featureScoringTitle: "四维评分",
-  featureScoringDesc: "估值、质量、成长、动量浓缩为一张雷达图，子因子透明可查。",
-  featurePortfolioTitle: "投资组合",
-  featurePortfolioDesc: "跨市场、跨账户组合追踪 — 实时盈亏、资产配置、净值基准对比、风险分析与收益归因。",
 
   searchPlaceholder: "600519.SS, 0700.HK, AAPL ...",
 

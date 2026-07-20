@@ -33,7 +33,7 @@ export default function Home() {
           {locale === "zh" ? "估值记录" : "History"}
         </Link>
         <Link href="/portfolio" className="hidden sm:inline hover:text-gray-900 dark:hover:text-white transition-colors">
-          {locale === "zh" ? "投资组合" : "Portfolio"}
+          {locale === "zh" ? "投资组合" : "Portfolio Tracker"}
         </Link>
         <LanguageToggle />
         {!authLoading && !user && (
@@ -69,7 +69,9 @@ export default function Home() {
         )}
       </div>
       {/* Hero section */}
-      <main className="flex-1 flex flex-col items-center justify-center px-4">
+      {/* pt keeps the vertically-centered hero clear of the absolute top-right nav
+          now that the page is short enough to center high on small viewports */}
+      <main className="flex-1 flex flex-col items-center justify-center px-4 pt-20">
         <div className="text-center w-full max-w-2xl mx-auto">
           <h1 className="text-3xl sm:text-5xl font-bold text-gray-900 dark:text-white mb-3 tracking-tight">
             <span className="text-3xl sm:text-4xl mr-2">🎯</span> ValueScope
@@ -115,67 +117,11 @@ export default function Home() {
           </div>
         </Link>
 
-        {/* Feature cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 max-w-4xl mx-auto mt-4">
-          <FeatureCard
-            icon="📊"
-            title={t.featureDCFTitle}
-            description={t.featureDCFDesc}
-          />
-          <FeatureCard
-            icon="📈"
-            title={t.featureRelTitle}
-            description={t.featureRelDesc}
-          />
-          <FeatureCard
-            icon="📐"
-            title={t.featureScoringTitle}
-            description={t.featureScoringDesc}
-          />
-          <FeatureCard
-            icon="💼"
-            title={t.featurePortfolioTitle}
-            description={t.featurePortfolioDesc}
-          />
-        </div>
+        {/* Feature hint — one muted line; the stock pages themselves do the showing */}
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-6 mb-10">
+          {t.heroFeatures}
+        </p>
       </main>
     </div>
   );
-}
-
-function FeatureCard({
-  icon,
-  title,
-  description,
-  badge,
-  href,
-  actionLabel,
-}: {
-  icon: string;
-  title: string;
-  description: string;
-  badge?: string;
-  href?: string;
-  actionLabel?: string;
-}) {
-  const card = (
-    <div className={`bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 hover:shadow-md transition-shadow ${href ? "cursor-pointer" : ""}`}>
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-2xl">{icon}</span>
-        <h3 className="font-semibold text-gray-900 dark:text-white">{title}</h3>
-        {badge && (
-          <span className="text-[10px] font-medium text-blue-600 bg-blue-50 dark:bg-blue-950 dark:text-blue-400 px-2 py-0.5 rounded-full">
-            {badge}
-          </span>
-        )}
-      </div>
-      <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
-        {description}
-      </p>
-      {actionLabel && (
-        <p className="mt-3 text-xs font-medium text-blue-600 dark:text-blue-400">{actionLabel}</p>
-      )}
-    </div>
-  );
-  return href ? <Link href={href}>{card}</Link> : card;
 }

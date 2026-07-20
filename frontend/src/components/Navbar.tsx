@@ -66,7 +66,7 @@ export default function Navbar() {
               {locale === "zh" ? "估值记录" : "History"}
             </Link>
             <Link href="/portfolio" className="hover:text-gray-900 dark:hover:text-white transition-colors">
-              {locale === "zh" ? "投资组合" : "Portfolio"}
+              {locale === "zh" ? "投资组合" : "Portfolio Tracker"}
             </Link>
             {isAdmin && (
               <Link href="/admin" className="hover:text-gray-900 dark:hover:text-white transition-colors text-amber-600 dark:text-amber-400">
@@ -161,7 +161,7 @@ export default function Navbar() {
                   onClick={() => setMobileMenuOpen(false)}
                   className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
                 >
-                  {locale === "zh" ? "投资组合" : "Portfolio"}
+                  {locale === "zh" ? "投资组合" : "Portfolio Tracker"}
                 </Link>
                 {isAdmin && (
                   <Link
