@@ -1378,7 +1378,14 @@ function SustainabilitySection({ locale }: { locale: string }) {
 // Performance & Risk Analytics
 // ══════════════════════════════════════════
 
-function PerformanceSection({ locale, hideChart, hideRisk }: { locale: string; hideChart?: boolean; hideRisk?: boolean }) {
+function PerformanceSection({ locale, hideChart, hideRisk, liveUnitNav, liveNetAssets }: {
+  locale: string; hideChart?: boolean; hideRisk?: boolean;
+  /** Intraday unit-NAV estimate + live net assets from the summary payload.
+      When today has no official snapshot yet, the performance chart gets a
+      synthetic "today" point (盘中估值) — replaced by the real snapshot at
+      the next 06:10 run. Heatmap/risk keep official snapshots only. */
+  liveUnitNav?: number | null; liveNetAssets?: number | null;
+}) {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [navHistory, setNavHistory] = useState<NavHistoryPoint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1414,6 +1421,30 @@ function PerformanceSection({ locale, hideChart, hideRisk }: { locale: string; h
   })();
 
   const snapshotsSorted = [...snapshots].sort((a, b) => a.date.localeCompare(b.date));
+
+  // Chart-only live extension: append today's 盘中 point when no official
+  // snapshot exists for today yet. Local date (not UTC) — snapshots are
+  // Beijing-dated and an evening session would otherwise lag a day.
+  const today = new Intl.DateTimeFormat("sv-SE").format(new Date());
+  const lastSnap = snapshotsSorted[snapshotsSorted.length - 1];
+  const hasLive = !!(liveUnitNav && liveNetAssets && lastSnap && today > lastSnap.date);
+  const chartSnapshots = hasLive
+    ? [...snapshotsSorted, { ...lastSnap, date: today, unit_nav: liveUnitNav!, net_assets: liveNetAssets! }]
+    : snapshotsSorted;
+  const chartNav = hasLive
+    ? (() => {
+        const lastNav = navSorted[navSorted.length - 1];
+        const cap = lastSnap.capital ?? lastNav?.capital_invested ?? 0;
+        return [...navSorted, {
+          date: today,
+          net_asset_value: liveNetAssets!,
+          capital_invested: cap,
+          pnl: liveNetAssets! - cap,
+          equity_nav: cap > 0 ? liveNetAssets! / cap : 1,
+          benchmark_value: null,
+        }];
+      })()
+    : navSorted;
 
   // Flow-adjusted return index: TWR unit NAV after T0, NAV/Capital ratio
   // before — the same splice as MonthlyHeatmap. Raw net_assets would count
@@ -1500,7 +1531,7 @@ function PerformanceSection({ locale, hideChart, hideRisk }: { locale: string; h
   return (
     <>
       {/* Performance Chart (NAV + Capital) */}
-      {!hideChart && navSorted.length > 2 && <PerformanceChart navHistory={navSorted} snapshots={snapshotsSorted} locale={locale} />}
+      {!hideChart && navSorted.length > 2 && <PerformanceChart navHistory={chartNav} snapshots={chartSnapshots} locale={locale} />}
       {!hideChart && <MonthlyHeatmap snapshots={snapshotsSorted} navHistory={navHistory} locale={locale} />}
 
       {/* Risk Analytics */}
@@ -5156,7 +5187,8 @@ export default function PortfolioPage() {
             {/* ════════ PERFORMANCE TAB ════════ */}
             {pageTab === "performance" && (
               <>
-                <PerformanceSection key={`perf-${refreshKey}`} locale={locale} />
+                <PerformanceSection key={`perf-${refreshKey}`} locale={locale}
+                  liveUnitNav={data.summary.unit_nav_est} liveNetAssets={data.summary.net_assets} />
                 <ReturnAttribution holdings={data.holdings} closedTrades={allClosedTrades} dividends={dividendsByTicker} locale={locale} />
               </>
             )}

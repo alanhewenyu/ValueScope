@@ -29,18 +29,19 @@ export default function Home() {
     <div className="min-h-screen flex flex-col">
       {/* Floating top-right nav — links hidden on mobile to avoid overlap */}
       <div className="absolute top-4 right-4 z-40 flex items-center gap-3 sm:gap-4 text-sm text-gray-500 dark:text-gray-400">
+        <Link href="/history" className="hidden sm:inline hover:text-gray-900 dark:hover:text-white transition-colors">
+          {locale === "zh" ? "估值记录" : "History"}
+        </Link>
+        <Link href="/portfolio" className="hidden sm:inline hover:text-gray-900 dark:hover:text-white transition-colors">
+          {locale === "zh" ? "投资组合" : "Portfolio Tracker"}
+        </Link>
+        {/* MCP sits last in the link group site-wide (matches shared Navbar) */}
         <Link
           href="/mcp"
           onClick={() => trackEvent("mcp_docs_click", { source: "home_nav" })}
           className="font-medium text-violet-600 dark:text-violet-400 hover:text-violet-800 dark:hover:text-violet-300 transition-colors"
         >
           🔌 MCP
-        </Link>
-        <Link href="/history" className="hidden sm:inline hover:text-gray-900 dark:hover:text-white transition-colors">
-          {locale === "zh" ? "估值记录" : "History"}
-        </Link>
-        <Link href="/portfolio" className="hidden sm:inline hover:text-gray-900 dark:hover:text-white transition-colors">
-          {locale === "zh" ? "投资组合" : "Portfolio Tracker"}
         </Link>
         <LanguageToggle />
         {!authLoading && !user && (
