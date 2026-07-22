@@ -365,6 +365,13 @@ def _fetch_yfinance(ticker, currency, regular_only=False):
         # "today". If the newest daily bar is older than today in the
         # exchange's timezone there is no session today (holiday, or simply
         # pre-open after midnight): zero the move.
+        #
+        # BUT a missing today-bar can also mean "session open, bar not
+        # published yet" — Yahoo's daily history lags a while after the open
+        # (seen on HK at 09:40). Disambiguate with live-trading evidence: on
+        # a closed day the live price sits exactly on the last completed
+        # bar's close; if it has moved off it, a session is running — keep
+        # the move.
         elif prev_close is not None and prev_close != price:
             try:
                 from zoneinfo import ZoneInfo
@@ -373,7 +380,10 @@ def _fetch_yfinance(ticker, currency, regular_only=False):
                     _bar = hist.index[-1]
                     _bar_date = _bar.date() if hasattr(_bar, 'date') else None
                     _today = datetime.datetime.now(ZoneInfo(_exchange_tz(ticker))).date()
-                    if _bar_date and _bar_date < _today:
+                    _last_close = float(hist['Close'].iloc[-1])
+                    _off_last_bar = (price is not None and _last_close > 0
+                                     and abs(price - _last_close) / _last_close > 1e-6)
+                    if _bar_date and _bar_date < _today and not _off_last_bar:
                         prev_close = price
             except Exception:
                 pass  # guard is best-effort; a failed check keeps fast_info's pair
