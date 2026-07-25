@@ -4932,7 +4932,10 @@ export default function PortfolioPage() {
       const now = new Date();
       const bjNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Shanghai" }));
       const dow = bjNow.getDay();
-      const daysBack = dow === 0 ? 2 : dow === 6 ? 1 : dow + 2;
+      // On Sat/Sun the week just ended, so the base is the Friday BEFORE it
+      // (8/9 days back) — not yesterday's Friday, which would make the window
+      // zero days wide and just measure live-quote drift off Friday's close.
+      const daysBack = dow === 0 ? 9 : dow === 6 ? 8 : dow + 2;
       const lastFri = new Date(bjNow.getTime() - daysBack * 86400000);
       const lastSatStr = new Date(lastFri.getTime() + 86400000)
         .toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" }).slice(0, 10);
