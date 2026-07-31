@@ -31,7 +31,7 @@ _pool = ThreadPoolExecutor(max_workers=8)
 
 # ── Price cache ──────────────────────────────────────────
 
-_price_cache = {}   # {ticker: (price, currency, prev_close, ts)}
+_price_cache = {}   # {ticker: (price, currency, prev_close, ts, source)}
 _PRICE_TTL = 60     # 60 seconds — fast refresh during active sessions
 
 _fx_cache = {}      # {currency: (rate_to_cny, ts)}
@@ -86,7 +86,295 @@ def _fetch_fmp_quote(symbol: str) -> tuple[float, float | None]:
     return float(price), (float(prev) if prev is not None else None)
 
 
-# ── A-share domestic API fallback ─────────────────────────
+# ── Eastmoney real-time quotes (A/B-shares + HKEX) ────────
+
+_EM_QUOTE_URL = 'https://push2.eastmoney.com/api/qt/stock/get'
+# f43=latest price, f59=decimal places, f60=prev close, f86=last update ts
+_EM_FIELDS = 'f43,f44,f45,f46,f47,f59,f60,f86,f170'
+
+
+_em_session = None
+
+
+def _eastmoney_session():
+    """Session for eastmoney, with retries and keep-alive disabled.
+
+    push2.eastmoney.com closes pooled connections without responding
+    (RemoteDisconnected), and urllib3 only finds out when it tries to reuse
+    one — which failed far more often than opening a fresh connection each
+    time. Batching means one request per refresh anyway, so there is no
+    pooling benefit to trade away.
+    """
+    global _em_session
+    if _em_session is None:
+        import requests
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+        sess = requests.Session()
+        sess.headers.update({'User-Agent': 'Mozilla/5.0', 'Connection': 'close'})
+        adapter = HTTPAdapter(max_retries=Retry(
+            total=4,
+            backoff_factor=0.4,
+            status_forcelist=(429, 500, 502, 503, 504),
+            allowed_methods=frozenset(['GET']),
+        ))
+        sess.mount('https://', adapter)
+        _em_session = sess
+    return _em_session
+
+
+def _fetch_eastmoney_raw(secid: str, ticker: str) -> dict:
+    """GET one quote from eastmoney push2. Returns the ``data`` dict or raises."""
+    resp = _eastmoney_session().get(_EM_QUOTE_URL, params={
+        'secid': secid,
+        'fields': _EM_FIELDS,
+        'ut': 'fa5fd1943c7b386f172d6893dbfba10b',
+    }, timeout=10)
+    resp.raise_for_status()
+    data = resp.json().get('data', {})
+    if not data:
+        raise ValueError(f"No data returned for {ticker}")
+    return data
+
+
+def _zero_if_stale(ticker: str, f86, price: float, prev_close: float | None) -> float | None:
+    """Return prev_close, or ``price`` when the quote predates today.
+
+    A quote whose last-update date is before today in the exchange's timezone
+    means there was no session today (weekend/holiday), and pairing it with
+    f60 would replay the previous session's move as "today". The comparison
+    must happen in the exchange's timezone, not the server's — a UTC host
+    rolls the date over mid-session in Asia.
+    """
+    if not f86 or prev_close is None:
+        return prev_close
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(_exchange_tz(ticker))
+        if datetime.datetime.fromtimestamp(int(f86), tz).date() < datetime.datetime.now(tz).date():
+            return price
+    except (ValueError, OSError, TypeError):
+        pass
+    return prev_close
+
+
+def _eastmoney_secid(ticker: str) -> str | None:
+    """Eastmoney secid for a ticker, or None if eastmoney doesn't cover it.
+
+    600xxx.SS -> 1.600xxx, 000xxx.SZ -> 0.000xxx, 0700.HK -> 116.00700
+    """
+    if not ticker or '.' not in ticker:
+        return None
+    code = ticker.split('.')[0]
+    if not code.isdigit():
+        return None
+    if ticker.endswith('.SS'):
+        return f'1.{code}'
+    if ticker.endswith('.SZ'):
+        return f'0.{code}'
+    if ticker.endswith('.HK'):
+        return f'116.{code.zfill(5)}'
+    return None
+
+
+_EM_BATCH_URL = 'https://push2.eastmoney.com/api/qt/ulist.np/get'
+# f1=decimal places, f2=latest price, f12=code, f13=market,
+# f18=prev close, f297=trading date (YYYYMMDD)
+_EM_BATCH_FIELDS = 'f1,f2,f12,f13,f18,f297'
+_EM_BATCH_SIZE = 50
+
+
+def _fetch_eastmoney_batch(tickers: list[str]) -> dict[str, tuple[float, str, float | None]]:
+    """Batch-fetch eastmoney quotes, 50 tickers per request.
+
+    Secondary to _fetch_tencent_batch: this host drops connections often
+    enough that it cannot be relied on alone (4 of 5 full-book requests
+    failed while Tencent served 12 of 12), but it is a useful second opinion
+    for anything Tencent does not return.
+
+    Returns {ticker: (price, currency, prev_close)} for whatever resolved;
+    tickers missing from the result are left for the per-ticker path.
+    """
+    by_secid = {}
+    for t in tickers:
+        secid = _eastmoney_secid(t)
+        if secid:
+            by_secid[secid] = t
+
+    out: dict[str, tuple[float, str, float | None]] = {}
+    secids = list(by_secid)
+    for i in range(0, len(secids), _EM_BATCH_SIZE):
+        chunk = secids[i:i + _EM_BATCH_SIZE]
+        try:
+            resp = _eastmoney_session().get(_EM_BATCH_URL, params={
+                'secids': ','.join(chunk),
+                'fields': _EM_BATCH_FIELDS,
+                'ut': 'fa5fd1943c7b386f172d6893dbfba10b',
+            }, timeout=15)
+            resp.raise_for_status()
+            diff = (resp.json().get('data') or {}).get('diff') or []
+            rows = diff.values() if isinstance(diff, dict) else diff
+        except Exception as e:
+            logger.warning("eastmoney batch failed for %d tickers: %s", len(chunk), e)
+            continue
+
+        for row in rows:
+            try:
+                ticker = by_secid.get(f"{row.get('f13')}.{row.get('f12')}")
+                price_raw = row.get('f2')
+                if not ticker or price_raw is None or price_raw == '-':
+                    continue
+                # f1 carries the decimal places, so this covers HK's mixed
+                # 2/3-decimal quoting and the SSE B-share x1000 scale alike.
+                divisor = 10 ** int(row.get('f1') or 2)
+                price = float(price_raw) / divisor
+                prev_raw = row.get('f18')
+                prev_close = float(prev_raw) / divisor if prev_raw not in (None, '-') else None
+                prev_close = _zero_if_stale_date(ticker, row.get('f297'), price, prev_close)
+                currency = 'HKD' if ticker.endswith('.HK') else _infer_currency(ticker)
+                out[ticker] = (price, currency, prev_close)
+            except (TypeError, ValueError) as e:
+                logger.warning("eastmoney batch row parse failed: %s", e)
+
+    return out
+
+
+def _zero_if_stale_date(ticker: str, f297, price: float, prev_close: float | None) -> float | None:
+    """prev_close guard driven by eastmoney's f297 trading date (YYYYMMDD int)."""
+    if not f297 or prev_close is None:
+        return prev_close
+    try:
+        from zoneinfo import ZoneInfo
+        quote_date = datetime.datetime.strptime(str(int(f297)), '%Y%m%d').date()
+        if quote_date < datetime.datetime.now(ZoneInfo(_exchange_tz(ticker))).date():
+            return price
+    except (ValueError, OSError, TypeError):
+        pass
+    return prev_close
+
+
+# ── Tencent real-time quotes (HKEX + SSE/SZSE, batched) ───
+
+_TX_BATCH_URL = 'https://qt.gtimg.cn/q='
+_TX_BATCH_SIZE = 60
+
+
+def _tencent_symbol(ticker: str) -> str | None:
+    """Tencent quote symbol for a ticker, or None if not covered.
+
+    600415.SS -> sh600415, 002966.SZ -> sz002966, 0700.HK -> r_hk00700
+    (the ``r_`` prefix is the real-time HK feed).
+    """
+    if not ticker or '.' not in ticker:
+        return None
+    code = ticker.split('.')[0]
+    if not code.isdigit():
+        return None
+    if ticker.endswith('.SS'):
+        return f'sh{code}'
+    if ticker.endswith('.SZ'):
+        return f'sz{code}'
+    if ticker.endswith('.HK'):
+        return f'r_hk{code.zfill(5)}'
+    return None
+
+
+def _fetch_tencent_batch(tickers: list[str]) -> dict[str, tuple[float, str, float | None]]:
+    """Batch-fetch HKEX/SSE/SZSE quotes from Tencent. Never raises.
+
+    Preferred over eastmoney: it answers the whole book in one request in
+    ~0.5s where eastmoney dropped 4 of 5 connections at the same pace, and it
+    returns prices as plain decimals — no per-market integer scale to get
+    wrong, which is what made B-shares fragile on the eastmoney path.
+
+    Returns {ticker: (price, currency, prev_close)} for whatever resolved.
+    """
+    by_symbol = {}
+    for t in tickers:
+        sym = _tencent_symbol(t)
+        if sym:
+            by_symbol[sym] = t
+
+    out: dict[str, tuple[float, str, float | None]] = {}
+    symbols = list(by_symbol)
+    for i in range(0, len(symbols), _TX_BATCH_SIZE):
+        chunk = symbols[i:i + _TX_BATCH_SIZE]
+        try:
+            resp = _fetch_tencent_raw(','.join(chunk))
+        except Exception as e:
+            logger.warning("tencent batch failed for %d tickers: %s", len(chunk), e)
+            continue
+
+        for line in resp.split('\n'):
+            if '~' not in line:
+                continue
+            try:
+                fields = line.split('~')
+                # head looks like: v_r_hk00700="100
+                symbol = fields[0].split('=', 1)[0].strip()[2:]
+                ticker = by_symbol.get(symbol)
+                if not ticker or len(fields) < 5:
+                    continue
+                price = float(fields[3]) if fields[3] else 0.0
+                if price <= 0:
+                    continue  # suspended / no quote
+                prev_close = float(fields[4]) if fields[4] else None
+                if prev_close is not None and prev_close <= 0:
+                    prev_close = None
+                # f[30] is the quote time: "2026/07/31 10:10:51" for HK,
+                # "20260731101051" for the mainland boards. Reduce both to
+                # YYYYMMDD for the no-session-today guard.
+                digits = ''.join(c for c in (fields[30] if len(fields) > 30 else '') if c.isdigit())
+                prev_close = _zero_if_stale_date(
+                    ticker, digits[:8] if len(digits) >= 8 else None, price, prev_close)
+                currency = 'HKD' if ticker.endswith('.HK') else _infer_currency(ticker)
+                out[ticker] = (price, currency, prev_close)
+            except (TypeError, ValueError, IndexError) as e:
+                logger.warning("tencent batch row parse failed: %s", e)
+
+    return out
+
+
+def _fetch_tencent_raw(symbols: str) -> str:
+    """GET a Tencent quote batch, decoded as GBK. Raises on failure."""
+    import requests
+    resp = requests.get(f'{_TX_BATCH_URL}{symbols}',
+                        headers={'User-Agent': 'Mozilla/5.0'}, timeout=12)
+    resp.raise_for_status()
+    resp.encoding = 'gbk'
+    return resp.text
+
+
+def prime_price_cache(tickers: list[str]) -> int:
+    """Seed the price cache for every real-time-covered ticker in one shot.
+
+    Call before fanning out per-ticker fetches; those then hit the cache
+    instead of opening a connection each. Tencent answers the whole book in
+    one request; eastmoney backfills anything it missed. Returns how many
+    tickers were seeded.
+    """
+    if not tickers:
+        return 0
+
+    seeded: dict[str, tuple[float, str, float | None]] = {}
+    try:
+        seeded = _fetch_tencent_batch(tickers)
+    except Exception as e:
+        logger.warning("tencent prime failed: %s", e)
+
+    missing = [t for t in tickers if t not in seeded and _eastmoney_secid(t)]
+    if missing:
+        try:
+            seeded.update(_fetch_eastmoney_batch(missing))
+        except Exception as e:
+            logger.warning("eastmoney prime failed: %s", e)
+
+    now = _time.time()
+    for ticker, (price, currency, prev_close) in seeded.items():
+        if price is not None:
+            _price_cache[ticker] = (price, currency, prev_close, now, 'domestic')
+    return len(seeded)
+
 
 def _fetch_ashare_domestic(ticker: str) -> tuple[float, str, float | None]:
     """Fetch SSE/SZSE price from eastmoney. Returns (price, currency, prev_close) or raises.
@@ -95,7 +383,6 @@ def _fetch_ashare_domestic(ticker: str) -> tuple[float, str, float | None]:
     20xxxx → HKD). Eastmoney returns the price in the actual trading currency,
     so currency is inferred from the ticker via _infer_currency().
     """
-    import requests
     # Map yfinance ticker to eastmoney secid: 600xxx.SS -> 1.600xxx, 000xxx.SZ -> 0.000xxx
     code = ticker.split('.')[0]
     if ticker.endswith('.SS'):
@@ -105,18 +392,8 @@ def _fetch_ashare_domestic(ticker: str) -> tuple[float, str, float | None]:
     else:
         raise ValueError(f"Not an A-share ticker: {ticker}")
 
-    url = 'https://push2.eastmoney.com/api/qt/stock/get'
-    resp = requests.get(url, params={
-        'secid': secid,
-        'fields': 'f43,f44,f45,f46,f47,f60,f86,f170',
-        'ut': 'fa5fd1943c7b386f172d6893dbfba10b',
-    }, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
-    resp.raise_for_status()
-    data = resp.json().get('data', {})
-    if not data:
-        raise ValueError(f"No data returned for {ticker}")
+    data = _fetch_eastmoney_raw(secid, ticker)
 
-    # f43=latest price, f60=prev close, f86=last update timestamp.
     # Raw integer scale: A-shares & SZSE B-shares are ×100 (CNY/HKD, 2 decimals);
     # SSE B-shares are ×1000 (USD, 3 decimals — quoted in cents). Mismatching
     # this gives a 10× error on 900xxx.SS that silently inflates B-share MV.
@@ -128,19 +405,54 @@ def _fetch_ashare_domestic(ticker: str) -> tuple[float, str, float | None]:
     divisor = 1000 if (_is_b_share(ticker) and ticker.endswith('.SS')) else 100
     price = float(price_raw) / divisor
     prev_close = float(prev_raw) / divisor if prev_raw and prev_raw != '-' else None
-
-    # If data is not from today, market didn't trade today (weekend/holiday).
-    # Set prev_close = price so daily P&L = 0.
-    f86 = data.get('f86')
-    if f86 and prev_close is not None:
-        try:
-            data_date = datetime.date.fromtimestamp(int(f86))
-            if data_date < datetime.date.today():
-                prev_close = price
-        except (ValueError, OSError):
-            pass
+    prev_close = _zero_if_stale(ticker, data.get('f86'), price, prev_close)
 
     return (price, _infer_currency(ticker), prev_close)
+
+
+def _fetch_domestic(ticker: str) -> tuple[float, str, float | None]:
+    """Real-time quote from whichever domestic feed answers.
+
+    Tencent first — it is the reliable one — then eastmoney. Raises when
+    neither has the ticker, which drops fetch_price through to yfinance.
+    """
+    got = _fetch_tencent_batch([ticker])
+    if ticker in got:
+        return got[ticker]
+    if ticker.endswith('.HK'):
+        return _fetch_hk_domestic(ticker)
+    return _fetch_ashare_domestic(ticker)
+
+
+def _fetch_hk_domestic(ticker: str) -> tuple[float, str, float | None]:
+    """Fetch HKEX price from eastmoney. Returns (price, 'HKD', prev_close) or raises.
+
+    yfinance is NOT an equivalent source here: Yahoo's HKEX feed is
+    exchange-delayed by 15 minutes (it says so itself in
+    ``info['exchangeDataDelayedBy']``), which showed up as 1-3% price errors
+    on active names while the session was running. Eastmoney quotes HKEX in
+    real time, so it is primary and yfinance is the degraded fallback.
+    """
+    secid = _eastmoney_secid(ticker) if ticker.endswith('.HK') else None
+    if not secid:
+        raise ValueError(f"Not an HK ticker: {ticker}")
+
+    data = _fetch_eastmoney_raw(secid, ticker)
+
+    price_raw = data.get('f43')
+    if price_raw is None or price_raw == '-':
+        raise ValueError(f"No price for {ticker}")
+
+    # Unlike the mainland boards, HKEX names are quoted at 2 or 3 decimals
+    # depending on price level, so the scale must be read from f59 rather
+    # than assumed — penny stocks like 1060.HK come back ×1000.
+    divisor = 10 ** int(data.get('f59') or 2)
+    price = float(price_raw) / divisor
+    prev_raw = data.get('f60')
+    prev_close = float(prev_raw) / divisor if prev_raw and prev_raw != '-' else None
+    prev_close = _zero_if_stale(ticker, data.get('f86'), price, prev_close)
+
+    return (price, 'HKD', prev_close)
 
 
 def _is_b_share(ticker: str) -> bool:
@@ -257,8 +569,14 @@ def _fetch_us_extended(t, currency):
         price = reg_price
         prev_close = reg_prev
     elif market_state in ('POST', 'POSTPOST'):
+        # After-hours is a continuation of TODAY's session, so the reference
+        # point stays the previous regular close. Pairing the after-hours
+        # price with today's regular close instead would drop the regular
+        # session's move from the daily P&L the moment the bell rings — e.g.
+        # AAPL closing -1.4% then falling 6% on earnings showed as -6.3%
+        # for the day rather than -7.6%.
         price = info.get('postMarketPrice') or reg_price
-        prev_close = reg_price
+        prev_close = reg_prev
     else:
         price = info.get('preMarketPrice') or info.get('postMarketPrice') or reg_price
         prev_close = reg_price
@@ -413,29 +731,37 @@ def fetch_price(ticker: str, regular_only: bool = False) -> tuple[float | None, 
     if not ticker:
         return None, None
 
-    # Skip cache when regular_only (snapshot needs fresh regular price)
-    if not regular_only:
+    # Skip cache when regular_only (snapshot needs the regular-session price,
+    # and a cached entry may hold an extended-hours one). Only US tickers have
+    # an extended session, so elsewhere the cached value IS the regular price
+    # and honouring the cache lets the batch prefetch serve the snapshot too.
+    if not (regular_only and _eastmoney_secid(ticker) is None):
         cached = _price_cache.get(ticker)
         if cached and (_time.time() - cached[3]) < _PRICE_TTL:
             return cached[0], cached[1]
 
+    source = None
     # Chinese fund codes (6 digits, no suffix) -> use eastmoney fund API
     if _FUND_CODE_RE.match(ticker):
         nav, cur, prev_nav = fetch_fund_nav(ticker)
         result = (nav, cur, prev_nav)
+        source = 'fund_nav'
     else:
         currency = _infer_currency(ticker)
 
-        # SSE/SZSE tickers (A-share + B-share): eastmoney returns the price in the
-        # actual trading currency, so it's safe for B-shares too. yfinance is a
-        # fallback when eastmoney is unreachable.
-        if ticker.endswith('.SS') or ticker.endswith('.SZ'):
+        # Exchanges with a real-time domestic feed, preferred over yfinance:
+        #   SSE/SZSE — quoted in the actual trading currency, so B-shares work.
+        #   HKEX     — yfinance is 15min delayed here (see _fetch_hk_domestic).
+        # yfinance stays as the last resort when both domestic feeds are down.
+        if _tencent_symbol(ticker) or _eastmoney_secid(ticker):
             try:
-                result = _retry(lambda: _fetch_ashare_domestic(ticker))
+                result = _retry(lambda: _fetch_domestic(ticker))
+                source = 'domestic'
             except Exception as e_dom:
                 logger.warning("domestic API failed for %s: %s, trying yfinance...", ticker, e_dom)
                 try:
                     result = _retry(lambda: _fetch_yfinance(ticker, currency, regular_only))
+                    source = 'yfinance'
                 except Exception as e_yf:
                     logger.warning("yfinance also failed for %s: %s", ticker, e_yf)
                     result = (None, None, None)
@@ -443,6 +769,7 @@ def fetch_price(ticker: str, regular_only: bool = False) -> tuple[float | None, 
             # All other markets: yfinance with retry
             try:
                 result = _retry(lambda: _fetch_yfinance(ticker, currency, regular_only))
+                source = 'yfinance'
             except Exception as e:
                 logger.warning("price fetch failed for %s: %s", ticker, e)
                 result = (None, None, None)
@@ -454,6 +781,7 @@ def fetch_price(ticker: str, regular_only: bool = False) -> tuple[float | None, 
             try:
                 price, prev = _retry(lambda: _fetch_fmp_quote(ticker))
                 result = (price, currency, prev)
+                source = 'fmp'
                 logger.warning("FMP fallback succeeded for %s", ticker)
             except Exception as e_fmp:
                 logger.warning("FMP fallback failed for %s: %s", ticker, e_fmp)
@@ -468,7 +796,7 @@ def fetch_price(ticker: str, regular_only: bool = False) -> tuple[float | None, 
 
     # Only cache successful fetches; failed ones (None) should be retried immediately
     if result[0] is not None:
-        _price_cache[ticker] = (result[0], result[1], result[2], _time.time())
+        _price_cache[ticker] = (result[0], result[1], result[2], _time.time(), source)
     return result[0], result[1]
 
 
@@ -478,6 +806,50 @@ def get_previous_close(ticker: str) -> float | None:
     if cached:
         return cached[2]  # previous_close
     return None
+
+
+def get_price_source(ticker: str) -> str | None:
+    """Which feed served the cached price ('domestic'/'yfinance'/'fmp'/'fund_nav')."""
+    cached = _price_cache.get(ticker)
+    return cached[4] if cached and len(cached) > 4 else None
+
+
+# How stale a feed's quotes are, in minutes, by market. The domestic feeds
+# (Tencent/eastmoney) are real time; Yahoo and FMP resell exchange-delayed
+# data everywhere outside the US. Yahoo's own ``exchangeDataDelayedBy`` says
+# 15 for HKEX, 15 for the mainland boards and 20 for Tokyo; measured lag was
+# ~15min on all three. Mainland and HK normally come off the domestic feed
+# at 0 — these numbers apply when that feed is down and we fell back, so a
+# silent degradation shows up in the UI as a delay marker instead.
+_DELAY_BY_SOURCE_MARKET = {
+    'yfinance': {'HK': 15, 'JP': 20, 'CN': 15},
+    'fmp': {'HK': 15, 'JP': 15, 'CN': 15},
+}
+
+
+def _market_of(ticker: str) -> str:
+    tu = (ticker or '').upper()
+    if tu.endswith('.HK'):
+        return 'HK'
+    if tu.endswith('.T'):
+        return 'JP'
+    if tu.endswith('.SS') or tu.endswith('.SZ'):
+        return 'CN'
+    return 'US'
+
+
+def get_price_delay_minutes(ticker: str) -> int:
+    """Quote delay in minutes for the cached price — 0 when it is real time.
+
+    Lets the UI mark prices that cannot be trusted as "now". Japan is the
+    case that actually bites: no free real-time feed covers Tokyo, so those
+    quotes sit ~15-20min behind, which on an earnings day is a double-digit
+    percentage move that has not shown up yet.
+    """
+    source = get_price_source(ticker)
+    if not source:
+        return 0
+    return _DELAY_BY_SOURCE_MARKET.get(source, {}).get(_market_of(ticker), 0)
 
 
 def fetch_fx_rate(currency: str) -> float | None:
@@ -604,6 +976,11 @@ def refresh_all_prices(db_path: str | None = None, timeout: float = 25.0) -> dic
     results = {}
     if not tickers:
         return results
+
+    # One batched call covers every mainland/HK name up front; the fan-out
+    # below then serves those from cache and only hits the network for US,
+    # JP and fund codes.
+    prime_price_cache(tickers)
 
     futures = {_pool.submit(fetch_price, t): t for t in tickers}
     try:

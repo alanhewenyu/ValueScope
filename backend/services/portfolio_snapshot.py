@@ -106,6 +106,13 @@ def take_snapshot(dry_run=False, user_id: str = "local", force: bool = False):
     # Parallel price fetch
     from concurrent.futures import ThreadPoolExecutor
     _tickers = [pos["ticker"] for pos in positions]
+    # Batch the mainland/HK quotes into one request before fanning out —
+    # eastmoney drops connections when the whole book hits it at once.
+    try:
+        from backend.services.portfolio_prices import prime_price_cache
+        prime_price_cache(_tickers)
+    except Exception:
+        pass  # best-effort; per-ticker path still works
     def _fetch_one(t):
         p, _ = fetch_price(t, regular_only=True)
         return p

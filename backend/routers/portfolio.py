@@ -498,7 +498,7 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
     from backend.services.portfolio_db import init_db, get_ytd_baselines, get_conn, get_dcf_valuations, compute_capital
     from backend.services.portfolio_prices import (
         fetch_price, get_previous_close, get_fx_rates as _get_fx,
-        refresh_all_prices,
+        refresh_all_prices, get_price_delay_minutes,
     )
     from backend.services.ytd_calc import held_ytd
     import pandas as pd
@@ -730,6 +730,9 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
             "daily_pnl": daily_pnl,
             "daily_pnl_pct": round(daily_pnl_pct, 2) if daily_pnl_pct is not None else None,
             "daily_pnl_cny": daily_pnl_cny,
+            # Minutes this quote lags the exchange (0 = real time). Tokyo has
+            # no free real-time feed, so those stay delayed and the UI says so.
+            "price_delay_min": get_price_delay_minutes(ticker),
             "ytd_pnl": ytd_pnl,
             "ytd_pnl_pct": round(ytd_pnl_pct, 2) if ytd_pnl_pct is not None else None,
             "ytd_pnl_cny": ytd_pnl_cny,

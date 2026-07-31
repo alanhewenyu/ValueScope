@@ -800,6 +800,7 @@ export interface PortfolioHolding {
   status: string;
   price: number;
   price_stale: boolean;
+  price_delay_min?: number;   // quote lag in minutes; 0/absent = real time
   market_value: number;
   market_value_cny: number;
   cost_total: number;

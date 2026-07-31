@@ -768,7 +768,17 @@ function HoldingsTable({ holdings, summary, locale, onEdit, onTrade, compact, on
                   <td className="px-2 py-1.5 text-gray-400">{h.currency}</td>
                   <td className="text-right px-2 py-1.5">{fmtNum(h.quantity, h.quantity % 1 === 0 ? 0 : 2)}</td>
                   <td className="text-right px-2 py-1.5 text-gray-500">{fmtNum(h.cost_price)}</td>
-                  <td className={`text-right px-2 py-1.5 ${h.price_stale ? "text-gray-400 italic" : ""}`}>{fmtNum(h.price)}</td>
+                  <td className={`text-right px-2 py-1.5 whitespace-nowrap ${h.price_stale ? "text-gray-400 italic" : ""}`}>
+                    {fmtNum(h.price)}
+                    {!h.price_stale && (h.price_delay_min ?? 0) > 0 && (
+                      <span
+                        className="ml-0.5 text-[10px] leading-none text-amber-600 dark:text-amber-500 cursor-help inline-block align-middle"
+                        title={locale === "zh"
+                          ? `延迟约 ${h.price_delay_min} 分钟——${mktLabel(h.market, locale)}无免费实时行情源，盘中价格并非最新`
+                          : `Delayed ~${h.price_delay_min} min — no free real-time feed for ${mktLabel(h.market, "en")}; intraday price is not current`}
+                      >⏱</span>
+                    )}
+                  </td>
                   <td className="text-right px-2 py-1.5">{fmtNum(h.market_value)}</td>
                   <td className="text-right px-2 py-1.5">{formatNumber(h.market_value_cny)}</td>
                   <td className="text-right px-2 py-1.5">{h.weight.toFixed(1)}%</td>
