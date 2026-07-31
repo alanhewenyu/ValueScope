@@ -543,10 +543,16 @@ def fetch_fund_nav(code: str) -> tuple[float | None, str | None, float | None]:
 
 
 def _fetch_us_extended(t, currency):
-    """Fetch US stock with extended-hours pricing and correct prev_close.
+    """Fetch US stock with extended-hours pricing and a matching prev_close.
 
-    prev_close = last completed regular session close (NOT the session before that).
     price      = most recent available (regular / pre-market / after-hours).
+    prev_close = the reference the day's move is measured from, which depends
+                 on where in the session cycle we are. The day rolls once, at
+                 20:00 NY when extended trading ends (08:00 Beijing):
+
+                   REGULAR, POST   -> previous regular close
+                   POSTPOST, PRE   -> today's regular close
+
     Uses tk.info which provides marketState, postMarketPrice, preMarketPrice.
     """
     try:
@@ -568,15 +574,25 @@ def _fetch_us_extended(t, currency):
     if market_state == 'REGULAR':
         price = reg_price
         prev_close = reg_prev
-    elif market_state in ('POST', 'POSTPOST'):
-        # After-hours is a continuation of TODAY's session, so the reference
-        # point stays the previous regular close. Pairing the after-hours
-        # price with today's regular close instead would drop the regular
-        # session's move from the daily P&L the moment the bell rings — e.g.
-        # AAPL closing -1.4% then falling 6% on earnings showed as -6.3%
+    elif market_state == 'POST':
+        # 16:00-20:00 NY: after-hours is still part of TODAY's session, so the
+        # reference stays the PREVIOUS regular close. Pairing the after-hours
+        # price with today's own close instead would drop the regular
+        # session's move from the daily P&L the moment the bell rings — AAPL
+        # closing -1.4% and then falling 6% on earnings would read as -6.3%
         # for the day rather than -7.6%.
         price = info.get('postMarketPrice') or reg_price
         prev_close = reg_prev
+    elif market_state == 'POSTPOST':
+        # 20:00 NY onwards: extended trading for the day is over, so the day
+        # rolls here and today's close becomes the new reference. This is the
+        # single roll point (20:00 NY = 08:00 Beijing) — it matches IBKR's
+        # "since previous close", and because PRE below uses the same
+        # reg_price reference, the 04:00 NY pre-market open causes no jump.
+        # Carrying reg_prev through this window instead would count one
+        # session's move inside two different "days".
+        price = info.get('postMarketPrice') or reg_price
+        prev_close = reg_price
     else:
         price = info.get('preMarketPrice') or info.get('postMarketPrice') or reg_price
         prev_close = reg_price
