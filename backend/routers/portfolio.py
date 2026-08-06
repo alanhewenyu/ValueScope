@@ -498,7 +498,8 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
     from backend.services.portfolio_db import init_db, get_ytd_baselines, get_conn, get_dcf_valuations, compute_capital
     from backend.services.portfolio_prices import (
         fetch_price, get_previous_close, get_fx_rates as _get_fx,
-        refresh_all_prices, get_price_delay_minutes,
+        refresh_all_prices, get_price_delay_minutes, get_price_as_of,
+        get_price_source, is_price_stale,
     )
     from backend.services.ytd_calc import held_ytd
     import pandas as pd
@@ -615,7 +616,10 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
 
         # Live price
         price, _ = fetch_price(ticker)
-        price_stale = price is None
+        price_missing = price is None
+        price_stale = price_missing or is_price_stale(ticker)
+        price_date = get_price_as_of(ticker)
+        price_source = get_price_source(ticker)
         if price is None:
             price = cost
 
@@ -715,8 +719,12 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
 
         holdings.append({
             **pos,
-            "price": price,
+            # Keep internal arithmetic backwards-compatible when no valuation
+            # has ever succeeded, but never expose cost basis as a market price.
+            "price": None if price_missing else price,
             "price_stale": price_stale,
+            "price_date": price_date,
+            "price_source": price_source,
             "market_value": mv,
             "market_value_cny": mv_cny,
             "cost_total": cost_total,

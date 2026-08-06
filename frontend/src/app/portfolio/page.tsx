@@ -192,11 +192,16 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
     (typeof window !== "undefined" && localStorage.getItem("vs_hero_bench")) || "CSI 300");
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [fxImpact, setFxImpact] = useState<FxImpact | null>(null);
+  const [comparisonRevision, setComparisonRevision] = useState("");
   const heroSvgRef = React.useRef<SVGSVGElement>(null);
+  const requestedRevision = `${unitNavDate ?? ""}|${unitNav ?? ""}|${unitNavEst ?? ""}`;
 
   useEffect(() => {
-    const ytdStart = `${new Date().getFullYear()}-01-01`;
-    getSnapshots(365).then((snaps) => {
+    const ac = new AbortController();
+    const revision = requestedRevision;
+    const loadComparison = async () => {
+      const ytdStart = `${new Date().getFullYear()}-01-01`;
+      const snaps = await getSnapshots(365, ac.signal);
       const pts = [...snaps]
         .sort((a, b) => a.date.localeCompare(b.date))
         .filter((s) => s.date >= ytdStart)
@@ -220,13 +225,26 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
         if (today > last.date) pts.push({ date: today, val: unitNavEst });
         else if (today === last.date) last.val = unitNavEst;
       }
+      const nextBenchData = pts.length >= 2
+        ? await getBenchmarks(pts[0].date, ac.signal)
+        : {};
+      if (ac.signal.aborted) return;
+
+      // Commit the portfolio and benchmark series together.  Updating them
+      // separately can briefly pair a new NAV snapshot with the previous
+      // benchmark comparison and show a stale beating/trailing figure.
       setSeries(pts);
-      if (pts.length >= 2) {
-        getBenchmarks(pts[0].date).then(setBenchData).catch(() => {});
-      }
-    }).catch(() => {});
+      setBenchData(nextBenchData);
+      setComparisonRevision(revision);
+    };
+    loadComparison().catch((e: unknown) => {
+      // Preserve the last internally consistent pair on transient failures;
+      // its comparison remains hidden because its revision no longer matches.
+      if (e instanceof DOMException && e.name === "AbortError") return;
+    });
     getFxImpact().then((r) => { if (r && r.fx_pp != null) setFxImpact(r as FxImpact); }).catch(() => {});
-  }, [unitNavEst]);
+    return () => ac.abort();
+  }, [unitNavEst, unitNav, unitNavDate, requestedRevision]);
 
   if (series.length < 2) return null;
 
@@ -346,7 +364,7 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
               </span>
             )}
           </div>
-          {diff != null && (
+          {diff != null && comparisonRevision === requestedRevision && (
             <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5"
               title={zh
                 ? `基准同窗口（自 ${series[0].date}${diffTruncated && benchEndDate ? `，截至 ${benchEndDate} 收盘——该基准尚无更新交易日，组合侧也截断到同一时点` : ""}）、已折算人民币口径——与行情软件的"年初至今/本币"数字不可比`
@@ -769,7 +787,15 @@ function HoldingsTable({ holdings, summary, locale, onEdit, onTrade, compact, on
                   <td className="text-right px-2 py-1.5">{fmtNum(h.quantity, h.quantity % 1 === 0 ? 0 : 2)}</td>
                   <td className="text-right px-2 py-1.5 text-gray-500">{fmtNum(h.cost_price)}</td>
                   <td className={`text-right px-2 py-1.5 whitespace-nowrap ${h.price_stale ? "text-gray-400 italic" : ""}`}>
-                    {fmtNum(h.price)}
+                    {h.price == null ? "—" : fmtNum(h.price)}
+                    {h.price_date && (
+                      <span className="ml-1 text-[10px] text-gray-400" title={locale === "zh" ? `单位净值日期 ${h.price_date}` : `NAV date ${h.price_date}`}>
+                        {h.price_date.slice(5)}
+                      </span>
+                    )}
+                    {h.price_stale && h.price != null && (
+                      <span className="ml-0.5 text-[10px] text-amber-600 dark:text-amber-500" title={locale === "zh" ? "数据源暂时不可用，显示最后一次成功取得的净值" : "Provider unavailable; showing the last successfully fetched NAV"}>⚠</span>
+                    )}
                     {!h.price_stale && (h.price_delay_min ?? 0) > 0 && (
                       <span
                         className="ml-0.5 text-[10px] leading-none text-amber-600 dark:text-amber-500 cursor-help inline-block align-middle"

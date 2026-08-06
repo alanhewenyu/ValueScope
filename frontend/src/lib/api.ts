@@ -798,8 +798,10 @@ export interface PortfolioHolding {
   cost_price: number;
   currency: string;
   status: string;
-  price: number;
+  price: number | null;
   price_stale: boolean;
+  price_date?: string | null;  // provider valuation date (fund NAV date)
+  price_source?: string | null;
   price_delay_min?: number;   // quote lag in minutes; 0/absent = real time
   market_value: number;
   market_value_cny: number;
@@ -990,8 +992,8 @@ export async function updateMargin(data: MarginInput): Promise<{ ok: boolean }> 
 
 export interface BenchmarkPoint { date: string; close: number; }
 
-export async function getBenchmarks(start: string): Promise<Record<string, BenchmarkPoint[]>> {
-  return fetchAPI<Record<string, BenchmarkPoint[]>>(`/api/portfolio/benchmarks?start=${start}`);
+export async function getBenchmarks(start: string, signal?: AbortSignal): Promise<Record<string, BenchmarkPoint[]>> {
+  return fetchAPI<Record<string, BenchmarkPoint[]>>(`/api/portfolio/benchmarks?start=${start}`, { signal });
 }
 
 export interface FxImpact {

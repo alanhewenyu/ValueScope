@@ -38,6 +38,8 @@ _fx_cache = {}      # {currency: (rate_to_cny, ts)}
 _FX_TTL = 600       # 10 minutes — FX rates change slowly
 
 _FUND_CODE_RE = re.compile(r'^\d{6}$')  # 6-digit Chinese fund codes
+_fund_nav_meta: dict[str, dict] = {}
+_FUND_LASTGOOD_TTL = 45 * 86400
 
 # ── Retry config ─────────────────────────────────────────
 
@@ -481,14 +483,75 @@ def _infer_currency(ticker: str) -> str | None:
     return 'USD'
 
 
+def _fund_nav_pair(items: list[dict], code: str, source: str):
+    """Validate a provider response and return its newest NAV pair."""
+    rows = []
+    for item in items:
+        try:
+            nav = float(item.get('DWJZ'))
+            nav_date = datetime.date.fromisoformat(str(item.get('FSRQ', '')).strip())
+            if nav > 0:
+                rows.append((nav_date, nav))
+        except (TypeError, ValueError):
+            continue
+    rows.sort(reverse=True)
+    if not rows:
+        raise ValueError(f"{source} returned no valid NAV for {code}")
+
+    nav_date, nav = rows[0]
+    prev_nav = rows[1][1] if len(rows) > 1 else None
+    today = datetime.date.today()
+    # Fund NAVs normally publish after market close.  On a weekday, yesterday's
+    # NAV is current and must retain the preceding NAV as the daily-return base.
+    # Zero the move only on weekends or when the feed is genuinely behind the
+    # latest expected business date.
+    expected = today - datetime.timedelta(days=1)
+    while expected.weekday() >= 5:
+        expected -= datetime.timedelta(days=1)
+    if today.weekday() >= 5 or nav_date < expected:
+        prev_nav = nav
+
+    payload = {
+        'nav': nav, 'prev_nav': prev_nav, 'nav_date': nav_date.isoformat(),
+        'source': source, 'saved_at': _time.time(),
+    }
+    _fund_nav_meta[code] = {**payload, 'stale': False}
+    try:
+        from backend import persistent_cache as pc
+        pc.put(f"portfolio_fund_nav_lastgood:{code}", payload, ttl=_FUND_LASTGOOD_TTL)
+    except Exception:
+        pass
+    return nav, 'CNY', prev_nav
+
+
 def fetch_fund_nav(code: str) -> tuple[float | None, str | None, float | None]:
     """Fetch fund NAV. Returns (nav, 'CNY', prev_nav) or (None, None, None).
 
-    Primary: ``api.fund.eastmoney.com`` (direct, lightweight).
-    Fallback: ``ak.fund_open_fund_info_em`` (used when the primary host has DNS
-    or connection issues — e.g. ``api.fund.eastmoney.com`` was unreachable while
-    other eastmoney subdomains still resolved).
+    Primary: Eastmoney's HTTPS mobile-history endpoint.  It uses a separate,
+    currently reliable domain and returns the official dated unit-NAV series.
+    Secondary providers are followed by a persistent last-known-good fallback;
+    a transient DNS failure must never turn a fund's cost basis into its price.
     """
+    # --- Primary: mobile history API (HTTPS, dated official NAVs) ---
+    try:
+        import requests
+        resp = requests.get(
+            'https://fundmobapi.eastmoney.com/FundMNewApi/FundMNHisNetList',
+            params={
+                'FCODE': code, 'pageIndex': 1, 'pageSize': 3,
+                'deviceid': 'Wap', 'plat': 'Wap', 'product': 'EFund',
+                'version': '6.2.8',
+            },
+            headers={'User-Agent': 'Mozilla/5.0'}, timeout=8,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get('Success') is False:
+            raise ValueError(data.get('ErrMsg') or 'mobile fund API failed')
+        return _fund_nav_pair(data.get('Datas') or [], code, 'eastmoney_mobile')
+    except Exception as e:
+        logger.warning("fund NAV (eastmoney mobile) failed for %s: %s", code, e)
+
     # --- Primary: direct HTTP to eastmoney fund API ---
     try:
         import requests
@@ -506,17 +569,7 @@ def fetch_fund_nav(code: str) -> tuple[float | None, str | None, float | None]:
             nav = items[0].get('DWJZ')
             prev_nav = float(items[1].get('DWJZ')) if len(items) > 1 and items[1].get('DWJZ') else None
             if nav:
-                nav = float(nav)
-                # Non-trading day: if latest NAV date < today, prev = nav (daily P&L = 0)
-                nav_date_str = items[0].get('FSRQ', '')
-                if nav_date_str and prev_nav is not None:
-                    try:
-                        _nav_date = datetime.date.fromisoformat(nav_date_str.strip())
-                        if _nav_date < datetime.date.today():
-                            prev_nav = nav
-                    except Exception:
-                        pass
-                return nav, 'CNY', prev_nav
+                return _fund_nav_pair(items, code, 'eastmoney_api')
     except Exception as e:
         logger.warning("fund NAV (eastmoney direct) failed for %s: %s", code, e)
 
@@ -525,20 +578,27 @@ def fetch_fund_nav(code: str) -> tuple[float | None, str | None, float | None]:
         import akshare as ak
         df = ak.fund_open_fund_info_em(symbol=code, indicator='单位净值走势')
         if df is not None and not df.empty and '单位净值' in df.columns:
-            nav = float(df['单位净值'].iloc[-1])
-            prev_nav = float(df['单位净值'].iloc[-2]) if len(df) > 1 else None
-            # Non-trading day adjustment
-            if '净值日期' in df.columns and prev_nav is not None:
-                try:
-                    _nav_date = datetime.date.fromisoformat(str(df['净值日期'].iloc[-1]).strip())
-                    if _nav_date < datetime.date.today():
-                        prev_nav = nav
-                except Exception:
-                    pass
-            return nav, 'CNY', prev_nav
+            if '净值日期' not in df.columns:
+                raise ValueError('akshare response has no NAV date')
+            items = [
+                {'FSRQ': str(row['净值日期']), 'DWJZ': row['单位净值']}
+                for _, row in df.tail(3).iterrows()
+            ]
+            return _fund_nav_pair(items, code, 'akshare')
     except Exception as e:
         logger.warning("fund NAV (akshare fallback) failed for %s: %s", code, e)
 
+    # Network/provider outages are routine.  Use the last successfully dated
+    # NAV rather than silently substituting the position's cost price.
+    try:
+        from backend import persistent_cache as pc
+        saved = pc.get(f"portfolio_fund_nav_lastgood:{code}")
+        if saved and saved.get('nav') and saved.get('nav_date'):
+            _fund_nav_meta[code] = {**saved, 'source': 'last_good', 'stale': True}
+            return float(saved['nav']), 'CNY', float(saved['nav'])
+    except Exception:
+        pass
+    _fund_nav_meta[code] = {'source': 'unavailable', 'nav_date': None, 'stale': True}
     return None, None, None
 
 
@@ -761,7 +821,7 @@ def fetch_price(ticker: str, regular_only: bool = False) -> tuple[float | None, 
     if _FUND_CODE_RE.match(ticker):
         nav, cur, prev_nav = fetch_fund_nav(ticker)
         result = (nav, cur, prev_nav)
-        source = 'fund_nav'
+        source = _fund_nav_meta.get(ticker, {}).get('source', 'fund_nav')
     else:
         currency = _infer_currency(ticker)
 
@@ -812,7 +872,11 @@ def fetch_price(ticker: str, regular_only: bool = False) -> tuple[float | None, 
 
     # Only cache successful fetches; failed ones (None) should be retried immediately
     if result[0] is not None:
-        _price_cache[ticker] = (result[0], result[1], result[2], _time.time(), source)
+        meta = _fund_nav_meta.get(ticker, {}) if _FUND_CODE_RE.match(ticker) else {}
+        _price_cache[ticker] = (
+            result[0], result[1], result[2], _time.time(), source,
+            meta.get('nav_date'), bool(meta.get('stale', False)),
+        )
     return result[0], result[1]
 
 
@@ -828,6 +892,18 @@ def get_price_source(ticker: str) -> str | None:
     """Which feed served the cached price ('domestic'/'yfinance'/'fmp'/'fund_nav')."""
     cached = _price_cache.get(ticker)
     return cached[4] if cached and len(cached) > 4 else None
+
+
+def get_price_as_of(ticker: str) -> str | None:
+    """Provider's valuation date (currently populated for mutual funds)."""
+    cached = _price_cache.get(ticker)
+    return cached[5] if cached and len(cached) > 5 else None
+
+
+def is_price_stale(ticker: str) -> bool:
+    """Whether the displayed quote came from a last-known-good fallback."""
+    cached = _price_cache.get(ticker)
+    return bool(cached[6]) if cached and len(cached) > 6 else False
 
 
 # How stale a feed's quotes are, in minutes, by market. The domestic feeds
