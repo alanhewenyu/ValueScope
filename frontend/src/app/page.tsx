@@ -38,7 +38,7 @@ export default function Home() {
         {/* MCP sits last in the link group site-wide (matches shared Navbar) */}
         <Link
           href="/mcp"
-          onClick={() => trackEvent("mcp_docs_click", { source: "home_nav" })}
+          onClick={() => trackEvent("mcp_docs_click", { link_location: "home_nav" })}
           className="font-medium text-violet-600 dark:text-violet-400 hover:text-violet-800 dark:hover:text-violet-300 transition-colors"
         >
           🔌 MCP

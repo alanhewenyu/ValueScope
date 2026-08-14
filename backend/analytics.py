@@ -14,6 +14,7 @@ import hashlib
 import logging
 import os
 import threading
+import time
 
 import requests
 
@@ -35,11 +36,29 @@ _INTERNAL_IPS = {
 }
 
 
+# GA4's own session timeout. A caller who goes quiet for longer starts a new
+# session, matching how gtag.js behaves in the browser.
+_SESSION_WINDOW_SECONDS = 30 * 60
+
+
 def _client_id(ip: str) -> str:
     """Stable pseudonymous client_id per IP (hashed, no raw IP sent to GA)."""
     digest = hashlib.sha256(f"{_CLIENT_ID_SALT}:{ip}".encode()).hexdigest()
     # GA4 client_id convention: "<random>.<timestamp>"; a stable hash works.
     return f"{int(digest[:12], 16)}.0"
+
+
+def _session_id(ip: str) -> str:
+    """Session id that rolls over every 30 minutes.
+
+    Reusing the client_id here would pin every call a caller ever makes to one
+    eternal session, making session counts and durations meaningless. Bucketing
+    by wall clock keeps them roughly comparable to browser sessions — a caller
+    active across a bucket boundary is split, which is close enough for a
+    metric whose real unit of interest is unique callers.
+    """
+    bucket = int(time.time()) // _SESSION_WINDOW_SECONDS
+    return f"{_client_id(ip)}.{bucket}"
 
 
 def _post(payload: dict) -> None:
@@ -59,13 +78,18 @@ def track(event_name: str, ip: str, params: dict | None = None) -> None:
     if not GA_API_SECRET:
         return
     # GA4 needs engagement_time_msec + session_id for events to surface in
-    # standard reports (not just DebugView / realtime).
-    event_params = {"engagement_time_msec": "1", "session_id": _client_id(ip)}
+    # standard reports (not just DebugView / realtime). source/medium tag these
+    # as MCP traffic — without them GA has no attribution to work with and
+    # every MCP call lands in the Unassigned channel next to broken referrals.
+    event_params = {k: v for k, v in (params or {}).items() if v is not None}
+    event_params.update({
+        "engagement_time_msec": "1",
+        "session_id": _session_id(ip),
+        "source": "mcp",
+        "medium": "api",
+    })
     if ip in _INTERNAL_IPS:
         event_params["traffic_type"] = "internal"
-    for k, v in (params or {}).items():
-        if v is not None:
-            event_params[k] = v
     payload = {
         "client_id": _client_id(ip),
         "events": [{"name": event_name, "params": event_params}],

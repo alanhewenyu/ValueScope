@@ -61,7 +61,7 @@ export default function CompanyHeader({
           )}
           <Link
             href="/mcp"
-            onClick={() => trackEvent("mcp_docs_click", { source: "stock_header", ticker })}
+            onClick={() => trackEvent("mcp_docs_click", { link_location: "stock_header", ticker })}
             className="text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/50 px-2 py-0.5 rounded hover:bg-violet-100 dark:hover:bg-violet-900/50 transition-colors"
           >
             {t.mcpStockChip}

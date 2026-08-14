@@ -71,7 +71,7 @@ export default function Navbar() {
             </Link>
             <Link
               href="/mcp"
-              onClick={() => trackEvent("mcp_docs_click", { source: "navbar" })}
+              onClick={() => trackEvent("mcp_docs_click", { link_location: "navbar" })}
               className="font-medium text-violet-600 dark:text-violet-400 hover:text-violet-800 dark:hover:text-violet-300 transition-colors"
             >
               🔌 MCP
@@ -173,7 +173,7 @@ export default function Navbar() {
                 </Link>
                 <Link
                   href="/mcp"
-                  onClick={() => { trackEvent("mcp_docs_click", { source: "navbar" }); setMobileMenuOpen(false); }}
+                  onClick={() => { trackEvent("mcp_docs_click", { link_location: "navbar_mobile" }); setMobileMenuOpen(false); }}
                   className="block px-4 py-2 text-sm font-medium text-violet-600 dark:text-violet-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                 >
                   🔌 MCP
