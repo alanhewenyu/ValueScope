@@ -1245,8 +1245,12 @@ export async function addDepositRecord(data: DepositRecordInput): Promise<{ ok: 
   });
 }
 
-export async function deleteDepositRecord(id: number): Promise<{ ok: boolean }> {
-  return fetchAPI<{ ok: boolean }>(`/api/portfolio/deposit-history/${id}`, { method: "DELETE" });
+// Throws ApiError("flow_already_unitized") when a snapshot has already
+// folded the flow into units — retry with force only after telling the user
+// the published unit NAV will jump.
+export async function deleteDepositRecord(id: number, force = false): Promise<{ ok: boolean; cash_reverted?: boolean }> {
+  return fetchAPI<{ ok: boolean; cash_reverted?: boolean }>(
+    `/api/portfolio/deposit-history/${id}${force ? "?force=true" : ""}`, { method: "DELETE" });
 }
 
 // ── Valuation History API ──

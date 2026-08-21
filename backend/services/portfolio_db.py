@@ -708,7 +708,48 @@ def _migrate_twr_columns(conn):
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
         except sqlite3.OperationalError:
             pass  # already exists
+
+    # deposit_history.cash_linked: whether recording this flow also moved a
+    # cash balance — i.e. whether it changed NAV. Deleting such a flow has
+    # to put the cash back, or NAV stays moved while units don't.
+    try:
+        conn.execute("ALTER TABLE deposit_history ADD COLUMN cash_linked INTEGER NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # already exists
+
+    # deposit_history.unitized_on: the snapshot date whose roll folded this
+    # flow into units (NULL = still pending). Replaces the old
+    # (prev_snapshot, today] date window, which silently dropped any flow
+    # recorded after its own day's snapshot had already run, or backdated.
+    try:
+        conn.execute("ALTER TABLE deposit_history ADD COLUMN unitized_on TEXT")
+    except sqlite3.OperationalError:
+        pass  # already exists
+    else:
+        _backfill_unitized_on(conn)
     conn.commit()
+
+
+def _backfill_unitized_on(conn):
+    """One-time backfill when unitized_on is first added.
+
+    Pre-migration flows are marked settled at the latest unitized snapshot
+    that ran after they were entered — published unit NAVs are history and
+    are never rewritten. Flows entered after the last snapshot stay NULL so
+    the next roll picks them up (including any that the old date window was
+    about to drop)."""
+    for (user_id,) in conn.execute(
+            "SELECT DISTINCT user_id FROM deposit_history").fetchall():
+        last = conn.execute(
+            "SELECT date, created_at FROM daily_snapshots "
+            "WHERE user_id=? AND units IS NOT NULL AND units > 0 "
+            "ORDER BY date DESC LIMIT 1", (user_id,)).fetchone()
+        if last is None:
+            continue
+        conn.execute(
+            "UPDATE deposit_history SET unitized_on=? "
+            "WHERE user_id=? AND unitized_on IS NULL AND created_at <= ?",
+            (last[0], user_id, last[1]))
 
 
 def _inception(net_assets: float, capital: float | None) -> tuple[float, float] | None:
@@ -725,6 +766,51 @@ def _inception(net_assets: float, capital: float | None) -> tuple[float, float] 
     return (net_assets, 1.0)
 
 
+def pending_flows(conn: sqlite3.Connection, user_id: str,
+                  upto_date: str | None = None,
+                  restamp_date: str | None = None) -> list[tuple[int, float]]:
+    """Cash flows not yet reflected in any snapshot's units.
+
+    `upto_date` limits to flows dated on/before that day (the roll only owns
+    flows that have happened); `restamp_date` also re-includes the ones this
+    same date already stamped, so re-running one day's snapshot is
+    idempotent.
+
+    Flows that already existed at inception are stamped by T0's own
+    mark_flows_unitized() — they are inside the frozen opening balance. Any
+    flow recorded later rolls at the next snapshot even if backdated before
+    T0: entering it moved cash and therefore NAV today, so units have to
+    move with it or the withdrawal reads as a loss.
+    """
+    sql = ["SELECT id, amount_cny FROM deposit_history",
+           "WHERE user_id=? AND deposit_date IS NOT NULL AND deposit_date != ''"]
+    params: list = [user_id]
+
+    if upto_date:
+        sql.append("AND deposit_date <= ?")
+        params.append(upto_date)
+    if restamp_date:
+        sql.append("AND (unitized_on IS NULL OR unitized_on = ?)")
+        params.append(restamp_date)
+    else:
+        sql.append("AND unitized_on IS NULL")
+    return conn.execute(" ".join(sql), params).fetchall()
+
+
+def mark_flows_unitized(conn: sqlite3.Connection, user_id: str, date: str) -> int:
+    """Stamp the flows this snapshot's roll consumed. Call after the
+    snapshot row is written (never on a dry run) — until stamped, a flow
+    keeps being added back by the live estimate and re-enters the next
+    roll."""
+    ids = [r[0] for r in pending_flows(conn, user_id, upto_date=date,
+                                       restamp_date=date)]
+    if ids:
+        conn.execute(
+            f"UPDATE deposit_history SET unitized_on=? WHERE id IN ({','.join('?' * len(ids))})",
+            [date, *ids])
+    return len(ids)
+
+
 def roll_units(conn: sqlite3.Connection, user_id: str, date: str,
                net_assets: float, capital: float | None = None) -> tuple[float, float] | None:
     """Fund-style unitization step for one snapshot day.
@@ -733,10 +819,15 @@ def roll_units(conn: sqlite3.Connection, user_id: str, date: str,
     day-D close, so a deposit can't inflate that day's return)
     units_D    = units_prev + net_flow_D / unit_nav_D
 
-    net_flow covers dated flows since the previous unitized snapshot
-    (exclusive) through `date` (inclusive) — weekend/holiday flows roll into
-    the next trading-day snapshot. Undated legacy flows are ignored: history
-    before inception is collapsed into the opening balance by design.
+    net_flow covers every dated flow no snapshot has folded into units yet
+    (`unitized_on IS NULL`), plus this date's own if the snapshot is being
+    re-run — so a flow entered hours after its day's snapshot, or backdated
+    days later, still lands in the next roll instead of being dropped.
+    Undated legacy flows and anything dated on/before inception are ignored:
+    history before T0 is collapsed into the opening balance by design.
+
+    Pairs with mark_flows_unitized(), which the caller runs once the
+    snapshot is actually written.
 
     Returns (units, unit_nav), or None when the account isn't unitizable
     (zero/negative net assets at inception).
@@ -751,12 +842,9 @@ def roll_units(conn: sqlite3.Connection, user_id: str, date: str,
         # Inception (T0): the whole pre-history becomes the opening balance
         return _inception(net_assets, capital)
 
-    prev_date, prev_units = prev[0], prev[1]
-    flow = conn.execute("""
-        SELECT COALESCE(SUM(amount_cny), 0) FROM deposit_history
-        WHERE user_id=? AND deposit_date IS NOT NULL
-          AND deposit_date > ? AND deposit_date <= ?
-    """, (user_id, prev_date, date)).fetchone()[0]
+    prev_units = prev[1]
+    flow = sum(amt for _id, amt in pending_flows(conn, user_id, upto_date=date,
+                                                 restamp_date=date))
 
     unit_nav = (net_assets - flow) / prev_units
     if unit_nav <= 0:
@@ -933,9 +1021,10 @@ def add_deposit_record(conn: sqlite3.Connection, broker: str,
     if amount is None:
         amount = amount_cny / fx_rate if fx_rate else amount_cny
     conn.execute("""
-        INSERT INTO deposit_history (broker, amount_cny, fx_rate, deposit_date, notes, user_id, currency, amount)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (broker, amount_cny, fx_rate, deposit_date or None, notes or None, user_id, currency, amount))
+        INSERT INTO deposit_history (broker, amount_cny, fx_rate, deposit_date, notes, user_id, currency, amount, cash_linked)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (broker, amount_cny, fx_rate, deposit_date or None, notes or None, user_id, currency, amount,
+          int(bool(update_cash))))
     _recalc_deposit_totals(conn, broker, user_id)
     if update_cash:
         row = conn.execute(
@@ -945,16 +1034,46 @@ def add_deposit_record(conn: sqlite3.Connection, broker: str,
 
 
 def delete_deposit_record(conn: sqlite3.Connection, record_id: int,
-                          user_id: str = 'local') -> str:
-    """Delete a deposit record by ID, recalculate totals. Returns broker name."""
-    row = conn.execute("SELECT broker FROM deposit_history WHERE id=? AND user_id=?",
-                       (record_id, user_id)).fetchone()
+                          user_id: str = 'local', force: bool = False) -> dict:
+    """Delete a cash-flow record. Returns {deleted, broker, reason, ...}.
+
+    Deleting is only a clean "this never happened" while the flow is still
+    pending: units haven't moved yet, so putting the linked cash back
+    restores NAV, Capital and unit NAV all at once.
+
+    Once a snapshot has folded the flow into units the bell can't be
+    unrung — dropping the row would leave units redeemed against a NAV that
+    no longer records why, i.e. a phantom gain or loss on the published
+    curve. Those are refused (reason='already_unitized'); the accounting fix
+    is an equal-and-opposite flow, which rolls through units normally.
+    `force` is the data-repair escape hatch and never touches cash.
+    """
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT broker, currency, amount, unitized_on, cash_linked "
+        "FROM deposit_history WHERE id=? AND user_id=?",
+        (record_id, user_id)).fetchone()
     if not row:
-        return ""
-    broker = row["broker"]
+        return {"deleted": False, "broker": "", "reason": "not_found",
+                "cash_reverted": False}
+    broker, unitized_on = row["broker"], row["unitized_on"]
+    if unitized_on and not force:
+        return {"deleted": False, "broker": broker, "reason": "already_unitized",
+                "unitized_on": unitized_on, "cash_reverted": False}
+
+    cash_reverted = False
+    if not unitized_on and row["cash_linked"] and row["amount"] is not None:
+        bal = conn.execute(
+            "SELECT balance FROM cash_balances WHERE account=? AND currency=? AND user_id=?",
+            (broker, row["currency"], user_id)).fetchone()
+        upsert_cash(conn, broker, row["currency"],
+                    (bal[0] if bal else 0) - row["amount"], user_id=user_id)
+        cash_reverted = True
+
     conn.execute("DELETE FROM deposit_history WHERE id=? AND user_id=?", (record_id, user_id))
     _recalc_deposit_totals(conn, broker, user_id)
-    return broker
+    return {"deleted": True, "broker": broker, "cash_reverted": cash_reverted,
+            "reason": "forced" if unitized_on else "pending"}
 
 
 # ── Capital computation ──

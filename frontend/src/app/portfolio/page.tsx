@@ -41,6 +41,7 @@ import {
   addDepositRecord,
   deleteDepositRecord,
   getAllFlows,
+  ApiError,
   triggerSnapshot,
   searchStocks,
   type PortfolioData,
@@ -3353,6 +3354,30 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
   const inputCls = "w-full px-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-blue-500 focus:outline-none";
   const zh = locale === "zh";
 
+  // Deleting a flow no snapshot has unitized yet also reverses the linked
+  // cash, so NAV/Capital/unit NAV all return to their pre-record state.
+  // Once it IS unitized the API refuses (409): units were redeemed against
+  // that withdrawal, and dropping the row would leave the redemption
+  // unexplained — a phantom jump on the published curve. Reverse flow is
+  // the fix; force is data repair.
+  const removeFlow = async (id: number, after?: () => Promise<void>) => {
+    const run = async (force: boolean) => {
+      await deleteDepositRecord(id, force);
+      if (after) await after(); else setFlowHistory(await getAllFlows());
+      onRefresh();
+    };
+    try {
+      await run(false);
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "flow_already_unitized") {
+        if (!confirm(`${e.message}\n\n${zh ? "仍要强制删除吗？" : "Force delete anyway?"}`)) return;
+        try { await run(true); } catch { alert(zh ? "删除失败" : "Delete failed"); }
+        return;
+      }
+      alert(e instanceof Error && e.message ? e.message : (zh ? "删除失败" : "Delete failed"));
+    }
+  };
+
   // ── Pre-fill from external edit request ──
   useEffect(() => {
     if (open && tradeTarget) {
@@ -4252,10 +4277,10 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                           )}
                         </span>
                         {r.notes && <span className="text-gray-400 truncate max-w-[80px]" title={r.notes}>{r.notes}</span>}
-                        <button className="text-gray-300 hover:text-red-500 shrink-0" title={zh ? "删除（不回滚已联动的现金）" : "Delete (cash not rolled back)"}
+                        <button className="text-gray-300 hover:text-red-500 shrink-0" title={zh ? "删除" : "Delete"}
                           onClick={async () => {
-                            if (!confirm(zh ? `删除这笔流水？\n注意：已联动的现金余额不会自动回滚。` : "Delete this flow?\nNote: synced cash balance is NOT rolled back.")) return;
-                            try { await deleteDepositRecord(r.id); setFlowHistory(await getAllFlows()); onRefresh(); } catch { alert("Error"); }
+                            if (!confirm(zh ? `删除这笔流水？\n未折算份额的流水会连同已联动的现金一起撤销。` : "Delete this flow?\nIf it hasn't been unitized yet, the linked cash is reversed with it.")) return;
+                            await removeFlow(r.id);
                           }}>✕</button>
                       </div>
                     ))}
@@ -4331,8 +4356,11 @@ function DataPanel({ holdings, data, locale, onRefresh, open, onClose, editHoldi
                                     {d.notes && <span className="ml-1 text-gray-400">({d.notes})</span>}
                                   </div>
                                   <button onClick={async () => {
-                                    if (!confirm(zh ? "确认删除此入金记录？" : "Delete this deposit record?")) return;
-                                    try { await deleteDepositRecord(d.id); setDepositHistory(await getDepositHistory(s.broker)); setAcctSettings(await getAccountSettings()); onRefresh(); } catch { setMsg("❌ Error"); }
+                                    if (!confirm(zh ? "确认删除此入金记录？\n未折算份额的流水会连同已联动的现金一起撤销。" : "Delete this deposit record?\nIf it hasn't been unitized yet, the linked cash is reversed with it.")) return;
+                                    await removeFlow(d.id, async () => {
+                                      setDepositHistory(await getDepositHistory(s.broker));
+                                      setAcctSettings(await getAccountSettings());
+                                    });
                                   }} className="text-red-400 hover:text-red-600 ml-1">✕</button>
                                 </div>
                               ))}

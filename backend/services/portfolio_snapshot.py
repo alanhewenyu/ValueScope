@@ -35,6 +35,7 @@ except ImportError:
 from backend.services.portfolio_db import (
     DB_PATH, get_conn, upsert_snapshot, upsert_fx, init_db, compute_capital,
     roll_units,
+    mark_flows_unitized,
 )
 from backend.services.portfolio_prices import fetch_price, fetch_fx_rate
 
@@ -219,6 +220,12 @@ def take_snapshot(dry_run=False, user_id: str = "local", force: bool = False):
                         units=units, unit_nav=unit_nav,
                         fx_json=json.dumps(fx),
                         cash_json=json.dumps(cash_ccy, ensure_ascii=False))
+
+        # Flows are only "spent" once the snapshot that priced them exists
+        if units is not None:
+            n_flows = mark_flows_unitized(conn, user_id, today)
+            if n_flows:
+                print(f"Flows rolled: {n_flows}")
 
         # Auto-create YTD baselines if none exist for current year
         from backend.services.portfolio_db import get_ytd_baselines, record_ytd_baselines

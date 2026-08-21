@@ -8,7 +8,8 @@ import pytest
 
 from backend.services.portfolio_db import (
     init_db, get_conn, upsert_snapshot, add_deposit_record, roll_units,
-    compute_capital, upsert_cash,
+    compute_capital, upsert_cash, mark_flows_unitized, pending_flows,
+    delete_deposit_record,
 )
 
 
@@ -27,6 +28,8 @@ def _snap(conn, date, net_assets, user="u1"):
     units, unit_nav = res if res else (None, None)
     upsert_snapshot(conn, date, net_assets, net_assets, net_assets, 0, 0, 0,
                     user_id=user, units=units, unit_nav=unit_nav)
+    if units is not None:
+        mark_flows_unitized(conn, user, date)
     conn.commit()
     return units, unit_nav
 
@@ -179,3 +182,137 @@ class TestCapitalBase:
         add_deposit_record(db, 'IBKR', 50000, deposit_date='2099-01-02', user_id='u2')
         assert compute_capital(db, {}, 'u1') == 0
         assert compute_capital(db, {}, 'u2') == pytest.approx(50000)
+
+
+class TestLateRecordedFlows:
+    """A flow is usually typed in after the fact — hours after that day's
+    snapshot ran, or backdated days later. The old (prev, date] window
+    dropped both, so the withdrawal stayed out of NAV but never left units
+    and read as a permanent loss."""
+
+    def test_flow_dated_on_last_snapshot_day_still_rolls(self, db):
+        _snap(db, "2026-07-01", 100000)
+        _snap(db, "2026-07-02", 100000)
+        # Withdrawal happens at lunch, after 07-02's morning snapshot
+        add_deposit_record(db, "IBKR", -15000, deposit_date="2026-07-02", user_id="u1")
+        units, nav = _snap(db, "2026-07-03", 85000)
+        assert nav == pytest.approx(1.0)      # not a 15% "loss"
+        assert units == pytest.approx(85000)
+
+    def test_backdated_flow_still_rolls(self, db):
+        _snap(db, "2026-07-01", 100000)
+        _snap(db, "2026-07-02", 100000)
+        _snap(db, "2026-07-03", 100000)
+        # Entered on the 4th, dated back to the 1st
+        add_deposit_record(db, "IBKR", -20000, deposit_date="2026-07-01", user_id="u1")
+        units, nav = _snap(db, "2026-07-04", 80000)
+        assert nav == pytest.approx(1.0)
+        assert units == pytest.approx(80000)
+
+    def test_rolled_flow_not_counted_twice(self, db):
+        _snap(db, "2026-07-01", 100000)
+        add_deposit_record(db, "IBKR", -15000, deposit_date="2026-07-02", user_id="u1")
+        _snap(db, "2026-07-02", 85000)
+        units, nav = _snap(db, "2026-07-03", 85000)
+        assert nav == pytest.approx(1.0)
+        assert units == pytest.approx(85000)
+        assert pending_flows(db, "u1") == []
+
+    def test_same_day_rerun_is_idempotent(self, db):
+        _snap(db, "2026-07-01", 100000)
+        add_deposit_record(db, "IBKR", -15000, deposit_date="2026-07-02", user_id="u1")
+        _snap(db, "2026-07-02", 85000)
+        units, nav = _snap(db, "2026-07-02", 85000)   # forced re-run
+        assert nav == pytest.approx(1.0)
+        assert units == pytest.approx(85000)
+
+    def test_pending_flow_visible_until_snapshot(self, db):
+        _snap(db, "2026-07-01", 100000)
+        add_deposit_record(db, "IBKR", -15000, deposit_date="2026-07-01", user_id="u1")
+        # Live estimate adds pending flows back: (85000 − (−15000)) / 100000
+        assert sum(a for _i, a in pending_flows(db, "u1")) == pytest.approx(-15000)
+        _snap(db, "2026-07-02", 85000)
+        assert pending_flows(db, "u1") == []
+
+    def test_flow_entered_after_inception_rolls_even_if_backdated(self, db):
+        _snap(db, "2026-07-01", 100000)
+        # Dated before T0 but entered now: recording it moved cash, so NAV
+        # dropped today and units must drop with it
+        add_deposit_record(db, "IBKR", -20000, deposit_date="2026-06-20", user_id="u1")
+        units, nav = _snap(db, "2026-07-02", 80000)
+        assert nav == pytest.approx(1.0)
+        assert units == pytest.approx(80000)
+
+
+class TestFlowDeletion:
+    """Deleting a flow must not break NAV = units × unit_nav either: while
+    it is pending, deletion also reverses the cash it moved; once a snapshot
+    has redeemed units against it, deletion is refused."""
+
+    def _bal(self, db):
+        row = db.execute(
+            "SELECT balance FROM cash_balances WHERE account='IBKR' "
+            "AND currency='CNY' AND user_id='u1'").fetchone()
+        return row[0] if row else 0
+
+    def _flow_id(self, db):
+        return db.execute("SELECT id FROM deposit_history WHERE user_id='u1'").fetchone()[0]
+
+    def test_pending_delete_reverses_cash(self, db):
+        upsert_cash(db, "IBKR", "CNY", 50000, user_id="u1")
+        _snap(db, "2026-07-01", 100000)
+        add_deposit_record(db, "IBKR", -15000, deposit_date="2026-07-01", user_id="u1",
+                           currency="CNY", amount=-15000, update_cash=True)
+        assert self._bal(db) == pytest.approx(35000)
+        res = delete_deposit_record(db, self._flow_id(db), user_id="u1")
+        assert res["deleted"] and res["cash_reverted"]
+        assert self._bal(db) == pytest.approx(50000)   # as if never recorded
+        # NAV is back where it was, so units must not move either
+        units, nav = _snap(db, "2026-07-02", 100000)
+        assert nav == pytest.approx(1.0)
+        assert units == pytest.approx(100000)
+
+    def test_pending_delete_without_cash_link_leaves_cash(self, db):
+        upsert_cash(db, "IBKR", "CNY", 50000, user_id="u1")
+        _snap(db, "2026-07-01", 100000)
+        add_deposit_record(db, "IBKR", -15000, deposit_date="2026-07-01", user_id="u1")
+        res = delete_deposit_record(db, self._flow_id(db), user_id="u1")
+        assert res["deleted"] and not res["cash_reverted"]
+        assert self._bal(db) == pytest.approx(50000)
+
+    def test_unitized_flow_delete_refused(self, db):
+        upsert_cash(db, "IBKR", "CNY", 50000, user_id="u1")
+        _snap(db, "2026-07-01", 100000)
+        add_deposit_record(db, "IBKR", -15000, deposit_date="2026-07-02", user_id="u1",
+                           currency="CNY", amount=-15000, update_cash=True)
+        _snap(db, "2026-07-02", 85000)          # units redeemed here
+        res = delete_deposit_record(db, self._flow_id(db), user_id="u1")
+        assert not res["deleted"] and res["reason"] == "already_unitized"
+        assert res["unitized_on"] == "2026-07-02"
+        assert self._bal(db) == pytest.approx(35000)   # untouched
+        assert self._flow_id(db)                        # row still there
+
+    def test_force_deletes_unitized_flow_without_touching_cash(self, db):
+        upsert_cash(db, "IBKR", "CNY", 50000, user_id="u1")
+        _snap(db, "2026-07-01", 100000)
+        add_deposit_record(db, "IBKR", -15000, deposit_date="2026-07-02", user_id="u1",
+                           currency="CNY", amount=-15000, update_cash=True)
+        _snap(db, "2026-07-02", 85000)
+        res = delete_deposit_record(db, self._flow_id(db), user_id="u1", force=True)
+        assert res["deleted"] and res["reason"] == "forced" and not res["cash_reverted"]
+        assert self._bal(db) == pytest.approx(35000)
+
+    def test_missing_record(self, db):
+        res = delete_deposit_record(db, 999, user_id="u1")
+        assert not res["deleted"] and res["reason"] == "not_found"
+
+    def test_reverse_flow_is_the_supported_undo(self, db):
+        _snap(db, "2026-07-01", 100000)
+        add_deposit_record(db, "IBKR", -15000, deposit_date="2026-07-02", user_id="u1")
+        _snap(db, "2026-07-02", 85000)
+        # Booked by mistake: the fix is an equal-and-opposite flow, which
+        # rolls through units and leaves the unit NAV untouched
+        add_deposit_record(db, "IBKR", 15000, deposit_date="2026-07-03", user_id="u1")
+        units, nav = _snap(db, "2026-07-03", 100000)
+        assert nav == pytest.approx(1.0)
+        assert units == pytest.approx(100000)

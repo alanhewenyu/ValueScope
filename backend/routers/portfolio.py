@@ -435,17 +435,32 @@ def add_deposit_record_api(data: DepositRecordIn, user_id: str = Depends(get_cur
 
 
 @router.delete("/deposit-history/{record_id}")
-def delete_deposit_record_api(record_id: int, user_id: str = Depends(get_current_user)):
-    """Delete a deposit history record and recalculate totals."""
+def delete_deposit_record_api(record_id: int,
+                              force: bool = Query(False),
+                              user_id: str = Depends(get_current_user)):
+    """Delete a cash-flow record and recalculate totals.
+
+    A flow the daily snapshot has already folded into units is refused with
+    409 — deleting it would move NAV with no matching units change, i.e. a
+    phantom gain/loss on the TWR curve. Book a reverse flow instead, or pass
+    force=true for genuine data repair.
+    """
     _require_db()
     from backend.services.portfolio_db import init_db, delete_deposit_record, get_conn
     init_db()
     with get_conn() as conn:
-        broker = delete_deposit_record(conn, record_id, user_id=user_id)
+        res = delete_deposit_record(conn, record_id, user_id=user_id, force=force)
         conn.commit()
-        if not broker:
+        if res["reason"] == "not_found":
             raise HTTPException(status_code=404, detail="Record not found")
-    return {"ok": True}
+        if not res["deleted"]:
+            raise HTTPException(status_code=409, detail={
+                "error_code": "flow_already_unitized",
+                "message": (f"这笔流水已在 {res['unitized_on']} 的快照里折算成份额，"
+                            "删除会让单位净值凭空跳动。正确做法是记一笔等额反向流水；"
+                            "确需修数据可强制删除（现金不会回滚）。"),
+            })
+    return {"ok": True, **res}
 
 
 @router.get("/margin")
@@ -886,11 +901,12 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
             "ORDER BY date DESC LIMIT 1",
             (user_id,)).fetchone()
         if _r:
+            from backend.services.portfolio_db import pending_flows
             unit_nav, _units, unit_nav_date = _r[0], _r[1], _r[2]
-            _flows = conn.execute(
-                "SELECT COALESCE(SUM(amount_cny), 0) FROM deposit_history "
-                "WHERE user_id=? AND deposit_date IS NOT NULL AND deposit_date > ?",
-                (user_id, unit_nav_date)).fetchone()[0]
+            # Flows still pending unitization (recorded after the snapshot,
+            # or backdated) are already out of live NAV but not yet out of
+            # units — add them back or a withdrawal reads as a loss
+            _flows = sum(a for _i, a in pending_flows(conn, user_id))
             unit_nav_est = (net_assets - _flows) / _units
 
     # YTD money-weighted return (Modified Dietz): P&L over time-weighted
@@ -907,7 +923,7 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
         # in deposit_history, so Dietz is clean. Earlier history has
         # unrecorded consumption outflows that would read as losses.
         _r0 = conn.execute(
-            "SELECT date, net_assets FROM daily_snapshots "
+            "SELECT date, net_assets, created_at FROM daily_snapshots "
             "WHERE user_id=? AND date>=? AND net_assets IS NOT NULL "
             "AND units IS NOT NULL AND units > 0 ORDER BY date ASC LIMIT 1",
             (user_id, _jan1)).fetchone()
@@ -916,10 +932,13 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
             _nav0 = _r0[1]
             _today = _dt.date.today()
             _total = max((_today - _d0).days, 1)
+            # Flows after the start snapshot — including same-day ones
+            # entered after it was taken (its NAV predates them)
             _flows = conn.execute(
                 "SELECT deposit_date, amount_cny FROM deposit_history "
-                "WHERE user_id=? AND deposit_date IS NOT NULL AND deposit_date > ?",
-                (user_id, _r0[0])).fetchall()
+                "WHERE user_id=? AND deposit_date IS NOT NULL AND deposit_date != '' "
+                "AND (deposit_date > ? OR (deposit_date = ? AND created_at > ?))",
+                (user_id, _r0[0], _r0[0], _r0[2])).fetchall()
             _fsum = sum(f[1] for f in _flows)
             _wsum = 0.0
             for _fd, _amt in _flows:
