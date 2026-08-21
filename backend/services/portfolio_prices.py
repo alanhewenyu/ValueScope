@@ -347,6 +347,203 @@ def _fetch_tencent_raw(symbols: str) -> str:
     return resp.text
 
 
+# ── Xueqiu US quotes (regular + pre/post + overnight session) ──
+
+_XQ_QUOTE_URL = 'https://stock.xueqiu.com/v5/stock/batch/quote.json'
+_XQ_BOOTSTRAP_URL = 'https://xueqiu.com/hq'
+_XQ_BATCH_SIZE = 40
+_XQ_UA = ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
+          '(KHTML, like Gecko) Chrome/124.0 Safari/537.36')
+
+# Reject an extended/overnight print this far off the regular close. Overnight
+# books are thin and a bad tick there would flow straight into market value;
+# 35% is wide enough to keep a real earnings gap (which is exactly the move
+# worth seeing at 03:00 NY) and narrow enough to catch a decimal-place error.
+_XQ_SANITY_BAND = 0.35
+
+# US symbols as stored in positions: letters, optionally a class suffix
+# (BRK-B). Anything with a market suffix (.HK/.T/.SS/.SZ) or a bare numeric
+# fund code must not reach this feed.
+_US_SYMBOL_RE = re.compile(r'^[A-Z]{1,6}([.-][A-Z])?$')
+
+_xq_session = None
+_us_session_tag: dict[str, str] = {}
+
+
+def _xueqiu_us_symbol(ticker: str) -> str | None:
+    """Xueqiu symbol for a US ticker, or None when this feed doesn't apply.
+
+    AAPL -> AAPL, BRK-B -> BRK.B (Yahoo spells class shares with a dash,
+    xueqiu with a dot).
+    """
+    tu = (ticker or '').upper()
+    if not _US_SYMBOL_RE.match(tu):
+        return None
+    return tu.replace('-', '.')
+
+
+def _xueqiu_session(force_new: bool = False):
+    """Session carrying the xq_a_token cookie the quote API requires.
+
+    The token comes from loading any xueqiu page; without it the endpoint
+    answers 400016 ("please refresh"). It expires, so callers that see a
+    rejected response re-bootstrap with force_new.
+    """
+    global _xq_session
+    if _xq_session is None or force_new:
+        import random
+        import requests
+        sess = requests.Session()
+        sess.headers.update({
+            'User-Agent': _XQ_UA,
+            'Accept': 'application/json, text/plain, */*',
+            'Referer': 'https://xueqiu.com/',
+        })
+        # The bootstrap page only hands out a token when it already sees a
+        # device cookie, so seed one ourselves.
+        sess.cookies.set('u', str(random.randint(10 ** 14, 10 ** 15)), domain='.xueqiu.com')
+        sess.get(_XQ_BOOTSTRAP_URL, timeout=12)
+        _xq_session = sess
+    return _xq_session
+
+
+def _fetch_xueqiu_raw(symbols: str) -> list[dict]:
+    """GET one xueqiu quote batch. Returns the ``items`` list or raises."""
+    def _get(sess):
+        resp = sess.get(_XQ_QUOTE_URL, params={'symbol': symbols, 'extend': 'detail'}, timeout=12)
+        return resp
+
+    resp = _get(_xueqiu_session())
+    if resp.status_code != 200 or not (resp.json().get('data') or {}).get('items'):
+        # Expired token: one clean re-bootstrap, then give up to yfinance.
+        resp = _get(_xueqiu_session(force_new=True))
+    resp.raise_for_status()
+    items = (resp.json().get('data') or {}).get('items')
+    if not items:
+        raise ValueError(f"xueqiu returned no items for {symbols}")
+    return items
+
+
+def _xueqiu_pick_quote(q: dict, now: datetime.datetime | None = None
+                       ) -> tuple[float, float | None, str] | None:
+    """Pick (price, prev_close, session) from one xueqiu US quote.
+
+    Xueqiu carries three prices, each with its own timestamp: ``current``
+    (regular session), ``current_ext`` (04:00-09:30 and 16:00-20:00 NY) and
+    ``current_night_session`` (20:00-04:00 NY, the overnight book Yahoo has
+    no data for at all — the reason this feed exists here). All three stay
+    populated after their window closes, so the live one is simply the one
+    with the newest timestamp.
+
+    prev_close follows the same 20:00 NY roll as _fetch_us_extended: during
+    the regular and after-hours sessions the day is measured from the
+    previous regular close, and from 20:00 NY onward (overnight, then
+    pre-market) today's regular close becomes the reference.
+    """
+    from zoneinfo import ZoneInfo
+    ny = ZoneInfo('America/New_York')
+    now = now or datetime.datetime.now(ny)
+
+    reg = q.get('current')
+    reg = float(reg) if reg else None
+    candidates = [
+        ('regular', q.get('current'), q.get('timestamp')),
+        ('extended', q.get('current_ext'), q.get('timestamp_ext')),
+        ('night', q.get('current_night_session'), q.get('timestamp_night_session')),
+    ]
+    valid = [(s, float(p), int(ts)) for s, p, ts in candidates
+             if p and ts and float(p) > 0]
+    if not valid:
+        return None
+
+    session, price, ts_ms = max(valid, key=lambda c: c[2])
+    if session != 'regular' and reg and abs(price - reg) / reg > _XQ_SANITY_BAND:
+        logger.warning("xueqiu %s print %.4f is %.0f%% off the regular close %.4f — ignoring",
+                       session, price, abs(price - reg) / reg * 100, reg)
+        if not q.get('timestamp'):
+            return None
+        session, price, ts_ms = 'regular', reg, int(q['timestamp'])
+
+    when = datetime.datetime.fromtimestamp(ts_ms / 1000, ny)
+    last_close = q.get('last_close')
+    last_close = float(last_close) if last_close else None
+
+    if session == 'regular':
+        prev_close = last_close
+    elif session == 'night':
+        prev_close = reg
+    else:
+        # Extended print: after-hours (16:00-20:00) is still part of today's
+        # session and measured from the previous close; pre-market is past
+        # the roll and measured from today's close.
+        prev_close = last_close if when.hour >= 16 else reg
+
+    # Nothing traded today in NY (weekend, holiday, or the 20:00-04:00 window
+    # with no overnight book): the newest print is a previous session's, and
+    # pairing it with any earlier close would replay that session as "today".
+    if when.date() < now.date():
+        prev_close = price
+
+    return (price, prev_close, session)
+
+
+def _fetch_xueqiu_us_batch(tickers: list[str], regular_only: bool = False
+                           ) -> dict[str, tuple[float, str, float | None]]:
+    """Batch-fetch US quotes from xueqiu. Never raises.
+
+    Returns {ticker: (price, 'USD', prev_close)} for whatever resolved;
+    anything missing is left for the yfinance path. With regular_only the
+    regular-session price is returned even while an extended book is
+    trading — the EOD snapshot needs a stable close, not the latest print.
+    """
+    by_symbol = {}
+    for t in tickers:
+        sym = _xueqiu_us_symbol(t)
+        if sym:
+            by_symbol[sym] = t
+
+    out: dict[str, tuple[float, str, float | None]] = {}
+    symbols = list(by_symbol)
+    for i in range(0, len(symbols), _XQ_BATCH_SIZE):
+        chunk = symbols[i:i + _XQ_BATCH_SIZE]
+        try:
+            items = _fetch_xueqiu_raw(','.join(chunk))
+        except Exception as e:
+            logger.warning("xueqiu batch failed for %d tickers: %s", len(chunk), e)
+            continue
+
+        for item in items:
+            try:
+                q = item.get('quote') or {}
+                ticker = by_symbol.get((q.get('symbol') or '').upper())
+                if not ticker:
+                    continue
+                if regular_only:
+                    price = q.get('current')
+                    if not price or float(price) <= 0:
+                        continue
+                    prev = q.get('last_close')
+                    picked = (float(price), float(prev) if prev else None, 'regular')
+                else:
+                    picked = _xueqiu_pick_quote(q)
+                if not picked:
+                    continue
+                price, prev_close, session = picked
+                _us_session_tag[ticker] = session
+                out[ticker] = (price, 'USD', prev_close)
+            except (TypeError, ValueError, KeyError) as e:
+                logger.warning("xueqiu row parse failed: %s", e)
+
+    return out
+
+
+def get_price_session(ticker: str) -> str | None:
+    """Which US session the cached price came from: regular/extended/night."""
+    if get_price_source(ticker) != 'xueqiu':
+        return None
+    return _us_session_tag.get(ticker)
+
+
 def prime_price_cache(tickers: list[str]) -> int:
     """Seed the price cache for every real-time-covered ticker in one shot.
 
@@ -375,6 +572,22 @@ def prime_price_cache(tickers: list[str]) -> int:
     for ticker, (price, currency, prev_close) in seeded.items():
         if price is not None:
             _price_cache[ticker] = (price, currency, prev_close, now, 'domestic')
+
+    # US names in the same one-shot style. Snapshot callers ask for
+    # regular_only, which skips the cache for US tickers, so seeding
+    # extended-hours prices here cannot leak into an EOD snapshot.
+    us = [t for t in tickers if t not in seeded and _xueqiu_us_symbol(t)]
+    if us:
+        try:
+            xq = _fetch_xueqiu_us_batch(us)
+        except Exception as e:
+            logger.warning("xueqiu prime failed: %s", e)
+            xq = {}
+        for ticker, (price, currency, prev_close) in xq.items():
+            if price is not None:
+                _price_cache[ticker] = (price, currency, prev_close, now, 'xueqiu')
+        seeded.update(xq)
+
     return len(seeded)
 
 
@@ -842,13 +1055,36 @@ def fetch_price(ticker: str, regular_only: bool = False) -> tuple[float | None, 
                     logger.warning("yfinance also failed for %s: %s", ticker, e_yf)
                     result = (None, None, None)
         else:
-            # All other markets: yfinance with retry
-            try:
-                result = _retry(lambda: _fetch_yfinance(ticker, currency, regular_only))
-                source = 'yfinance'
-            except Exception as e:
-                logger.warning("price fetch failed for %s: %s", ticker, e)
-                result = (None, None, None)
+            us_sym = _xueqiu_us_symbol(ticker)
+            result = (None, None, None)
+
+            # US live quotes: xueqiu first. Yahoo stops at the edges of the
+            # extended session (04:00-20:00 NY) and has nothing at all for
+            # the 20:00-04:00 overnight book — which is Beijing 08:00-16:00,
+            # i.e. the whole local trading day, where the price would
+            # otherwise sit frozen on the 20:00 print.
+            if us_sym and not regular_only:
+                got = _fetch_xueqiu_us_batch([ticker])
+                if ticker in got:
+                    result = got[ticker]
+                    source = 'xueqiu'
+
+            if result[0] is None:
+                try:
+                    result = _retry(lambda: _fetch_yfinance(ticker, currency, regular_only))
+                    source = 'yfinance'
+                except Exception as e:
+                    logger.warning("price fetch failed for %s: %s", ticker, e)
+                    result = (None, None, None)
+
+            # Snapshot path (regular_only): xueqiu's regular-session fields
+            # back up Yahoo, which rate-limits often enough to lose an EOD.
+            if result[0] is None and us_sym and regular_only:
+                got = _fetch_xueqiu_us_batch([ticker], regular_only=True)
+                if ticker in got:
+                    result = got[ticker]
+                    source = 'xueqiu'
+                    logger.warning("xueqiu fallback served regular close for %s", ticker)
 
         # FMP fallback — last resort when yfinance/eastmoney both failed.
         # Skip B-shares: FMP returns the SS/SZ listing price in CNY, but B-shares
@@ -867,7 +1103,12 @@ def fetch_price(ticker: str, regular_only: bool = False) -> tuple[float | None, 
     # close and any "previous close" pairs it with the session before —
     # which would show the last trading day's move as "today". Zero it here
     # at the chokepoint so no fallback path can leak it back in.
-    if result[0] is not None and result[2] is not None and _exchange_weekend(ticker):
+    #
+    # xueqiu is exempt: _xueqiu_pick_quote already zeroes a print older than
+    # today, and the overnight book opens Sunday 20:00 NY — still "weekend"
+    # by weekday, but a live session whose move belongs to Monday.
+    if (result[0] is not None and result[2] is not None
+            and source != 'xueqiu' and _exchange_weekend(ticker)):
         result = (result[0], result[1], result[0])
 
     # Only cache successful fetches; failed ones (None) should be retried immediately

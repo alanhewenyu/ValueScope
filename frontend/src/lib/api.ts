@@ -802,6 +802,7 @@ export interface PortfolioHolding {
   price_stale: boolean;
   price_date?: string | null;  // provider valuation date (fund NAV date)
   price_source?: string | null;
+  price_session?: string | null;  // US quote's session: regular/extended/night
   price_delay_min?: number;   // quote lag in minutes; 0/absent = real time
   market_value: number;
   market_value_cny: number;

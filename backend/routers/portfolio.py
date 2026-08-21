@@ -514,7 +514,7 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
     from backend.services.portfolio_prices import (
         fetch_price, get_previous_close, get_fx_rates as _get_fx,
         refresh_all_prices, get_price_delay_minutes, get_price_as_of,
-        get_price_source, is_price_stale,
+        get_price_source, get_price_session, is_price_stale,
     )
     from backend.services.ytd_calc import held_ytd
     import pandas as pd
@@ -740,6 +740,9 @@ def get_enriched_holdings(user_id: str = Depends(get_current_user)):
             "price_stale": price_stale,
             "price_date": price_date,
             "price_source": price_source,
+            # 'extended'/'night' when the US quote came from outside the
+            # regular session, so the UI can say which book it is.
+            "price_session": get_price_session(ticker),
             "market_value": mv,
             "market_value_cny": mv_cny,
             "cost_total": cost_total,

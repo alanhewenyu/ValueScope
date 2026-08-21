@@ -797,6 +797,20 @@ function HoldingsTable({ holdings, summary, locale, onEdit, onTrade, compact, on
                     {h.price_stale && h.price != null && (
                       <span className="ml-0.5 text-[10px] text-amber-600 dark:text-amber-500" title={locale === "zh" ? "数据源暂时不可用，显示最后一次成功取得的净值" : "Provider unavailable; showing the last successfully fetched NAV"}>⚠</span>
                     )}
+                    {h.price != null && (h.price_session === "night" || h.price_session === "extended") && (
+                      <span
+                        className="ml-1 text-[10px] leading-none px-1 rounded bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 cursor-help inline-block align-middle"
+                        title={locale === "zh"
+                          ? (h.price_session === "night"
+                            ? "夜盘价（纽约 20:00–04:00 隔夜交易时段）"
+                            : "盘前/盘后价（纽约 04:00–09:30、16:00–20:00）")
+                          : (h.price_session === "night"
+                            ? "Overnight session price (20:00–04:00 NY)"
+                            : "Pre/after-hours price (04:00–09:30, 16:00–20:00 NY)")}
+                      >{h.price_session === "night"
+                        ? (locale === "zh" ? "夜" : "ON")
+                        : (locale === "zh" ? "盘外" : "EXT")}</span>
+                    )}
                     {!h.price_stale && (h.price_delay_min ?? 0) > 0 && (
                       <span
                         className="ml-0.5 text-[10px] leading-none text-amber-600 dark:text-amber-500 cursor-help inline-block align-middle"
