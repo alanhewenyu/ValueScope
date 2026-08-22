@@ -476,12 +476,14 @@ def scheduled_pull(attempts: int = 3, wait: int = 120) -> bool:
 # Every diff kind is auto-appliable when the statement carries enough data;
 # the semantics mirror the blessed manual paths so attribution survives:
 #   cash            → sync balance (drift = interest/fees → retained earnings)
-#   cost            → copy the broker screen (dividends adjust IBKR avg price)
+#   cost            → advisory only (see cost_notes); force-appliable via API
 #   missing_tracker → fresh buy: create position, YTD baseline seeds at cost
-#   qty  (increase) → buy more: copy broker's qty + new weighted-average cost
+#                     (at open the report's basis IS the purchase price)
+#   qty  (increase) → buy more: sync qty, re-average our own cost with the
+#                     fills — never copy the report's tax-lot basis
 #   qty  (decrease) → partial sell: book closed_trade at the real fill price
 #                     from the Trades section (same YTD-lock path as the
-#                     Close tab), then sync qty/cost
+#                     Close tab), then sync qty; average cost stays put
 #   missing_ibkr    → full close: book closed_trade, delete the position
 # Sells fall back to a skip ("no_trade_details") when the statement's trade
 # executions don't cover the quantity gap — e.g. the sale predates the
@@ -604,12 +606,28 @@ def apply_diffs(conn, items: list[dict], user_id: str = "local",
             target_qty = fp["quantity"] if fp else 0.0
             delta = target_qty - pos_row["quantity"]
             if delta > _QTY_TOL:
-                # bought more — the broker's cost IS the new weighted average
+                # Bought more. The report's cost is NOT the new average: Flex
+                # only ever carries tax-lot basis (FIFO), which permanently
+                # diverges from the TWS average the tracker keeps once a
+                # position has been partly sold. Copying it re-anchored the
+                # whole holding to the tax basis on every top-up. Re-derive
+                # the average from our own cost plus the actual fills, the
+                # same arithmetic the Trade tab uses (fills at trade price,
+                # commissions left out, matching TWS's default average).
+                buys = [t for t in (stmt or {}).get("trades", [])
+                        if t["ticker"] == tk and t["quantity"] > 0 and t["price"] > 0]
+                bought = sum(t["quantity"] for t in buys)
+                if abs(bought - delta) > _QTY_TOL:
+                    skipped.append({**it, "reason": "no_trade_details"})
+                    continue
+                spend = sum(t["quantity"] * t["price"] for t in buys)
+                new_cost = ((pos_row["quantity"] * (pos_row["cost_price"] or 0) + spend)
+                            / target_qty)
                 conn.execute(
                     "UPDATE positions SET quantity=?, cost_price=?, "
                     "updated_at=datetime('now','localtime') "
                     "WHERE ticker=? AND broker=? AND user_id=?",
-                    (target_qty, fp["cost_price"], tk, pos_row["broker"], user_id))
+                    (target_qty, new_cost, tk, pos_row["broker"], user_id))
                 applied.append({"kind": kind, "ticker": tk, "value": target_qty})
             elif delta < -_QTY_TOL:
                 # sold — need real fills covering the whole gap
@@ -621,11 +639,15 @@ def apply_diffs(conn, items: list[dict], user_id: str = "local",
                     continue
                 _book_sell(conn, pos_row, sells, sold, user_id)
                 if target_qty > _QTY_TOL:
+                    # Average-cost account: a partial sell leaves the average
+                    # untouched. (Flex's basis moves here — it drops whichever
+                    # lots FIFO consumed — which is exactly the divergence we
+                    # must not import.)
                     conn.execute(
-                        "UPDATE positions SET quantity=?, cost_price=?, "
+                        "UPDATE positions SET quantity=?, "
                         "updated_at=datetime('now','localtime') "
                         "WHERE ticker=? AND broker=? AND user_id=?",
-                        (target_qty, fp["cost_price"], tk, pos_row["broker"], user_id))
+                        (target_qty, tk, pos_row["broker"], user_id))
                 else:
                     conn.execute(
                         "DELETE FROM positions WHERE ticker=? AND broker=? AND user_id=?",

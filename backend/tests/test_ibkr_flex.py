@@ -219,16 +219,32 @@ class TestApplyDiffs:
         assert res["applied"] == []
         assert {s["reason"] for s in res["skipped"]} == {"stale_diff"}
 
-    def test_apply_qty_buy_copies_broker_average(self, db, monkeypatch):
+    def test_apply_qty_buy_reaverages_our_own_cost(self, db, monkeypatch):
         upsert_position(db, "NVDA", "Nvidia", "美股", "盈透U1", "USD", 160, 102.661, user_id="u1")
         db.commit()
-        _stub(monkeypatch, [_pos("NVDA", 170, 105.5)], {})
+        # Report's basis (105.5) is tax-lot FIFO — the tracker keeps the TWS
+        # average, so the top-up re-averages against the actual fill instead
+        _stub(monkeypatch, [_pos("NVDA", 170, 105.5)], {},
+              trades=[{"ticker": "NVDA", "quantity": 10, "price": 180.0,
+                       "date": "2026-07-09", "currency": "USD"}])
         res = ibkr_flex.apply_diffs(db, [{"kind": "qty", "ticker": "NVDA"}], "u1")
         assert res["applied"][0]["value"] == 170
-        row = db.execute("SELECT quantity, cost_price FROM positions WHERE ticker='NVDA'").fetchone()
-        assert tuple(row) == (170, 105.5)
+        qty, cost = db.execute(
+            "SELECT quantity, cost_price FROM positions WHERE ticker='NVDA'").fetchone()
+        assert qty == 170
+        assert cost == pytest.approx((160 * 102.661 + 10 * 180.0) / 170)
         # no realized P&L on a buy
         assert db.execute("SELECT COUNT(*) FROM closed_trades").fetchone()[0] == 0
+
+    def test_apply_qty_buy_without_fills_skipped(self, db, monkeypatch):
+        upsert_position(db, "NVDA", "Nvidia", "美股", "盈透U1", "USD", 160, 102.661, user_id="u1")
+        db.commit()
+        _stub(monkeypatch, [_pos("NVDA", 170, 105.5)], {})  # buy predates the window
+        res = ibkr_flex.apply_diffs(db, [{"kind": "qty", "ticker": "NVDA"}], "u1")
+        assert res["applied"] == []
+        assert res["skipped"][0]["reason"] == "no_trade_details"
+        row = db.execute("SELECT quantity, cost_price FROM positions WHERE ticker='NVDA'").fetchone()
+        assert tuple(row) == (160, 102.661)   # nothing copied from the report
 
     def test_apply_qty_sell_books_closed_trade(self, db, monkeypatch):
         upsert_position(db, "NVDA", "Nvidia", "美股", "盈透U1", "USD", 160, 102.661, user_id="u1")
@@ -238,7 +254,10 @@ class TestApplyDiffs:
                        "date": "2026-07-09", "currency": "USD"}])
         res = ibkr_flex.apply_diffs(db, [{"kind": "qty", "ticker": "NVDA"}], "u1")
         assert res["applied"][0]["value"] == 150
-        assert db.execute("SELECT quantity FROM positions WHERE ticker='NVDA'").fetchone()[0] == 150
+        qty, cost = db.execute(
+            "SELECT quantity, cost_price FROM positions WHERE ticker='NVDA'").fetchone()
+        assert qty == 150
+        assert cost == pytest.approx(102.661)   # average cost survives a partial sell
         ct = db.execute("SELECT quantity, close_price, realized_pnl, close_date FROM closed_trades").fetchone()
         assert tuple(ct)[:2] == (10, 180.0)
         assert abs(ct[2] - (180.0 - 102.661) * 10) < 1e-6
