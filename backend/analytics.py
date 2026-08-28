@@ -48,6 +48,20 @@ def _client_id(ip: str) -> str:
     return f"{int(digest[:12], 16)}.0"
 
 
+def caller_id(ip: str) -> str:
+    """Public alias for the pseudonymous caller id sent to GA.
+
+    mcp_usage.py stores the same value so the local usage log and GA reports
+    describe the same callers and can be reconciled against each other.
+    """
+    return _client_id(ip)
+
+
+def is_internal(ip: str) -> bool:
+    """True for the owner's own caller IPs (VS_INTERNAL_IPS)."""
+    return ip in _INTERNAL_IPS
+
+
 def _session_id(ip: str) -> str:
     """Session id that rolls over every 30 minutes.
 

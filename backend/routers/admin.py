@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request, Depends
 
+from backend import mcp_usage
 from backend.routers.auth import require_auth, _get_db as _get_users_db
 
 logger = logging.getLogger("valuescope.admin")
@@ -242,3 +243,16 @@ def admin_system(_: str = Depends(require_admin)):
             "free_gb": round(disk.free / (1024**3), 1) if disk else None,
         },
     }
+
+
+@router.get("/mcp-usage")
+def admin_mcp_usage(days: int = 30, include_internal: bool = False,
+                    _: str = Depends(require_admin)):
+    """MCP adoption: unique callers, repeat rate, per-market split, daily series.
+
+    Unique callers and the repeat rate are the numbers that matter here — raw
+    call count is dominated by whoever is mid-session, and GA cannot answer
+    "did this caller come back on another day" at this scale.
+    """
+    days = max(1, min(days, 400))
+    return mcp_usage.summary(days=days, include_internal=include_internal)

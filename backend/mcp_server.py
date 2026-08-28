@@ -40,9 +40,19 @@ from backend.routers.valuation import (
     validate_ticker,
 )
 from modeling.ai_analyst import build_analysis_prompt
-from backend import analytics
+from backend import analytics, mcp_usage
 
 logger = logging.getLogger(__name__)
+
+
+def _track(event: str, ip: str, params: dict) -> None:
+    """Report a tool call to GA and to the local usage log.
+
+    Both are fire-and-forget and swallow their own errors — a tool call
+    must never fail because a metric could not be written.
+    """
+    analytics.track(event, ip, params)
+    mcp_usage.record(event, ip, params)
 
 
 def _market(ticker: str) -> str:
@@ -509,7 +519,7 @@ def run_dcf(
             "assumptions_filled_from_historical_defaults": defaults_used or None,
         }
         result["presentation_guide"] = PRESENTATION_GUIDE
-        analytics.track("mcp_run_dcf", ip, {
+        _track("mcp_run_dcf", ip, {
             "phase": "valuation",
             "market": _market(normalized),
             "ticker": normalized.upper(),
@@ -558,7 +568,7 @@ def run_dcf(
         ),
         "disclaimer": DISCLAIMER,
     }
-    analytics.track("mcp_run_dcf", ip, {
+    _track("mcp_run_dcf", ip, {
         "phase": "baseline",
         "market": _market(normalized),
         "ticker": normalized.upper(),
