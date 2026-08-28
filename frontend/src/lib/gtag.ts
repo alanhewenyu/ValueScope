@@ -2,9 +2,15 @@
  * Google Analytics event helpers.
  *
  * Conversion events for measuring what the site is actually for — running
- * valuations — instead of raw pageviews. After deploying, mark these as
- * Key events in GA Admin → Events: run_valuation, ai_analyze, gap_analyze,
- * export_excel, sign_up.
+ * valuations and getting connected over MCP — instead of raw pageviews.
+ * After deploying, mark these as Key events in GA Admin → Events:
+ * run_valuation, ai_analyze, gap_analyze, export_excel, sign_up,
+ * onboarding_complete, mcp_config_copy.
+ *
+ * mcp_config_copy is the one that matters most for MCP adoption:
+ * mcp_docs_click only says someone opened the guide, while copying a config
+ * is the last step before a working connection. Fires with { client:
+ * claude_code | claude_web | json }.
  */
 
 declare global {

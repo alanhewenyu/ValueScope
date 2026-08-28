@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import McpQuickStart from "@/components/McpQuickStart";
 
 export const metadata: Metadata = {
   title: "MCP 接入指南 — 你的 AI 也能调用的 DCF 估值引擎 | ValueScope MCP Setup",
@@ -14,9 +15,6 @@ export const metadata: Metadata = {
 
 function H2({ id, children }: { id: string; children: React.ReactNode }) {
   return <h2 id={id} className="text-lg font-bold text-gray-900 dark:text-white mt-10 mb-3 scroll-mt-20">{children}</h2>;
-}
-function H3({ children }: { children: React.ReactNode }) {
-  return <h3 className="text-base font-semibold text-gray-800 dark:text-gray-200 mt-6 mb-2">{children}</h3>;
 }
 function P({ children }: { children: React.ReactNode }) {
   return <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed mb-3">{children}</p>;
@@ -39,13 +37,19 @@ export default function McpGuide() {
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white mt-4 mb-2">
           🔌 你的 AI 也能调用的 DCF 估值引擎
         </h1>
+        <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed mb-4">
+          把一套标准化的 DCF 引擎接进 Claude、ChatGPT 或任意支持 MCP 的客户端：
+          <strong>AI 负责前瞻判断，ValueScope 负责数据和计算</strong>，同样的输入永远得到同样的结果。
+        </p>
+
+        <McpQuickStart />
+
         <P>
           MCP（<a href="https://modelcontextprotocol.io" className="text-blue-600 dark:text-blue-400 hover:underline">Model Context Protocol</a>）可以理解为
           AI 世界里的通用接口标准。通过 MCP，Claude、ChatGPT 等 AI 助手可以安全地调用外部工具。接入
           ValueScope 后，你的 AI 就多了一项能力：<strong>使用一套标准化的 DCF 引擎对股票进行估值</strong>
           —— 不再是网页上的一个 AI 按钮，而是直接成为 AI 的能力。
         </P>
-        <Code>Endpoint: https://mcp.valuescope.app/mcp</Code>
 
         <H2 id="why">为什么需要专门的工具 — AI 不是本来就能算吗？</H2>
         <P>
@@ -87,19 +91,12 @@ export default function McpGuide() {
           MCP 提示词的客户端还有 <InlineCode>/mcp__valuescope__dcf</InlineCode> 一键估值工作流。
         </P>
 
-        <H2 id="connect">怎么接入（两分钟）</H2>
-
-        <H3>Claude Code</H3>
-        <Code>claude mcp add valuescope --transport http https://mcp.valuescope.app/mcp</Code>
-
-        <H3>Claude 网页版 / 手机 App</H3>
-        <P>设置 → Connectors → 添加自定义连接器，填写 <InlineCode>https://mcp.valuescope.app/mcp</InlineCode>。</P>
-
-        <H3>Cherry Studio</H3>
-        <P>在 MCP 服务器配置中选择 HTTP 类型，填写上述地址即可。</P>
-
+        <H2 id="connect">接入之后</H2>
         <P>
-          接入后直接用自然语言提问。代码格式：A股 <InlineCode>600519.SS / 000333.SZ</InlineCode>、港股 <InlineCode>0700.HK</InlineCode>、美股 <InlineCode>AAPL</InlineCode>、日股 <InlineCode>7203.T</InlineCode>。
+          直接用自然语言提问即可，不需要记任何命令。股票代码格式：A股 <InlineCode>600519.SS / 000333.SZ</InlineCode>、港股 <InlineCode>0700.HK</InlineCode>、美股 <InlineCode>AAPL</InlineCode>、日股 <InlineCode>7203.T</InlineCode>。
+        </P>
+        <P>
+          还没接入的话，配置在本页开头的「两分钟接入」卡片里 —— Claude Code、Claude 网页版 / App、Cherry Studio 各一份，复制粘贴即可。
         </P>
 
         <H2 id="pricing">支持的市场与数据源</H2>

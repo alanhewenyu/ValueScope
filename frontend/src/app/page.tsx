@@ -94,6 +94,24 @@ export default function Home() {
           <p className="text-xs text-gray-400 dark:text-gray-500">
             {t.heroSupports}
           </p>
+
+          {/* The hero promises "the DCF engine your AI can call", but MCP used
+              to live only as a small link in the corner nav — 247 homepage
+              visitors reached /mcp 31 times last quarter. Give the pitch its
+              own first-screen entry point. */}
+          <Link
+            href="/mcp"
+            onClick={() => trackEvent("mcp_docs_click", { link_location: "home_hero" })}
+            className="group inline-flex flex-col items-center gap-0.5 mt-6 px-4 py-2.5 rounded-xl border border-violet-200 dark:border-violet-900 bg-violet-50/60 dark:bg-violet-950/30 hover:border-violet-400 dark:hover:border-violet-700 hover:bg-violet-50 dark:hover:bg-violet-950/50 transition-colors"
+          >
+            <span className="text-sm font-semibold text-violet-700 dark:text-violet-300">
+              {t.heroMcpCta}
+              <span className="inline-block ml-1 transition-transform group-hover:translate-x-0.5">→</span>
+            </span>
+            <span className="text-xs text-violet-600/80 dark:text-violet-400/80">
+              {t.heroMcpCtaSub}
+            </span>
+          </Link>
         </div>
 
         {/* Feature cards */}
