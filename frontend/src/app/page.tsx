@@ -76,14 +76,28 @@ export default function Home() {
           </div>
         )}
       </div>
-      {/* Hero section */}
-      <main className="flex-1 flex flex-col items-center justify-center px-4">
+      {/* Hero section — pt on mobile clears the absolutely-positioned nav
+          above, which otherwise sits on top of the ValueScope wordmark. */}
+      <main className="flex-1 flex flex-col items-center justify-center px-4 pt-16 sm:pt-0">
         <div className="text-center w-full max-w-2xl mx-auto">
           <h1 className="text-3xl sm:text-5xl font-bold text-gray-900 dark:text-white mb-3 tracking-tight">
             <span className="text-3xl sm:text-4xl mr-2">🎯</span> ValueScope
           </h1>
-          <p className="text-base sm:text-lg text-gray-500 dark:text-gray-400 mb-2">
-            {t.heroSubtitle}
+          {/* The subtitle already states the MCP pitch — "the engine your AI
+              can call" — so it carries the link rather than a separate CTA
+              competing with the feature cards below. The arrow is the only
+              affordance; the copy itself stays the same weight as before. */}
+          <p className="mb-2">
+            <Link
+              href="/mcp"
+              onClick={() => trackEvent("mcp_docs_click", { link_location: "home_subtitle" })}
+              className="group inline-block text-base sm:text-lg text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors"
+            >
+              {t.heroSubtitle}
+              <span className="inline-block ml-1.5 text-violet-500 dark:text-violet-400 transition-transform group-hover:translate-x-0.5">
+                →
+              </span>
+            </Link>
           </p>
           <p className="text-xs sm:text-sm text-gray-400 dark:text-gray-500 mb-8">
             {t.heroTagline}
@@ -94,24 +108,6 @@ export default function Home() {
           <p className="text-xs text-gray-400 dark:text-gray-500">
             {t.heroSupports}
           </p>
-
-          {/* The hero promises "the DCF engine your AI can call", but MCP used
-              to live only as a small link in the corner nav — 247 homepage
-              visitors reached /mcp 31 times last quarter. Give the pitch its
-              own first-screen entry point. */}
-          <Link
-            href="/mcp"
-            onClick={() => trackEvent("mcp_docs_click", { link_location: "home_hero" })}
-            className="group inline-flex flex-col items-center gap-0.5 mt-6 px-4 py-2.5 rounded-xl border border-violet-200 dark:border-violet-900 bg-violet-50/60 dark:bg-violet-950/30 hover:border-violet-400 dark:hover:border-violet-700 hover:bg-violet-50 dark:hover:bg-violet-950/50 transition-colors"
-          >
-            <span className="text-sm font-semibold text-violet-700 dark:text-violet-300">
-              {t.heroMcpCta}
-              <span className="inline-block ml-1 transition-transform group-hover:translate-x-0.5">→</span>
-            </span>
-            <span className="text-xs text-violet-600/80 dark:text-violet-400/80">
-              {t.heroMcpCtaSub}
-            </span>
-          </Link>
         </div>
 
         {/* Feature cards */}
