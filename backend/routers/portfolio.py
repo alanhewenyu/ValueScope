@@ -13,6 +13,7 @@ import io
 import logging
 import os
 import sqlite3
+import threading
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Depends
@@ -995,6 +996,23 @@ def get_nav_history(user_id: str = Depends(get_current_user)):
     return _query(path, "SELECT * FROM nav_history WHERE user_id=? ORDER BY date", (user_id,))
 
 
+# One Yahoo fetch at a time, across every concurrent /benchmarks caller.
+# A single page load fires several of these (hero + performance chart, plus
+# the hero effect re-firing as unit-NAV data arrives), each downloading four
+# indices and their FX series. Run in parallel that is a dozen simultaneous
+# Yahoo requests, which get throttled into empty frames — and the lastgood
+# backfill below then serves a stale copy without a word, so the chart can
+# freeze on an old date for days (observed 2026-08-29 → 09-03: NDX stuck at
+# 08-28). Queued callers re-check the cache after acquiring and normally
+# return the fetch that just completed instead of starting their own.
+_BENCH_FETCH_LOCK = threading.Lock()
+
+# How stale a backfilled benchmark series may be before it is dropped instead
+# of drawn. Long enough to ride out a bad weekend, short enough that a frozen
+# feed shows up as a missing line rather than a silently wrong comparison.
+_LASTGOOD_MAX_AGE_DAYS = 5
+
+
 @router.get("/benchmarks")
 def get_benchmarks(start: str = "2024-01-01"):
     """Benchmark series in CNY terms: {name: [{date, close}, ...]}.
@@ -1027,6 +1045,18 @@ def get_benchmarks(start: str = "2024-01-01"):
     if cached is not None:
         return cached
 
+    with _BENCH_FETCH_LOCK:
+        # Another caller may have filled the cache while we waited.
+        cached = pc.get(cache_key)
+        if cached is not None:
+            return cached
+        return _fetch_benchmarks(start, cache_key, yf, pd, bisect, _dt, pc)
+
+
+def _fetch_benchmarks(start, cache_key, yf, pd, bisect, _dt, pc):
+    """The uncached body of /benchmarks. Called under _BENCH_FETCH_LOCK."""
+    import time as _time
+
     fetch_start = (_dt.date.fromisoformat(start) - _dt.timedelta(days=10)).isoformat()
     end = (pd.Timestamp.now() + pd.DateOffset(days=1)).strftime("%Y-%m-%d")
 
@@ -1045,14 +1075,20 @@ def get_benchmarks(start: str = "2024-01-01"):
                 ("Hang Seng", "^HSI", "HKD"))
     series: dict[str, tuple] = {}  # name -> (close_series, ccy)
     for name, ticker, ccy in expected:
-        for _attempt in range(2):  # one retry — Yahoo flakes transiently
+        for _attempt in range(3):  # Yahoo flakes transiently, and throttles
+            if _attempt:
+                _time.sleep(0.5 * _attempt)  # back off — an immediate retry
+                # runs straight back into the same rate limit
             try:
                 s = dl(ticker)
                 if s is not None:
                     series[name] = (s, ccy)
                     break
-            except Exception:
-                pass
+                logger.warning("benchmark %s (%s): empty frame from Yahoo "
+                               "(attempt %d)", name, ticker, _attempt + 1)
+            except Exception as e:
+                logger.warning("benchmark %s (%s) fetch failed (attempt %d): %s: %s",
+                               name, ticker, _attempt + 1, type(e).__name__, e)
 
     # ETF proxy fallback for the US indices (same idea as 510300 for CSI300:
     # the chart uses rebased returns, so a tracking ETF is fine)
@@ -1061,9 +1097,11 @@ def get_benchmarks(start: str = "2024-01-01"):
             try:
                 s = dl(proxy)
                 if s is not None:
+                    logger.info("benchmark %s served from %s proxy", name, proxy)
                     series[name] = (s, "USD")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("benchmark %s proxy %s failed: %s: %s",
+                               name, proxy, type(e).__name__, e)
 
     # Stale-feed fallback: if CSI300 trails the freshest benchmark by more
     # than 4 days, use the 510300 ETF proxy instead
@@ -1105,14 +1143,33 @@ def get_benchmarks(start: str = "2024-01-01"):
         # heals on the next request instead of an hour later.
         lastgood_key = f"benchmarks_cny_lastgood:{start}"
         prev = pc.get(lastgood_key) or {}
-        for name, _, _ in expected:
-            if name not in results and name in prev:
-                results[name] = prev[name]
-        pc.put(lastgood_key, results, ttl=7 * 86400)
+        # Freshness is judged on what we actually fetched. Counting backfilled
+        # series as "complete" made the response look healthy, cached it for
+        # the full TTL and re-armed lastgood's 7-day TTL with the same stale
+        # copy — a ratchet that kept the chart on an old date indefinitely.
         complete = all(name in results for name, _, _ in expected)
+        # Only refresh lastgood with what we fetched ourselves; never write a
+        # backfilled series back, or its age becomes unknowable.
+        pc.put(lastgood_key, {**prev, **results}, ttl=7 * 86400)
+        cutoff = (_dt.date.today() - _dt.timedelta(days=_LASTGOOD_MAX_AGE_DAYS)).isoformat()
+        for name, _, _ in expected:
+            if name in results or name not in prev or not prev[name]:
+                continue
+            stale_to = prev[name][-1]["date"]
+            if stale_to < cutoff:
+                # Past this age the copy stops being a gap-filler and becomes
+                # a wrong answer: the frontend truncates the portfolio side to
+                # the benchmark's last close, so a frozen index silently
+                # freezes the whole comparison. Drop the line instead.
+                logger.error("benchmark %s dropped — lastgood too stale (last close %s)",
+                             name, stale_to)
+                continue
+            results[name] = prev[name]
+            logger.warning("benchmark %s served from lastgood, last close %s",
+                           name, stale_to)
         # 10 min, not 1h: the hero/perf charts now show a live intraday
         # portfolio point, so a stale benchmark would skew beating/trailing
-        pc.put(cache_key, results, ttl=600 if complete else 300)
+        pc.put(cache_key, results, ttl=600 if complete else 120)
     return results
 
 
