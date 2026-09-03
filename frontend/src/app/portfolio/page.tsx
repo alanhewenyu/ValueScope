@@ -180,6 +180,10 @@ function FlowFields({ zh, inputCls, flowDirection, setFlowDirection, flowCurrenc
   );
 }
 
+// How long a benchmark response is reused before asking again. Matches the
+// backend's cache window — refetching sooner only queues behind it.
+const BENCH_REUSE_MS = 10 * 60 * 1000;
+
 /** Hero: the 3-second answer — one sentence + one clean YTD curve vs CSI 300.
  *  Details live in the Performance tab; clicking the hero jumps there. */
 function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate, ytdMwr }: {
@@ -194,8 +198,28 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [fxImpact, setFxImpact] = useState<FxImpact | null>(null);
   const [comparisonRevision, setComparisonRevision] = useState("");
+  const [benchLoaded, setBenchLoaded] = useState(false);
   const heroSvgRef = React.useRef<SVGSVGElement>(null);
   const requestedRevision = `${unitNavDate ?? ""}|${unitNav ?? ""}|${unitNavEst ?? ""}`;
+
+  // The effect below re-runs every time a piece of unit-NAV state lands, and
+  // each run used to start its own benchmark download. Aborting one only
+  // stopped the client from listening — the server kept downloading — so a
+  // single page load could put a dozen concurrent Yahoo requests in flight,
+  // which is what got the feed throttled into the 2026-08-28 freeze. One
+  // in-flight request per start date, shared by every re-run.
+  const benchReqRef = React.useRef<
+    { start: string; at: number; p: Promise<Record<string, BenchmarkPoint[]>> } | null>(null);
+  const loadBenchmarks = React.useCallback((start: string) => {
+    const hit = benchReqRef.current;
+    if (hit && hit.start === start && Date.now() - hit.at < BENCH_REUSE_MS) return hit.p;
+    // Deliberately not passing the abort signal: the promise is shared, so one
+    // re-run aborting would reject it for the others.
+    const p = getBenchmarks(start);
+    benchReqRef.current = { start, at: Date.now(), p };
+    p.catch(() => { if (benchReqRef.current?.p === p) benchReqRef.current = null; });
+    return p;
+  }, []);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -227,7 +251,7 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
         else if (today === last.date) last.val = unitNavEst;
       }
       const nextBenchData = pts.length >= 2
-        ? await getBenchmarks(pts[0].date, ac.signal)
+        ? await loadBenchmarks(pts[0].date)
         : {};
       if (ac.signal.aborted) return;
 
@@ -236,6 +260,7 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
       // benchmark comparison and show a stale beating/trailing figure.
       setSeries(pts);
       setBenchData(nextBenchData);
+      setBenchLoaded(true);
       setComparisonRevision(revision);
     };
     loadComparison().catch((e: unknown) => {
@@ -245,7 +270,7 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
     });
     getFxImpact().then((r) => { if (r && r.fx_pp != null) setFxImpact(r as FxImpact); }).catch(() => {});
     return () => ac.abort();
-  }, [unitNavEst, unitNav, unitNavDate, requestedRevision]);
+  }, [unitNavEst, unitNav, unitNavDate, requestedRevision, loadBenchmarks]);
 
   if (series.length < 2) return null;
 
@@ -334,16 +359,33 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
     return k;
   };
 
-  // The snapshot dated D prices D-1's close — surface that close date on the
-  // official row ("07-18收") instead of a relative "prev close", which reads
-  // wrong on weekends (Sunday's official NAV is Friday's close, not
-  // yesterday's). Noon-UTC anchor sidesteps timezone/DST edge cases.
-  const navCloseDate = (() => {
-    if (!unitNavDate) return null;
+  // The snapshot dated D prices D-1's close. That date is both what the
+  // official row shows ("07-18收" instead of a relative "prev close", which
+  // reads wrong on weekends — Sunday's official NAV is Friday's close, not
+  // yesterday's) and what benchmark freshness is measured against below.
+  // Noon-UTC anchor sidesteps timezone/DST edge cases.
+  const portPricedIso = (() => {
+    if (!unitNavDate) return series[series.length - 1]?.date ?? null;
     const d = new Date(unitNavDate + "T12:00:00Z");
     d.setUTCDate(d.getUTCDate() - 1);
-    return d.toISOString().slice(5, 10);
+    return d.toISOString().slice(0, 10);
   })();
+  const navCloseDate = unitNavDate && portPricedIso ? portPricedIso.slice(5) : null;
+
+  // Benchmark freshness, said out loud. The comparison above truncates the
+  // portfolio to the benchmark's last close, so a feed that quietly stops
+  // updating freezes the entire line — that is how NDX sat on 08-28 for five
+  // days in Sep 2026 while the portfolio kept snapshotting. A healthy
+  // benchmark's last close matches the portfolio's own priced date; more than
+  // a few days behind means the feed is lagging (or that market is on
+  // holiday). Past its staleness cap the backend drops the series outright,
+  // which lands here as "unavailable" rather than as a stale line.
+  const benchLagDays = benchEndDate && portPricedIso
+    ? Math.round((Date.parse(portPricedIso) - Date.parse(benchEndDate)) / 86400000)
+    : 0;
+  const benchStale = benchLagDays > 3;
+  const benchUnavailable = benchLoaded && bench.length < 2;
+
   return (
     <div onClick={onGoPerformance}
       className="mb-4 p-4 rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 cursor-pointer hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
@@ -373,6 +415,19 @@ function HeroSummary({ locale, onGoPerformance, unitNav, unitNavEst, unitNavDate
               {zh
                 ? `${diff >= 0 ? "跑赢" : "跑输"}${benchLabels[benchName]} ${Math.abs(diff).toFixed(1)}pp（同窗口·¥口径${diffTruncated && benchEndDate ? `·截至${benchEndDate.slice(5)}收` : ""}）`
                 : `${diff >= 0 ? "beating" : "trailing"} ${benchLabels[benchName]} by ${Math.abs(diff).toFixed(1)}pp (same window${diffTruncated && benchEndDate ? ` to ${benchEndDate.slice(5)} close` : ""}, CNY)`}
+            </div>
+          )}
+          {(benchUnavailable || benchStale) && (
+            <div className="text-[10px] text-amber-600 dark:text-amber-500 mt-0.5"
+              title={benchUnavailable
+                ? (zh ? "数据源未返回该基准的行情，跑赢/跑输一行暂不显示；稍后刷新即可"
+                      : "The data source returned nothing for this benchmark, so the comparison is hidden; refresh later")
+                : (zh ? `该基准最后收盘为 ${benchEndDate}，比组合的定价日 ${portPricedIso} 落后 ${benchLagDays} 天；对比窗口已截断到该日（也可能是该市场休市）`
+                      : `This benchmark last closed ${benchEndDate}, ${benchLagDays} days behind the portfolio's ${portPricedIso} pricing date; the comparison window is truncated to it (that market may also be on holiday)`)}>
+              {benchUnavailable
+                ? (zh ? `⚠ ${benchLabels[benchName]} 基准数据暂不可用` : `⚠ ${benchLabels[benchName]} benchmark unavailable`)
+                : (zh ? `⚠ ${benchLabels[benchName]} 数据延迟 ${benchLagDays} 天 · 最新收盘 ${benchEndDate?.slice(5)}`
+                      : `⚠ ${benchLabels[benchName]} feed ${benchLagDays}d behind · last close ${benchEndDate?.slice(5)}`)}
             </div>
           )}
         </div>
@@ -1934,6 +1989,23 @@ function PerformanceChart({ navHistory, snapshots = [], locale, liveLast }: {
       alphas.push(`vs ${name}: ${alpha > 0 ? "+" : ""}${alpha.toFixed(1)}%`);
     }
 
+    // Benchmark freshness. A feed that stops updating just draws a shorter
+    // line — nothing tells you the alpha above it is frozen too (NDX sat on
+    // 08-28 for five days in Sep 2026). Name the lag instead.
+    const benchLag = !showBenchmarks ? [] : Object.entries(benchData)
+      .map(([name, pts]) => ({
+        name,
+        last: pts.length ? pts[pts.length - 1].date : null,
+        days: pts.length
+          ? Math.round((Date.parse(endDate) - Date.parse(pts[pts.length - 1].date)) / 86400000)
+          : 0,
+      }))
+      .filter((b) => b.last && b.days > 3);
+    // The endpoint serves four series; fewer means one failed to fetch and was
+    // too stale to fall back on.
+    const benchCount = Object.keys(benchData).length;
+    const benchMissing = showBenchmarks && !benchLoading && benchCount > 0 && benchCount < 4;
+
     return (
       <>
         <SectionTitle
@@ -1964,6 +2036,17 @@ function PerformanceChart({ navHistory, snapshots = [], locale, liveLast }: {
             ? `本区间 ${windowRet >= 0 ? "+" : ""}${windowRet.toFixed(1)}%（${portIndexed[0].date} 起点=100）${lastUnitNav != null ? ` · 当前单位净值 ${lastUnitNav.toFixed(4)}，相对面值 1.0 溢价 ${lastUnitNav >= 1 ? "+" : ""}${((lastUnitNav - 1) * 100).toFixed(1)}% ≈ 累计盈亏/本金` : ""} —— 同一条曲线，两把量尺`
             : `Window ${windowRet >= 0 ? "+" : ""}${windowRet.toFixed(1)}% (base=100 at ${portIndexed[0].date})${lastUnitNav != null ? ` · unit NAV ${lastUnitNav.toFixed(4)}, ${lastUnitNav >= 1 ? "+" : ""}${((lastUnitNav - 1) * 100).toFixed(1)}% over par (≈ lifetime P&L / capital)` : ""}`}
         </div>
+        {(benchLag.length > 0 || benchMissing) && (
+          <div className="text-[10px] text-amber-600 dark:text-amber-500 mb-2"
+            title={locale === "zh"
+              ? "基准行情来自 Yahoo：抓取失败或该市场休市时，序列停在最后一个收盘日，曲线末端比组合短，vs 基准的 alpha 也只算到那一天"
+              : "Benchmarks come from Yahoo: on a failed fetch or a market holiday the series stops at its last close, so its line ends short and the alpha above only covers up to that day"}>
+            ⚠ {locale === "zh" ? "基准数据延迟：" : "Benchmark feeds behind: "}
+            {benchLag.map((b) => `${b.name} ${locale === "zh" ? "至" : "to"} ${b.last?.slice(5)}（${b.days}${locale === "zh" ? "天" : "d"}）`).join(locale === "zh" ? "、" : ", ")}
+            {benchMissing && (benchLag.length ? (locale === "zh" ? "；" : "; ") : "")}
+            {benchMissing && (locale === "zh" ? "另有基准未返回数据" : "another benchmark returned no data")}
+          </div>
+        )}
         <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800 p-4 mb-2">
           <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full cursor-crosshair" style={{ maxHeight: 300 }}
             onMouseMove={(e) => {
