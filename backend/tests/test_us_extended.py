@@ -109,7 +109,11 @@ def test_batch_maps_symbols_back_to_tickers(monkeypatch):
         ]
 
     monkeypatch.setattr(prices, "_fetch_xueqiu_raw", fake_raw)
-    out = prices._fetch_xueqiu_us_batch(["AAPL", "BRK-B", "0700.HK"])
+    # The quotes above are stamped 2026-08-10, so the session has to be judged
+    # against that evening — on the real clock every print is a past session's
+    # and the daily move is correctly zeroed, which is a different test.
+    now = datetime.datetime(2026, 8, 10, 22, 30, tzinfo=NY)
+    out = prices._fetch_xueqiu_us_batch(["AAPL", "BRK-B", "0700.HK"], now=now)
 
     assert "0700.HK" not in captured["symbols"]
     assert set(out) == {"AAPL", "BRK-B"}

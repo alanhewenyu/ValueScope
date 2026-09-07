@@ -487,7 +487,8 @@ def _xueqiu_pick_quote(q: dict, now: datetime.datetime | None = None
     return (price, prev_close, session)
 
 
-def _fetch_xueqiu_us_batch(tickers: list[str], regular_only: bool = False
+def _fetch_xueqiu_us_batch(tickers: list[str], regular_only: bool = False,
+                           now: datetime.datetime | None = None
                            ) -> dict[str, tuple[float, str, float | None]]:
     """Batch-fetch US quotes from xueqiu. Never raises.
 
@@ -495,6 +496,10 @@ def _fetch_xueqiu_us_batch(tickers: list[str], regular_only: bool = False
     anything missing is left for the yfinance path. With regular_only the
     regular-session price is returned even while an extended book is
     trading — the EOD snapshot needs a stable close, not the latest print.
+
+    now is the clock _xueqiu_pick_quote measures the session against; it
+    defaults to the real one and exists so tests can pin fixed quotes to a
+    fixed wall clock.
     """
     by_symbol = {}
     for t in tickers:
@@ -525,7 +530,7 @@ def _fetch_xueqiu_us_batch(tickers: list[str], regular_only: bool = False
                     prev = q.get('last_close')
                     picked = (float(price), float(prev) if prev else None, 'regular')
                 else:
-                    picked = _xueqiu_pick_quote(q)
+                    picked = _xueqiu_pick_quote(q, now)
                 if not picked:
                     continue
                 price, prev_close, session = picked

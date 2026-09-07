@@ -50,6 +50,21 @@ def _series(last_date, n=5):
     return [{"date": d.strftime("%Y-%m-%d"), "close": 100.0} for d in idx]
 
 
+def _bday(date):
+    """The last business day at or before `date`, as an ISO string.
+
+    _closes and _series index on business days, so a calendar date that falls
+    on a weekend silently becomes the Friday before it. Every date these tests
+    assert on goes through here, or the suite fails on Sundays and Mondays.
+    """
+    return pd.bdate_range(end=pd.Timestamp(date), periods=1)[-1].strftime("%Y-%m-%d")
+
+
+def _prev_bday(date):
+    """The business day strictly before `date` — one session stale."""
+    return (pd.Timestamp(date) - pd.offsets.BDay(1)).strftime("%Y-%m-%d")
+
+
 @pytest.fixture
 def env(monkeypatch):
     """Fake yfinance + fake cache; FX conversion stubbed to 1:1."""
@@ -64,7 +79,7 @@ def env(monkeypatch):
     monkeypatch.setitem(sys.modules, "backend.persistent_cache", cache)
     monkeypatch.setattr(P, "_fx_history", lambda ccy, start: [("1970-01-01", 1.0)])
     fail: set[str] = set()
-    today = dt.date.today().isoformat()
+    today = _bday(dt.date.today())
 
     def download(ticker, **kw):
         if ticker in fail:
@@ -84,7 +99,7 @@ def test_all_series_fresh_cached_for_full_ttl(env):
 
 def test_backfilled_response_is_not_treated_as_complete(env):
     """A stale fill must shorten the TTL so the next request retries."""
-    yesterday = (dt.date.today() - dt.timedelta(days=1)).isoformat()
+    yesterday = _prev_bday(env.today)
     env.cache.put("benchmarks_cny_lastgood:2026-03-07",
                   {"Nasdaq 100": _series(yesterday)}, ttl=7 * 86400)
     env.fail.update({"^NDX", "QQQ"})
