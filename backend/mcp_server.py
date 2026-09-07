@@ -93,6 +93,13 @@ class MCPRequestMetaMiddleware:
             # any generated URL) stays https.
             if headers.get("x-forwarded-proto", "").split(",")[0].strip() == "https":
                 scope = dict(scope, scheme="https")
+            # Serve /mcp itself rather than 307-redirecting it to /mcp/.
+            # Health checkers and MCP clients that decline to follow a
+            # redirect on POST would otherwise read the server as unreachable.
+            if scope["path"] == "/mcp":
+                scope = dict(scope, path="/mcp/")
+                if scope.get("raw_path") == b"/mcp":
+                    scope["raw_path"] = b"/mcp/"
             fwd = headers.get("x-forwarded-for", "")
             client = scope.get("client") or ("", 0)
             ip = (fwd.split(",")[0].strip() if fwd else "") or client[0] or "unknown"
