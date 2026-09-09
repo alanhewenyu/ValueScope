@@ -1,9 +1,17 @@
 {
   "mcpServers": {
     "valuescope": {
-      "type": "streamableHttp",
+      "type": "http",
       "url": "https://mcp.valuescope.app/mcp",
-      "timeout": 60000
+      "x-workbuddy": {
+        "displayName": { "zh": "ValueScope 估值引擎", "en": "ValueScope" },
+        "description": {
+          "zh": "标准化 DCF 估值引擎：AI 负责前瞻判断，引擎负责数据与计算，同样的输入永远得到同样的估值结果。A股、港股无需任何密钥；美股、日股有每日免费体验额度。",
+          "en": "A standardized DCF valuation engine. The AI reasons about each assumption, the engine owns the data and the math — same inputs always produce the same valuation. A-shares and HK need no key; US and Japan have a daily free trial."
+        },
+        "icon": "./avatars/valuescope.svg",
+        "auth": { "type": "none" }
+      }
     }
   }
 }
