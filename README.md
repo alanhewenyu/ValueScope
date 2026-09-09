@@ -57,10 +57,10 @@ Then just ask in natural language: *"Value Kweichow Moutai with a DCF"* — no c
 
 The server exposes a single `run_dcf` tool that mirrors an equity analyst's workflow, with the calling model playing the analyst:
 
-1. **Baseline** — call `run_dcf(ticker)` with no assumptions. Returns a baseline valuation from 5-year historical averages, each parameter's historical range, and an analyst guide telling the model how to evaluate every assumption.
+1. **Material** — call `run_dcf(ticker)` with no assumptions. Returns the historical financials, each parameter's historical range, the engine-computed WACC and tax rate, and an analyst guide telling the model how to evaluate every assumption. **No valuation is returned** — a number at this point would only anchor the reasoning that follows.
 2. **Final** — the model searches the web for guidance and consensus, reasons about each parameter, then calls `run_dcf(ticker, <assumptions>)` for the final valuation: intrinsic value, value bridge, forecast table, sensitivity matrix, and reverse DCF (what the market price implies).
 
-A `dcf` MCP prompt is also exposed, surfacing a one-command workflow (baseline → search → reason → three scenarios) in clients that support MCP prompts.
+A `dcf` MCP prompt is also exposed, surfacing a one-command workflow (material → search → reason → three scenarios) in clients that support MCP prompts.
 
 Ticker format: A-shares `600519.SS` / `000333.SZ`, HK `0700.HK`, US `AAPL`, JP `7203.T`.
 

@@ -8,10 +8,11 @@ Single tool, two phases — mirrors the `vs --auto` CLI flow, except the
 analyst role is played by the calling model itself (which, unlike an
 MCP sampling request, can search the web for guidance/consensus):
 
-1. run_dcf(ticker) with no assumptions → baseline valuation from 5Y
-   historical averages + historical context + the analyst prompt that
-   `vs --auto` uses, for the calling model to evaluate each parameter.
-2. run_dcf(ticker, <adjusted assumptions>) → final deterministic valuation.
+1. run_dcf(ticker) with no assumptions → the analyst's working material:
+   historical financials, per-parameter ranges, engine-computed WACC and tax
+   rate, and the analyst prompt `vs --auto` uses. No valuation is returned —
+   a number here would only anchor the analysis that follows.
+2. run_dcf(ticker, <assumptions>) → the deterministic valuation.
 
 This server never calls an LLM itself.
 """
@@ -103,7 +104,7 @@ class MCPRequestMetaMiddleware:
             fwd = headers.get("x-forwarded-for", "")
             client = scope.get("client") or ("", 0)
             ip = (fwd.split(",")[0].strip() if fwd else "") or client[0] or "unknown"
-            token = _request_meta.set({"ip": ip, "fmp_key": headers.get("x-fmp-key", "").strip()})
+            token = _request_meta.set({"ip": ip, "fmp_key": _real_key(headers.get("x-fmp-key", ""))})
             try:
                 await self.app(scope, receive, send)
             finally:
@@ -112,11 +113,24 @@ class MCPRequestMetaMiddleware:
             await self.app(scope, receive, send)
 
 
+def _real_key(value: str) -> str:
+    """Drop an unsubstituted "${VAR}" placeholder.
+
+    Marketplace connectors (WorkBuddy's, for one) ship an mcp.json whose
+    X-FMP-Key header references a form field the user may legitimately leave
+    blank — A-shares and HK need no key. Some clients then forward the
+    placeholder verbatim instead of omitting the header, and taking it as a
+    key would spend the call on an FMP 401 rather than the free trial.
+    """
+    value = (value or "").strip()
+    return "" if value.startswith("${") and value.endswith("}") else value
+
+
 # ── Quotas (in-memory, per IP, rolling 24h — same pattern as the AI quota) ──
 
 MCP_DAILY_LIMIT = int(os.environ.get("MCP_DAILY_LIMIT", "60"))
-US_TRIAL_DAILY_LIMIT = int(os.environ.get("MCP_US_TRIAL_DAILY_LIMIT", "3"))
-# Global cap on trial calls served by the SERVER's FMP key across all IPs.
+US_TRIAL_DAILY_LIMIT = int(os.environ.get("MCP_US_TRIAL_DAILY_LIMIT", "5"))
+# Global cap on trial tickers served by the SERVER's FMP key across all IPs.
 # The per-IP trial limit alone doesn't bound cost — a public endpoint can be
 # hit from rotating IPs — so this is the hard ceiling on how much of the
 # owner's FMP quota the free trial can burn per day.
@@ -126,20 +140,55 @@ _GLOBAL_QUOTA_KEY = "__global__"
 
 _quota_lock = threading.Lock()
 _quota_usage: dict[str, list[float]] = {}
+# "kind:ip:ticker" -> when this ticker was first charged to that budget.
+_quota_tickers: dict[str, float] = {}
+_MAX_TRACKED_TICKERS = 20_000  # hard bound; sweep drops lapsed entries
 
 
-def _consume_quota(kind: str, ip: str, limit: int) -> int:
-    """Consume one unit; return remaining. Raise ValueError when exhausted."""
+def _consume_quota(kind: str, ip: str, limit: int, ticker: str = "") -> int:
+    """Consume one unit; return remaining. Raise ValueError when exhausted.
+
+    Pass `ticker` to charge at most one unit per distinct ticker per rolling
+    24h. The two-phase workflow calls run_dcf on the same ticker at least
+    twice (context, then the final assumptions; a three-scenario run adds
+    more), but only the first call reaches FMP — financials are cached on
+    disk for 24h. Charging per call would bill 2-4 units for a single fetch,
+    and could cut a user off between the context call and the valuation, after
+    they had already done all the research. Charging per ticker matches what
+    the trial actually costs the owner's FMP quota.
+    """
     now = time.time()
     key = f"{kind}:{ip}"
     with _quota_lock:
         stamps = [t for t in _quota_usage.get(key, []) if t > now - 86400]
+        if ticker:
+            seen_key = f"{key}:{ticker}"
+            seen_at = _quota_tickers.get(seen_key)
+            if seen_at is not None and seen_at > now - 86400:
+                # Already paid for today — repeat calls on it are free.
+                _quota_usage[key] = stamps
+                return limit - len(stamps)
         if len(stamps) >= limit:
             _quota_usage[key] = stamps
             raise ValueError("quota_exhausted")
         stamps.append(now)
         _quota_usage[key] = stamps
+        if ticker:
+            _sweep_tickers(now)
+            _quota_tickers[f"{key}:{ticker}"] = now
         return limit - len(stamps)
+
+
+def _sweep_tickers(now: float) -> None:
+    """Drop lapsed ticker marks (called under _quota_lock)."""
+    if len(_quota_tickers) < _MAX_TRACKED_TICKERS:
+        return
+    for k in [k for k, t in _quota_tickers.items() if t <= now - 86400]:
+        _quota_tickers.pop(k, None)
+    if len(_quota_tickers) >= _MAX_TRACKED_TICKERS:
+        # Still over bound (rotating IPs): drop the oldest marks.
+        for k, _ in sorted(_quota_tickers.items(), key=lambda kv: kv[1])[:1000]:
+            _quota_tickers.pop(k, None)
 
 
 DISCLAIMER = (
@@ -227,7 +276,7 @@ mcp = FastMCP(
     instructions=(
         "ValueScope 标准化 DCF 估值引擎。A股/港股开箱即用；美股/日股可先用每日限量"
         "的免费体验额度，注册 FMP key 后不限次（fmp_api_key 参数或 X-FMP-Key 请求头）。"
-        "用法：先不带假设参数调用 run_dcf 获取基线估值和参数分析指南，按指南完成参数"
+        "用法：先不带假设参数调用 run_dcf 获取历史数据和参数分析指南（此步不返回估值），按指南完成参数"
         "分析（如可用请先联网搜索），再带上你的参数调用 run_dcf 得到最终估值。所有计算"
         "为确定性模型输出，同样输入永远得到同样结果。不构成投资建议。"
     ),
@@ -252,7 +301,7 @@ def dcf_prompt(ticker: str) -> str:
     return f"""用 valuescope 的 run_dcf 工具给 {ticker} 做完整 DCF 估值，严格执行：
 
 1. 确定 ticker 格式（A股 600519.SS / 000333.SZ，港股 0700.HK，美股 AAPL，日股 7203.T；给的是公司名先推断代码）。
-2. 裸调 run_dcf(ticker) 获取基线估值、参数历史区间和 parameter_analysis_guide。
+2. 裸调 run_dcf(ticker) 获取历史财务数据、参数历史区间和 parameter_analysis_guide（此步不返回估值）。
 3. 按 guide 联网搜索最新业绩指引、分析师一致预期、行业 benchmark（无联网能力则基于历史数据和你的知识推理，并说明局限）。
 4. 对每个参数独立推理并给出依据，然后按乐观/中性/悲观三组假设分别调用 run_dcf。
 5. 按返回的 presentation_guide 呈现：以中性情景为主结论，附三情景对比表、关键假设表（含趋势列）、反向 DCF 点评。
@@ -328,9 +377,16 @@ def _render_history_chart(ticker: str, apikey: str) -> bytes:
     return buf.getvalue()
 
 
-def _build_analysis_guide(ticker: str, apikey: str) -> str:
-    """Assemble the same analyst prompt `vs --auto` uses (data fetches are
-    backend-cached, so this is cheap after the baseline run)."""
+def _build_analysis_context(ticker: str, apikey: str) -> dict:
+    """Assemble what `vs --auto` hands its analyst: the historical table, the
+    engine-computed WACC and tax rate, and the parameter-analysis prompt.
+
+    Phase 1 returns exactly this and nothing else. It deliberately does NOT
+    run a valuation: a DCF mechanically extrapolated from 5Y averages is not
+    a baseline in any meaningful sense, and handing the model a number before
+    it reasons only anchors the analysis it is about to do. The CLI never had
+    such a step — `build_analysis_prompt` takes no price.
+    """
     financial_data = get_historical_financials(
         ticker, "annual", apikey, HISTORICAL_DATA_PERIODS_ANNUAL
     )
@@ -354,7 +410,7 @@ def _build_analysis_guide(ticker: str, apikey: str) -> str:
     ttm_end_date = financial_data.get("ttm_end_date", "")
     is_ttm = bool(ttm_quarter and ttm_end_date)
 
-    return build_analysis_prompt(
+    guide = build_analysis_prompt(
         ticker=ticker,
         summary_df=summary_df,
         company_profile=profile,
@@ -366,6 +422,26 @@ def _build_analysis_guide(ticker: str, apikey: str) -> str:
         fy_end_month=financial_data.get("fy_end_month", 12),
         freshness_info=financial_data.get("freshness"),
     )
+    return {
+        "guide": guide,
+        "company_name": profile.get("companyName", ticker),
+        "market_price": profile.get("price"),
+        "currency": profile.get("currency", "USD"),
+        "reported_currency": (
+            summary_df.loc["Reported Currency"].iloc[0]
+            if "Reported Currency" in summary_df.index else None
+        ),
+        # Engine facts, not assumptions: omit tax_rate/wacc in phase 2 and
+        # these are what the model gets.
+        "engine_computed": {
+            "wacc_pct": round(wacc_calc * 100, 2) if wacc_calc else None,
+            "average_tax_rate_pct": round(
+                financial_data["average_tax_rate"] * 100, 2
+            ) if financial_data.get("average_tax_rate") else None,
+        },
+        "base_period": str(base_year_col),
+        "ttm": f"{ttm_quarter} TTM (as of {ttm_end_date})" if is_ttm else None,
+    }
 
 
 @mcp.tool()
@@ -386,9 +462,10 @@ def run_dcf(
 ):
     """一站式 DCF 估值（10 年两阶段 FCFF 折现），分两步使用：
 
-    第一步——不带任何假设参数调用：返回按 5 年历史均值计算的基线估值、每个参数的
-    历史区间，以及 parameter_analysis_guide（资深分析师参数分析指南）。收到后请
-    按指南对每个参数做独立分析（若有联网搜索能力，务必先按指南搜索业绩指引与
+    第一步——不带任何假设参数调用：返回分析材料，含历史财务数据、每个参数的历史
+    区间、引擎算出的 WACC 与历史平均税率，以及 parameter_analysis_guide（资深分析师
+    参数分析指南）。**此步不返回估值**——先给一个数字只会锚定你接下来的判断。收到后
+    请按指南对每个参数做独立分析（若有联网搜索能力，务必先按指南搜索业绩指引与
     分析师预期），然后进入第二步。
 
     第二步——带上你分析得出的假设参数再次调用：返回最终估值，含每股内在价值、
@@ -416,7 +493,7 @@ def run_dcf(
     meta = _request_meta.get()
     ip = meta.get("ip", "")
     is_remote = ip not in _LOOPBACK_IPS
-    user_key = (fmp_api_key or "").strip() or meta.get("fmp_key", "")
+    user_key = _real_key(fmp_api_key) or meta.get("fmp_key", "")
 
     if is_remote:
         try:
@@ -434,7 +511,9 @@ def run_dcf(
         if server_key:
             if is_remote:
                 _trial_exhausted = (
-                    "美股/日股的免费体验额度已用完（A股/港股无需 key、不限体验额度）。"
+                    f"美股/日股的免费体验额度已用完"
+                    f"（每日 {US_TRIAL_DAILY_LIMIT} 只，同一只票当天不限调用次数；"
+                    "A股/港股无需 key、不限体验额度）。"
                     "注册自己的 FMP key 即可继续："
                     "调用时传 fmp_api_key 参数，或在 MCP 连接配置中加 X-FMP-Key 请求头。"
                     f"注册链接（使用 valuescope 优惠码有折扣）：{FMP_SIGNUP_URL} "
@@ -443,17 +522,22 @@ def run_dcf(
                 # Per-IP limit first (so a single IP hitting its own cap
                 # doesn't consume a global slot), then the global ceiling on
                 # the owner's FMP key (bounds total cost under IP rotation).
+                # Charged per distinct ticker: the context call pays, the
+                # follow-up calls that reason over the same ticker are free.
                 try:
-                    remaining = _consume_quota("us_trial", ip, US_TRIAL_DAILY_LIMIT)
+                    remaining = _consume_quota("us_trial", ip,
+                                               US_TRIAL_DAILY_LIMIT, normalized)
                 except ValueError:
                     raise ValueError(_trial_exhausted) from None
                 try:
                     _consume_quota("us_trial_global", _GLOBAL_QUOTA_KEY,
-                                   MCP_US_TRIAL_GLOBAL_DAILY)
+                                   MCP_US_TRIAL_GLOBAL_DAILY, normalized)
                 except ValueError:
                     raise ValueError(_trial_exhausted) from None
                 trial_note = (
-                    f"本次美股/日股估值使用了免费体验额度（今日剩余 {remaining} 次）。"
+                    f"本次美股/日股估值使用了免费体验额度"
+                    f"（今日还可估 {remaining} 只新股票；这只票当天可继续调整参数、"
+                    f"跑多情景，不再计入额度）。"
                     f"注册自己的 FMP key 可不限次使用（使用 valuescope 优惠码有折扣）："
                     f"{FMP_SIGNUP_URL} —— 请在呈现结果末尾将此信息连同链接告知用户。"
                 )
@@ -470,8 +554,10 @@ def run_dcf(
     }
     analysis_phase = all(v is None for v in core.values())
 
-    # Fill omitted assumptions from 5Y-historical suggestions
+    # Historical parameter ranges: phase 1 returns them, phase 2 falls back
+    # to them for any assumption the model left out.
     defaults_used = []
+    defaults = None
     if any(v is None for v in core.values()):
         try:
             defaults = _get_dcf_defaults_endpoint(normalized, effective_key)
@@ -479,10 +565,17 @@ def run_dcf(
             raise _friendly_error(ValueError(str(e.detail)), normalized, bool(user_key)) from e
         except Exception as e:
             raise _friendly_error(e, normalized, bool(user_key)) from e
-        for key, val in core.items():
-            if val is None:
-                core[key] = defaults["suggested"][key]
-                defaults_used.append(key)
+
+    if analysis_phase:
+        return _with_optional_chart(
+            _analysis_payload(normalized, effective_key, defaults, trial_note, ip),
+            normalized, effective_key, include_history_chart,
+        )
+
+    for key, val in core.items():
+        if val is None:
+            core[key] = defaults["suggested"][key]
+            defaults_used.append(key)
 
     params = DCFParams(
         ticker=normalized,
@@ -513,75 +606,73 @@ def run_dcf(
     )
     result["disclaimer"] = DISCLAIMER
 
-    if not analysis_phase:
-        diff = result.get("diff_pct") or 0
-        result["summary"] = {
-            "company": result.get("company_name"),
-            "ticker": normalized.upper(),
-            "intrinsic_value_per_share": result.get("dcf_price_converted", result.get("dcf_price")),
-            "market_price": result.get("market_price"),
-            "currency": result.get("currency"),
-            "upside_pct": round(diff * 100, 1),
-            "verdict": _verdict(diff),
-            "assumptions_filled_from_historical_defaults": defaults_used or None,
-        }
-        result["presentation_guide"] = PRESENTATION_GUIDE
-        _track("mcp_run_dcf", ip, {
-            "phase": "valuation",
-            "market": _market(normalized),
-            "ticker": normalized.upper(),
-            "verdict": result["summary"]["verdict"].split(" ")[0],
-            "used_trial": "true" if trial_note else "false",
-        })
-        return _with_optional_chart(result, normalized, effective_key, include_history_chart)
-
-    # ── Phase 1: baseline + analyst guide ──
-    # Trim the heavy tables — full detail comes with the phase-2 run.
-    baseline = {
-        k: result.get(k)
-        for k in (
-            "company_name", "dcf_price", "dcf_price_converted", "market_price",
-            "diff_pct", "currency", "reported_currency", "bridge",
-            "valuation_params", "ttm",
-        )
+    diff = result.get("diff_pct") or 0
+    result["phase"] = "valuation"
+    result["summary"] = {
+        "company": result.get("company_name"),
+        "ticker": normalized.upper(),
+        "intrinsic_value_per_share": result.get("dcf_price_converted", result.get("dcf_price")),
+        "market_price": result.get("market_price"),
+        "currency": result.get("currency"),
+        "upside_pct": round(diff * 100, 1),
+        "verdict": _verdict(diff),
+        "assumptions_filled_from_historical_defaults": defaults_used or None,
     }
-    # Enrich per-parameter history with unicode sparklines (chronological)
-    history = defaults.get("history") or {}
+    result["presentation_guide"] = PRESENTATION_GUIDE
+    _track("mcp_run_dcf", ip, {
+        "phase": "valuation",
+        "market": _market(normalized),
+        "ticker": normalized.upper(),
+        "verdict": result["summary"]["verdict"].split(" ")[0],
+        "used_trial": "true" if trial_note else "false",
+    })
+    return _with_optional_chart(result, normalized, effective_key, include_history_chart)
+
+
+def _analysis_payload(ticker: str, apikey: str, defaults: dict | None,
+                      trial_note: str | None, ip: str) -> dict:
+    """Phase 1: the material an analyst needs before forming assumptions.
+
+    Deliberately carries no valuation — see _build_analysis_context.
+    """
+    ctx = _build_analysis_context(ticker, apikey)
+    history = (defaults or {}).get("history") or {}
     for metric in history.values():
         if isinstance(metric, dict) and isinstance(metric.get("values"), dict):
             metric["sparkline"] = _sparkline(metric["values"])
 
-    baseline_note = None
-    if (result.get("dcf_price") or 0) <= 0:
-        baseline_note = (
-            "基线每股价值为负/零：这是用 5 年历史均值机械外推的结果，常见于高再投入、"
-            "FCFF 尚为负的成长期公司，不代表公司没有价值——恰恰说明估值高度依赖前瞻"
-            "假设，第二步的参数分析才是关键。请勿把该基线数字直接呈现给用户当作结论。"
-        )
-    payload = {
-        "phase": "baseline",
-        "baseline_from_5y_historical_averages": baseline,
-        "baseline_note": baseline_note,
+    _track("mcp_run_dcf", ip, {
+        "phase": "context",
+        "market": _market(ticker),
+        "ticker": ticker.upper(),
+        "used_trial": "true" if trial_note else "false",
+    })
+    return {
+        "phase": "context",
+        "company": {
+            "name": ctx["company_name"],
+            "ticker": ticker.upper(),
+            "market_price": ctx["market_price"],
+            "currency": ctx["currency"],
+            "reported_currency": ctx["reported_currency"],
+            "base_period": ctx["base_period"],
+            "ttm": ctx["ttm"],
+        },
+        "engine_computed": ctx["engine_computed"],
         "parameter_history": history,
-        "suggested_parameters": defaults.get("suggested"),
+        "historical_defaults": (defaults or {}).get("suggested"),
         "fmp_trial_note": trial_note,
-        "parameter_analysis_guide": _build_analysis_guide(normalized, effective_key),
+        "parameter_analysis_guide": ctx["guide"],
         "next_step": (
-            "以上基线直接采用 5 年历史均值，未包含前瞻判断。请按 "
+            "以上是分析材料，不含任何估值结果——市价是事实，不是估值。请按 "
             "parameter_analysis_guide 对每个参数做独立分析（有联网能力请先按指南"
             "搜索最新业绩指引与分析师预期），说明你的推理，然后带上分析得出的参数"
-            "再次调用 run_dcf 得到最终估值。也可以用乐观/中性/悲观三组假设分别调用，"
-            "生成情景区间。"
+            "调用 run_dcf 得到估值。也可以用乐观/中性/悲观三组假设分别调用，"
+            "生成情景区间。historical_defaults 只是历史均值兜底——省略某个参数时"
+            "引擎会用它，但那不是判断，返回结果里会如实标注哪些参数走了兜底。"
         ),
         "disclaimer": DISCLAIMER,
     }
-    _track("mcp_run_dcf", ip, {
-        "phase": "baseline",
-        "market": _market(normalized),
-        "ticker": normalized.upper(),
-        "used_trial": "true" if trial_note else "false",
-    })
-    return _with_optional_chart(payload, normalized, effective_key, include_history_chart)
 
 
 def _with_optional_chart(payload: dict, ticker: str, apikey: str, include_chart: bool):

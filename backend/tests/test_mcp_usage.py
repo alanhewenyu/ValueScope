@@ -21,13 +21,13 @@ def usage(tmp_path, monkeypatch):
 
 
 def _seed(mod):
-    mod.record("mcp_run_dcf", "1.1.1.1", {"phase": "baseline", "market": "a",
+    mod.record("mcp_run_dcf", "1.1.1.1", {"phase": "context", "market": "a",
                                           "ticker": "600519.SS", "used_trial": "false"})
     mod.record("mcp_run_dcf", "1.1.1.1", {"phase": "valuation", "market": "a",
                                           "ticker": "600519.SS", "used_trial": "false"})
-    mod.record("mcp_run_dcf", "2.2.2.2", {"phase": "baseline", "market": "hk",
+    mod.record("mcp_run_dcf", "2.2.2.2", {"phase": "context", "market": "hk",
                                           "ticker": "0700.HK", "used_trial": "true"})
-    mod.record("mcp_run_dcf", "9.9.9.9", {"phase": "baseline", "market": "us",
+    mod.record("mcp_run_dcf", "9.9.9.9", {"phase": "context", "market": "us",
                                           "ticker": "AAPL"})
 
 
