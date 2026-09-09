@@ -1,25 +1,32 @@
 {
+  "id": "valuescope",
   "name": "ValueScope",
   "name_zh": "ValueScope 估值引擎",
   "name_en": "ValueScope",
+  "description": "A standardized DCF valuation engine for A-share, HK, US and Japan stocks. The AI reasons about each assumption, the engine owns the data and the math — the same inputs always produce the same valuation.",
+  "description_zh": "标准化 DCF 估值引擎，覆盖 A股、港股、美股、日股。AI 负责前瞻判断，引擎负责数据与计算，同样的输入永远得到同样的估值结果。A股与港股无需任何密钥。",
+  "description_en": "A standardized DCF valuation engine for A-share, HK, US and Japan stocks. The AI reasons about each assumption, the engine owns the data and the math — the same inputs always produce the same valuation.",
   "source": "valuescope",
   "type": "mcp",
   "version": "1.0.0",
-  "description": "标准化 DCF 估值引擎：AI 负责前瞻判断，引擎负责数据与计算，同样的输入永远得到同样的估值结果。支持 A股、港股、美股、日股，A股与港股无需任何密钥。",
-  "description_zh": "标准化 DCF 估值引擎：AI 负责前瞻判断，引擎负责数据与计算，同样的输入永远得到同样的估值结果。支持 A股、港股、美股、日股，A股与港股无需任何密钥。",
-  "description_en": "Standardized DCF valuation engine for A-share, HK, US and Japan stocks. AI reasons the assumptions, the engine owns the math.",
   "examples_zh": [
     "给贵州茅台（600519.SS）做一份 DCF 估值",
     "腾讯控股 0700.HK 现在的股价隐含了什么增长假设？",
     "用乐观/中性/悲观三种情景估一下美的集团 000333.SZ",
-    "苹果 AAPL 的内在价值是多少？我的 FMP key 是 xxx"
+    "宁德时代的内在价值是多少？关键假设是哪一个",
+    "招商银行现在贵不贵，安全边际有多少"
   ],
   "examples_en": [
     "Run a DCF valuation on Kweichow Moutai (600519.SS)",
-    "What growth assumptions does Tencent's (0700.HK) current price imply?",
-    "Value Midea (000333.SZ) under bull, base and bear scenarios",
-    "What is Apple's (AAPL) intrinsic value?"
+    "What growth assumptions does Tencent's (0700.HK) price imply?",
+    "Value Midea (000333.SZ) under bull, base and bear cases",
+    "What is CATL's intrinsic value, and which assumption drives it?",
+    "How much margin of safety is there in China Merchants Bank today?"
   ],
-  "auth_mode": "token",
-  "minWorkbuddyVersion": "4.23.0"
+  "visible_in": [
+    "internal",
+    "iOA",
+    "cloudhosted",
+    "selfhosted"
+  ]
 }
