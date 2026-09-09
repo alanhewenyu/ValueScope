@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="ValueScope">
+  <rect width="64" height="64" rx="14" fill="#0B1220"/>
+  <!-- discounted cash flows: bars shrink as they are pulled back to today -->
+  <g fill="#2DD4BF">
+    <rect x="12" y="30" width="6" height="20" rx="2" opacity="0.95"/>
+    <rect x="22" y="34" width="6" height="16" rx="2" opacity="0.78"/>
+    <rect x="32" y="38" width="6" height="12" rx="2" opacity="0.60"/>
+    <rect x="42" y="41" width="6" height="9"  rx="2" opacity="0.44"/>
+  </g>
+  <!-- intrinsic value marker -->
+  <circle cx="45" cy="20" r="7.5" fill="none" stroke="#E11D48" stroke-width="3"/>
+  <circle cx="45" cy="20" r="2.5" fill="#E11D48"/>
+</svg>

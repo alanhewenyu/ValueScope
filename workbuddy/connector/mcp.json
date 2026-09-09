@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "valuescope": {
+      "type": "streamableHttp",
+      "url": "https://mcp.valuescope.app/mcp",
+      "headers": {
+        "X-FMP-Key": "${VALUESCOPE_FMP_KEY}"
+      },
+      "timeout": 60000
+    }
+  }
+}

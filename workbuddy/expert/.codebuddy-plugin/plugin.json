@@ -1,0 +1,46 @@
+{
+  "name": "valuescope-dcf",
+  "version": "1.0.0",
+  "description": "Deterministic DCF valuation analyst powered by the ValueScope engine",
+  "author": {
+    "name": "Alan He",
+    "email": "alanhewenyu@gmail.com"
+  },
+  "agents": ["./agents/valuescope-dcf-analyst.md"],
+
+  "expertType": "agent",
+  "agentName": "valuescope-dcf-analyst",
+
+  "displayName": {
+    "en": "ValueScope",
+    "zh": "ValueScope"
+  },
+  "profession": {
+    "en": "DCF Valuation Analyst",
+    "zh": "DCF 估值分析师"
+  },
+  "displayDescription": {
+    "en": "Reads the historical ranges first, then researches guidance and consensus, reasons through every assumption, and runs a deterministic engine to produce intrinsic value, a sensitivity matrix and three scenarios.",
+    "zh": "先看历史区间，再研究业绩指引与一致预期，逐项推理假设，用确定性引擎算出内在价值、敏感性与三情景。"
+  },
+  "avatar": "avatars/expert.png",
+  "categoryId": "08-FinanceInvestment",
+  "defaultInitPrompt": {
+    "zh": "给贵州茅台（600519.SS）做一份 DCF 估值",
+    "en": "Run a DCF valuation on Kweichow Moutai (600519.SS)"
+  },
+  "plugin": "valuescope-dcf",
+  "tags": [
+    { "en": "Valuation", "zh": "估值" },
+    { "en": "DCF", "zh": "现金流折现" },
+    { "en": "Equity Research", "zh": "股票研究" }
+  ],
+  "quickPrompts": [
+    { "en": "Run a DCF valuation on Kweichow Moutai (600519.SS)", "zh": "给贵州茅台（600519.SS）做一份 DCF 估值" },
+    { "en": "What growth assumptions does Tencent's (0700.HK) price imply?", "zh": "腾讯 0700.HK 的股价隐含了什么增长假设？" },
+    { "en": "Value Midea (000333.SZ) under bull, base and bear cases", "zh": "用三种情景估一下美的集团 000333.SZ" }
+  ],
+  "dependencies": {
+    "mcpServers": "./.mcp.json"
+  }
+}

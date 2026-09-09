@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "valuescope": {
+      "type": "streamableHttp",
+      "url": "https://mcp.valuescope.app/mcp",
+      "timeout": 60000
+    }
+  }
+}

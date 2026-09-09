@@ -1,0 +1,25 @@
+{
+  "name": "ValueScope",
+  "name_zh": "ValueScope 估值引擎",
+  "name_en": "ValueScope",
+  "source": "valuescope",
+  "type": "mcp",
+  "version": "1.0.0",
+  "description": "标准化 DCF 估值引擎：AI 负责前瞻判断，引擎负责数据与计算，同样的输入永远得到同样的估值结果。支持 A股、港股、美股、日股，A股与港股无需任何密钥。",
+  "description_zh": "标准化 DCF 估值引擎：AI 负责前瞻判断，引擎负责数据与计算，同样的输入永远得到同样的估值结果。支持 A股、港股、美股、日股，A股与港股无需任何密钥。",
+  "description_en": "Standardized DCF valuation engine for A-share, HK, US and Japan stocks. AI reasons the assumptions, the engine owns the math.",
+  "examples_zh": [
+    "给贵州茅台（600519.SS）做一份 DCF 估值",
+    "腾讯控股 0700.HK 现在的股价隐含了什么增长假设？",
+    "用乐观/中性/悲观三种情景估一下美的集团 000333.SZ",
+    "苹果 AAPL 的内在价值是多少？我的 FMP key 是 xxx"
+  ],
+  "examples_en": [
+    "Run a DCF valuation on Kweichow Moutai (600519.SS)",
+    "What growth assumptions does Tencent's (0700.HK) current price imply?",
+    "Value Midea (000333.SZ) under bull, base and bear scenarios",
+    "What is Apple's (AAPL) intrinsic value?"
+  ],
+  "auth_mode": "token",
+  "minWorkbuddyVersion": "4.23.0"
+}
