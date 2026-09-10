@@ -9,6 +9,7 @@
   "source": "valuescope",
   "type": "mcp",
   "version": "1.0.0",
+  "minWorkbuddyVersion": "4.24.0",
   "examples_zh": [
     "给贵州茅台（600519.SS）做一份 DCF 估值",
     "腾讯控股 0700.HK 现在的股价隐含了什么增长假设？",
