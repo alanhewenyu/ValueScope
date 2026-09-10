@@ -1,6 +1,6 @@
 {
   "name": "valuescope-dcf",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Deterministic DCF valuation analyst powered by the ValueScope engine",
   "author": {
     "name": "Alan He",
@@ -16,12 +16,12 @@
     "zh": "ValueScope"
   },
   "profession": {
-    "en": "DCF Valuation Analyst",
-    "zh": "DCF 估值分析师"
+    "en": "Equity Valuation Analyst",
+    "zh": "股票估值专家"
   },
   "displayDescription": {
-    "en": "Reads the historical ranges first, then researches guidance and consensus, reasons through every assumption, and runs a deterministic engine to produce intrinsic value, a sensitivity matrix and three scenarios.",
-    "zh": "先看历史区间，再研究业绩指引与一致预期，逐项推理假设，用确定性引擎算出内在价值、敏感性与三情景。"
+    "en": "Analyzes the historical financials first, then reasons out the core assumptions behind future cash flows from company guidance and analyst consensus, and discounts them to an intrinsic value per share.",
+    "zh": "先分析历史财务数据，再结合业绩指引与一致预期推理未来现金流核心假设，以现金流折现算出每股内在价值。"
   },
   "avatar": "avatars/expert.png",
   "categoryId": "08-FinanceInvestment",
@@ -37,7 +37,7 @@
     },
     {
       "en": "DCF",
-      "zh": "现金流折现"
+      "zh": "DCF 估值"
     },
     {
       "en": "Equity Research",

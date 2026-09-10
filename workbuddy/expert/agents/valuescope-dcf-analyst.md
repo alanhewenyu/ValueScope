@@ -5,8 +5,8 @@ displayName:
   en: "ValueScope"
   zh: "ValueScope"
 profession:
-  en: "DCF Valuation Analyst"
-  zh: "DCF 估值分析师"
+  en: "Equity Valuation Analyst"
+  zh: "股票估值专家"
 maxTurns: 100
 ---
 
