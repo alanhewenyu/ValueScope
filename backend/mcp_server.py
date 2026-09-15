@@ -4,7 +4,7 @@ Mounted at /mcp on the main FastAPI app (streamable HTTP transport), so any
 MCP client — Claude, ChatGPT, Cherry Studio, Dify, etc. — can call the same
 DCF engine the website uses.
 
-Single tool, two phases — mirrors the `vs --auto` CLI flow, except the
+Three tools. get_score and get_relative_valuation answer "how is this\ncompany, and is it cheap" in one call. run_dcf answers "what is it worth"\nin two phases — mirroring the `vs --auto` CLI flow, except the
 analyst role is played by the calling model itself (which, unlike an
 MCP sampling request, can search the web for guidance/consensus):
 
@@ -39,6 +39,10 @@ from backend.routers.valuation import (
     get_historical_financials,
     run_dcf as _run_dcf_endpoint,
     validate_ticker,
+)
+from backend.routers.relative import (
+    get_relative_valuation as _relative_endpoint,
+    get_scores as _scores_endpoint,
 )
 from modeling.ai_analyst import build_analysis_prompt
 from backend import analytics, mcp_usage
@@ -276,9 +280,11 @@ mcp = FastMCP(
     instructions=(
         "ValueScope 标准化 DCF 估值引擎。A股/港股开箱即用；美股/日股可先用每日限量"
         "的免费体验额度，注册 FMP key 后不限次（fmp_api_key 参数或 X-FMP-Key 请求头）。"
-        "用法：先不带假设参数调用 run_dcf 获取历史数据和参数分析指南（此步不返回估值），按指南完成参数"
-        "分析（如可用请先联网搜索），再带上你的参数调用 run_dcf 得到最终估值。所有计算"
-        "为确定性模型输出，同样输入永远得到同样结果。不构成投资建议。"
+        "三个工具：get_score 四维体检、get_relative_valuation 倍数与历史分位——两者秒回，"
+        "回答“这票怎么样、贵不贵”；run_dcf 算内在价值，分两步：先不带假设参数调用获取历史"
+        "数据和参数分析指南（此步不返回估值），按指南完成参数分析（如可用请先联网搜索），"
+        "再带上你的参数调用得到估值。相对指标与内在价值应互相验证，结论矛盾时必须解释。"
+        "所有计算为确定性模型输出，同样输入永远得到同样结果。不构成投资建议。"
     ),
     stateless_http=True,
     json_response=True,
@@ -444,52 +450,17 @@ def _build_analysis_context(ticker: str, apikey: str) -> dict:
     }
 
 
-@mcp.tool()
-def run_dcf(
-    ticker: str,
-    revenue_growth_1: float | None = None,
-    revenue_growth_2: float | None = None,
-    ebit_margin: float | None = None,
-    convergence: float | None = None,
-    revenue_invested_capital_ratio_1: float | None = None,
-    revenue_invested_capital_ratio_2: float | None = None,
-    revenue_invested_capital_ratio_3: float | None = None,
-    tax_rate: float | None = None,
-    wacc: float | None = None,
-    ronic_match_wacc: bool = False,
-    include_history_chart: bool = False,
-    fmp_api_key: str = "",
-):
-    """一站式 DCF 估值（10 年两阶段 FCFF 折现），分两步使用：
+def _resolve_key_and_quota(normalized: str, fmp_api_key: str):
+    """Charge this call against the quotas and pick the FMP key to use.
 
-    第一步——不带任何假设参数调用：返回分析材料，含历史财务数据、每个参数的历史
-    区间、引擎算出的 WACC 与历史平均税率，以及 parameter_analysis_guide（资深分析师
-    参数分析指南）。**此步不返回估值**——先给一个数字只会锚定你接下来的判断。收到后
-    请按指南对每个参数做独立分析（若有联网搜索能力，务必先按指南搜索业绩指引与
-    分析师预期），然后进入第二步。
+    Shared by every tool. Key resolution is param > X-FMP-Key header >
+    the server's trial key. The trial is charged per distinct ticker, so
+    asking for a valuation, the multiples and the score on one company
+    costs a single unit rather than three.
 
-    第二步——带上你分析得出的假设参数再次调用：返回最终估值，含每股内在价值、
-    与市价差异、价值桥、逐年预测表、敏感性矩阵、反向 DCF（市价隐含假设）。
-
-    参数单位：增长率/利润率/税率/WACC 为百分数（10 表示 10%）；
-    revenue_invested_capital_ratio 为倍数（如 2.0）；convergence 为收敛年数。
-    省略 tax_rate/wacc 时由引擎按财报与市场数据自动计算。
-
-    include_history_chart=true 时额外返回一张历史趋势图（PNG，2×2：营收与增速、
-    EBIT 利润率、Rev/IC、再投资额）——用户想看关键假设的历史数据可视化时使用。
-
-    ticker 格式：A股 600519.SS / 000333.SZ；港股 0700.HK；美股 AAPL；日股 7203.T。
-    A股/港股无需 key。美股/日股需要 FMP key：可通过 fmp_api_key 参数传入，或在
-    MCP 连接配置中设置 X-FMP-Key 请求头；未提供时可使用每日限量的免费体验额度。
-    FMP 注册（valuescope 优惠码有折扣）：
-    https://site.financialmodelingprep.com/pricing-plans?couponCode=valuescope
+    Returns (effective_key, trial_note); raises ValueError carrying a
+    message meant for the end user when a budget is exhausted.
     """
-    is_valid, err = validate_ticker(ticker)
-    if not is_valid:
-        raise ValueError(err)
-    normalized = _normalize_ticker(ticker)
-
-    # ── Quotas & key resolution: param > X-FMP-Key header > server trial ──
     meta = _request_meta.get()
     ip = meta.get("ip", "")
     is_remote = ip not in _LOOPBACK_IPS
@@ -535,13 +506,64 @@ def run_dcf(
                 except ValueError:
                     raise ValueError(_trial_exhausted) from None
                 trial_note = (
-                    f"本次美股/日股估值使用了免费体验额度"
-                    f"（今日还可估 {remaining} 只新股票；这只票当天可继续调整参数、"
-                    f"跑多情景，不再计入额度）。"
+                    f"本次美股/日股查询使用了免费体验额度"
+                    f"（今日还可查 {remaining} 只新股票；这只票当天可继续调参数、"
+                    f"跑多情景、看倍数和评分，不再计入额度）。"
                     f"注册自己的 FMP key 可不限次使用（使用 valuescope 优惠码有折扣）："
                     f"{FMP_SIGNUP_URL} —— 请在呈现结果末尾将此信息连同链接告知用户。"
                 )
             effective_key = server_key
+    return effective_key, trial_note
+
+
+@mcp.tool()
+def run_dcf(
+    ticker: str,
+    revenue_growth_1: float | None = None,
+    revenue_growth_2: float | None = None,
+    ebit_margin: float | None = None,
+    convergence: float | None = None,
+    revenue_invested_capital_ratio_1: float | None = None,
+    revenue_invested_capital_ratio_2: float | None = None,
+    revenue_invested_capital_ratio_3: float | None = None,
+    tax_rate: float | None = None,
+    wacc: float | None = None,
+    ronic_match_wacc: bool = False,
+    include_history_chart: bool = False,
+    fmp_api_key: str = "",
+):
+    """一站式 DCF 估值（10 年两阶段 FCFF 折现），分两步使用：
+
+    第一步——不带任何假设参数调用：返回分析材料，含历史财务数据、每个参数的历史
+    区间、引擎算出的 WACC 与历史平均税率，以及 parameter_analysis_guide（资深分析师
+    参数分析指南）。**此步不返回估值**——先给一个数字只会锚定你接下来的判断。收到后
+    请按指南对每个参数做独立分析（若有联网搜索能力，务必先按指南搜索业绩指引与
+    分析师预期），然后进入第二步。
+
+    第二步——带上你分析得出的假设参数再次调用：返回最终估值，含每股内在价值、
+    与市价差异、价值桥、逐年预测表、敏感性矩阵、反向 DCF（市价隐含假设）。
+
+    参数单位：增长率/利润率/税率/WACC 为百分数（10 表示 10%）；
+    revenue_invested_capital_ratio 为倍数（如 2.0）；convergence 为收敛年数。
+    省略 tax_rate/wacc 时由引擎按财报与市场数据自动计算。
+
+    include_history_chart=true 时额外返回一张历史趋势图（PNG，2×2：营收与增速、
+    EBIT 利润率、Rev/IC、再投资额）——用户想看关键假设的历史数据可视化时使用。
+
+    ticker 格式：A股 600519.SS / 000333.SZ；港股 0700.HK；美股 AAPL；日股 7203.T。
+    A股/港股无需 key。美股/日股需要 FMP key：可通过 fmp_api_key 参数传入，或在
+    MCP 连接配置中设置 X-FMP-Key 请求头；未提供时可使用每日限量的免费体验额度。
+    FMP 注册（valuescope 优惠码有折扣）：
+    https://site.financialmodelingprep.com/pricing-plans?couponCode=valuescope
+    """
+    is_valid, err = validate_ticker(ticker)
+    if not is_valid:
+        raise ValueError(err)
+    normalized = _normalize_ticker(ticker)
+
+    # ── Quotas & key resolution (shared with the other tools) ──
+    effective_key, trial_note = _resolve_key_and_quota(normalized, fmp_api_key)
+    ip = _request_meta.get().get("ip", "")
 
     core = {
         "revenue_growth_1": revenue_growth_1,
@@ -671,6 +693,111 @@ def _analysis_payload(ticker: str, apikey: str, defaults: dict | None,
             "生成情景区间。historical_defaults 只是历史均值兜底——省略某个参数时"
             "引擎会用它，但那不是判断，返回结果里会如实标注哪些参数走了兜底。"
         ),
+        "disclaimer": DISCLAIMER,
+    }
+
+
+@mcp.tool()
+def get_relative_valuation(ticker: str, years: int = 5, fmp_api_key: str = ""):
+    """相对估值：当前倍数 + 自身历史分位。**秒回，不需要任何假设参数。**
+
+    回答"这只票相对自己的历史贵不贵"——与 run_dcf 互补而非替代：
+    run_dcf 算的是内在价值（这家公司值多少），本工具算的是相对位置
+    （市场现在给它的倍数处于历史什么水平）。两者应互相验证：若 DCF 显示
+    低估而倍数处于历史高位，必须解释这个矛盾。
+
+    返回：
+    - current —— 当前 P/E、Forward P/E、P/B、P/S、EV/EBITDA
+    - historical —— P/E 与 P/B 的历史区间和当前分位（百分位越低越便宜）
+
+    注意分位只与公司自身历史比较，不含可比公司横向对比；判断行业是否
+    整体重估时，仍需结合同业倍数。years 可取 1-10，默认 5 年。
+
+    ticker 格式同 run_dcf。A股/港股无需 key；美股/日股需要 FMP key 或
+    使用每日限量的免费体验额度。
+    """
+    is_valid, err = validate_ticker(ticker)
+    if not is_valid:
+        raise ValueError(err)
+    normalized = _normalize_ticker(ticker)
+    effective_key, trial_note = _resolve_key_and_quota(normalized, fmp_api_key)
+    ip = _request_meta.get().get("ip", "")
+
+    try:
+        result = _relative_endpoint(normalized, effective_key, years)
+    except HTTPException as e:
+        raise _friendly_error(ValueError(str(e.detail)), normalized,
+                              bool(_real_key(fmp_api_key))) from e
+    except Exception as e:
+        raise _friendly_error(e, normalized, bool(_real_key(fmp_api_key))) from e
+
+    _track("mcp_relative", ip, {
+        "market": _market(normalized), "ticker": normalized.upper(),
+        "used_trial": "true" if trial_note else "false",
+    })
+    return {
+        "ticker": normalized.upper(),
+        "years": years,
+        "current_multiples": result.get("current"),
+        "historical_percentiles": result.get("historical"),
+        "fmp_trial_note": trial_note,
+        "how_to_read": (
+            "分位是相对公司自身历史的位置：10 分位以下 = 比历史上 90% 的时间都便宜。"
+            "低分位不等于便宜——基本面恶化时倍数下移是合理的，须结合增速与利润率趋势判断；"
+            "高分位也不等于贵，成长加速时市场愿意给更高倍数。"
+            "呈现时给出倍数、分位和一句话解读，不要只报数字。"
+        ),
+        "web_page_url": f"https://valuescope.app/stock/{normalized.upper()}/relative",
+        "disclaimer": DISCLAIMER,
+    }
+
+
+@mcp.tool()
+def get_score(ticker: str, fmp_api_key: str = ""):
+    """四维综合评分（估值/质量/成长/动量，各 25%）。**秒回，不需要假设参数。**
+
+    用于快速体检一家公司：每个维度 0-100 独立打分后等权合成总分。
+    - 估值 —— 相对自身历史是否便宜（PE 历史分位、Forward PE、经营 PE）
+    - 质量 —— 是否经营得好（ROE 水平与趋势、收入与利润率趋势、杠杆、
+      Piotroski F 分、利润质量）
+    - 成长 —— 是否在增长（预期 EPS 增速、3 年收入 CAGR、最新收入增速）
+    - 动量 —— 市场是否在奖励它（12-1 月、6-1 月收益，剔除最近 1 个月）
+
+    这是**相对指标的体检，不是内在价值判断**：估值维度用的是 PE 分位而非
+    DCF。要回答"值多少钱"请用 run_dcf；要回答"这公司整体怎么样"用本工具。
+
+    ticker 格式同 run_dcf。A股/港股无需 key；美股/日股需要 FMP key 或
+    使用每日限量的免费体验额度。
+    """
+    is_valid, err = validate_ticker(ticker)
+    if not is_valid:
+        raise ValueError(err)
+    normalized = _normalize_ticker(ticker)
+    effective_key, trial_note = _resolve_key_and_quota(normalized, fmp_api_key)
+    ip = _request_meta.get().get("ip", "")
+
+    try:
+        scores = _scores_endpoint(normalized, effective_key)
+    except HTTPException as e:
+        raise _friendly_error(ValueError(str(e.detail)), normalized,
+                              bool(_real_key(fmp_api_key))) from e
+    except Exception as e:
+        raise _friendly_error(e, normalized, bool(_real_key(fmp_api_key))) from e
+
+    _track("mcp_score", ip, {
+        "market": _market(normalized), "ticker": normalized.upper(),
+        "used_trial": "true" if trial_note else "false",
+    })
+    return {
+        "ticker": normalized.upper(),
+        "scores": scores,
+        "fmp_trial_note": trial_note,
+        "how_to_read": (
+            "0-20 很差 / 20-40 偏弱 / 40-60 中等 / 60-80 偏强 / 80-100 优秀。"
+            "总分接近的两家公司构成可能完全不同——务必拆开四个维度讲，"
+            "指出哪一维拖累、哪一维支撑。缺失数据按比例重新加权，不计罚分。"
+        ),
+        "web_page_url": f"https://valuescope.app/stock/{normalized.upper()}/scoring",
         "disclaimer": DISCLAIMER,
     }
 

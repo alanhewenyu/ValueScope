@@ -55,7 +55,12 @@ Then just ask in natural language: *"Value Kweichow Moutai with a DCF"* — no c
 
 ### How it works — one tool, two phases
 
-The server exposes a single `run_dcf` tool that mirrors an equity analyst's workflow, with the calling model playing the analyst:
+`get_score` (four-dimension check-up) and `get_relative_valuation` (current multiples plus
+historical percentiles) answer "how is this company, and is it cheap against its own history"
+in a single call.
+
+`run_dcf` answers "what is it worth", mirroring an equity analyst's workflow with the calling
+model playing the analyst:
 
 1. **Material** — call `run_dcf(ticker)` with no assumptions. Returns the historical financials, each parameter's historical range, the engine-computed WACC and tax rate, and an analyst guide telling the model how to evaluate every assumption. **No valuation is returned** — a number at this point would only anchor the reasoning that follows.
 2. **Final** — the model searches the web for guidance and consensus, reasons about each parameter, then calls `run_dcf(ticker, <assumptions>)` for the final valuation: intrinsic value, value bridge, forecast table, sensitivity matrix, and reverse DCF (what the market price implies).
