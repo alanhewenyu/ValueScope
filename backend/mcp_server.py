@@ -83,7 +83,7 @@ _request_meta: contextvars.ContextVar[dict] = contextvars.ContextVar(
 
 
 class MCPRequestMetaMiddleware:
-    """Stash client IP and X-FMP-Key header for /mcp requests."""
+    """Stash client IP and the caller's FMP key for /mcp requests."""
 
     def __init__(self, app):
         self.app = app
@@ -108,13 +108,29 @@ class MCPRequestMetaMiddleware:
             fwd = headers.get("x-forwarded-for", "")
             client = scope.get("client") or ("", 0)
             ip = (fwd.split(",")[0].strip() if fwd else "") or client[0] or "unknown"
-            token = _request_meta.set({"ip": ip, "fmp_key": _real_key(headers.get("x-fmp-key", ""))})
+            token = _request_meta.set({"ip": ip, "fmp_key": _header_key(headers)})
             try:
                 await self.app(scope, receive, send)
             finally:
                 _request_meta.reset(token)
         else:
             await self.app(scope, receive, send)
+
+
+def _header_key(headers: dict) -> str:
+    """The FMP key a client sent, from X-FMP-Key or an Authorization bearer.
+
+    claude.ai custom connectors only allow approved header names, and
+    X-FMP-Key is not one of them; Authorization is. X-FMP-Key wins when
+    both are present so existing setups keep their behavior.
+    """
+    key = _real_key(headers.get("x-fmp-key", ""))
+    if key:
+        return key
+    scheme, _, credentials = headers.get("authorization", "").strip().partition(" ")
+    if scheme.lower() == "bearer":
+        return _real_key(credentials)
+    return ""
 
 
 def _real_key(value: str) -> str:

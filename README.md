@@ -80,6 +80,8 @@ claude mcp remove valuescope
 claude mcp add valuescope --transport http https://mcp.valuescope.app/mcp --header "X-FMP-Key: YOUR_KEY"
 ```
 
+**claude.ai custom connector** (web / mobile app) — claude.ai does not accept the `X-FMP-Key` header name there. Add a header named `Authorization` with the value `Bearer YOUR_KEY` instead.
+
 **Per-conversation** — just say *"my FMP key is …"* in the chat; the model passes it on each call (only valid for that conversation).
 
 ### Self-hosting the MCP server
