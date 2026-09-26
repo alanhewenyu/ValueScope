@@ -23,6 +23,7 @@ import logging
 import os
 import threading
 import time
+from urllib.parse import parse_qs
 
 from fastapi import HTTPException
 from mcp.server.fastmcp import FastMCP, Image
@@ -108,7 +109,11 @@ class MCPRequestMetaMiddleware:
             fwd = headers.get("x-forwarded-for", "")
             client = scope.get("client") or ("", 0)
             ip = (fwd.split(",")[0].strip() if fwd else "") or client[0] or "unknown"
-            token = _request_meta.set({"ip": ip, "fmp_key": _header_key(headers)})
+            key, source = _header_key(headers)
+            if not key:
+                key = _query_key(scope.get("query_string", b""))
+                source = "url" if key else ""
+            token = _request_meta.set({"ip": ip, "fmp_key": key, "fmp_key_source": source})
             try:
                 await self.app(scope, receive, send)
             finally:
@@ -117,8 +122,8 @@ class MCPRequestMetaMiddleware:
             await self.app(scope, receive, send)
 
 
-def _header_key(headers: dict) -> str:
-    """The FMP key a client sent, from X-FMP-Key or an Authorization bearer.
+def _header_key(headers: dict) -> tuple[str, str]:
+    """The FMP key a client sent in a header, and which header carried it.
 
     claude.ai custom connectors only allow approved header names, and
     X-FMP-Key is not one of them; Authorization is. X-FMP-Key wins when
@@ -126,11 +131,44 @@ def _header_key(headers: dict) -> str:
     """
     key = _real_key(headers.get("x-fmp-key", ""))
     if key:
-        return key
+        return key, "x-fmp-key"
     scheme, _, credentials = headers.get("authorization", "").strip().partition(" ")
     if scheme.lower() == "bearer":
-        return _real_key(credentials)
-    return ""
+        key = _real_key(credentials)
+        if key:
+            return key, "authorization"
+    return "", ""
+
+
+def _query_key(query_string: bytes) -> str:
+    """The FMP key from a ?fmp_key= on the connector URL.
+
+    For clients that let users set a URL but no headers at all.
+    """
+    values = parse_qs(query_string.decode("latin-1")).get("fmp_key") or [""]
+    return _real_key(values[0])
+
+
+_KEY_SOURCE_LABELS = {
+    "param": "fmp_api_key 参数",
+    "x-fmp-key": "X-FMP-Key 请求头",
+    "authorization": "Authorization 请求头",
+    "url": "连接 URL 中的 fmp_key",
+}
+
+
+def _caller_key(fmp_api_key: str) -> tuple[str, str]:
+    """The key this call runs with, and where it came from ("" if none).
+
+    Resolution order is the tool parameter, then whatever the request
+    carried (see MCPRequestMetaMiddleware).
+    """
+    key = _real_key(fmp_api_key)
+    if key:
+        return key, "param"
+    meta = _request_meta.get()
+    key = meta.get("fmp_key", "")
+    return (key, meta.get("fmp_key_source", "")) if key else ("", "")
 
 
 def _real_key(value: str) -> str:
@@ -262,8 +300,15 @@ FMP_SIGNUP_URL = (
 )
 
 
-def _friendly_error(exc: Exception, ticker: str, has_key: bool) -> ValueError:
-    """Wrap raw upstream failures (e.g. FMP 401) with actionable guidance."""
+def _friendly_error(exc: Exception, ticker: str, key_source: str) -> ValueError:
+    """Wrap raw upstream failures (e.g. FMP 401) with actionable guidance.
+
+    key_source is where the caller's key came from (see _caller_key), or
+    "" when the call carried none. Naming it tells a user whose key was
+    received but rejected apart from one whose key never arrived.
+    """
+    has_key = bool(key_source)
+    source_label = _KEY_SOURCE_LABELS.get(key_source, key_source)
     msg = str(exc)
     # A US/JP ticker failing with "data not found" usually means a key
     # problem (the FMP fetch just returns nothing), not missing data
@@ -273,7 +318,7 @@ def _friendly_error(exc: Exception, ticker: str, has_key: bool) -> ValueError:
             msg = "401"
         else:
             return ValueError(
-                f"未能获取 {ticker} 的数据：可能是 fmp_api_key 无效/额度不足，"
+                f"未能获取 {ticker} 的数据：可能是 key（来自{source_label}）无效/额度不足，"
                 f"也可能该代码不存在。请核对代码拼写，并检查 key 状态"
                 f"（FMP 注册/升级，含 valuescope 优惠码：{FMP_SIGNUP_URL}）。"
                 f"—— 请把该链接原样告知用户。"
@@ -282,10 +327,11 @@ def _friendly_error(exc: Exception, ticker: str, has_key: bool) -> ValueError:
         return ValueError(
             f"{ticker} 的数据需要 Financial Modeling Prep (FMP) API key"
             f"（美股/日股必须；A股/港股无需 key，可直接估值）。"
-            + ("当前提供的 fmp_api_key 无效或额度不足，请检查 key 或升级套餐："
+            + (f"服务器收到了 key（来自{source_label}），但 FMP 拒绝了它："
+               "key 无效或额度不足，请检查 key 或升级套餐："
                if has_key
-               else "获取方式：注册 FMP 订阅后，把 key 通过 fmp_api_key 参数传入"
-                    "即可。注册链接（使用 valuescope 优惠码有折扣）：")
+               else "本次请求没有带 key。获取方式：注册 FMP 订阅后，把 key 通过"
+                    " fmp_api_key 参数传入即可。注册链接（使用 valuescope 优惠码有折扣）：")
             + FMP_SIGNUP_URL
             + " —— 请把该链接原样告知用户。"
         )
@@ -469,8 +515,8 @@ def _build_analysis_context(ticker: str, apikey: str) -> dict:
 def _resolve_key_and_quota(normalized: str, fmp_api_key: str):
     """Charge this call against the quotas and pick the FMP key to use.
 
-    Shared by every tool. Key resolution is param > X-FMP-Key header >
-    the server's trial key. The trial is charged per distinct ticker, so
+    Shared by every tool. Key resolution is param > the request's key
+    (X-FMP-Key, Authorization bearer, ?fmp_key=) > the server's trial key. The trial is charged per distinct ticker, so
     asking for a valuation, the multiples and the score on one company
     costs a single unit rather than three.
 
@@ -480,7 +526,7 @@ def _resolve_key_and_quota(normalized: str, fmp_api_key: str):
     meta = _request_meta.get()
     ip = meta.get("ip", "")
     is_remote = ip not in _LOOPBACK_IPS
-    user_key = _real_key(fmp_api_key) or meta.get("fmp_key", "")
+    user_key, _ = _caller_key(fmp_api_key)
 
     if is_remote:
         try:
@@ -579,6 +625,7 @@ def run_dcf(
 
     # ── Quotas & key resolution (shared with the other tools) ──
     effective_key, trial_note = _resolve_key_and_quota(normalized, fmp_api_key)
+    _, key_source = _caller_key(fmp_api_key)
     ip = _request_meta.get().get("ip", "")
 
     core = {
@@ -600,9 +647,9 @@ def run_dcf(
         try:
             defaults = _get_dcf_defaults_endpoint(normalized, effective_key)
         except HTTPException as e:
-            raise _friendly_error(ValueError(str(e.detail)), normalized, bool(user_key)) from e
+            raise _friendly_error(ValueError(str(e.detail)), normalized, key_source) from e
         except Exception as e:
-            raise _friendly_error(e, normalized, bool(user_key)) from e
+            raise _friendly_error(e, normalized, key_source) from e
 
     if analysis_phase:
         return _with_optional_chart(
@@ -626,13 +673,13 @@ def run_dcf(
     try:
         result = _run_dcf_endpoint(params)
     except HTTPException as e:
-        raise _friendly_error(ValueError(str(e.detail)), normalized, bool(user_key)) from e
+        raise _friendly_error(ValueError(str(e.detail)), normalized, key_source) from e
     except Exception as e:
-        raise _friendly_error(e, normalized, bool(user_key)) from e
+        raise _friendly_error(e, normalized, key_source) from e
 
     # US/JP pages need the visitor's own FMP key in browser settings, so the
     # link is only unconditionally useful for A-shares/HK.
-    needs_key_on_web = needs_key
+    needs_key_on_web = "." not in normalized or normalized.upper().endswith(".T")
     if trial_note:
         result["fmp_trial_note"] = trial_note
     result["web_page_url"] = f"https://valuescope.app/stock/{normalized.upper()}/dcf"
@@ -737,15 +784,15 @@ def get_relative_valuation(ticker: str, years: int = 5, fmp_api_key: str = ""):
         raise ValueError(err)
     normalized = _normalize_ticker(ticker)
     effective_key, trial_note = _resolve_key_and_quota(normalized, fmp_api_key)
+    _, key_source = _caller_key(fmp_api_key)
     ip = _request_meta.get().get("ip", "")
 
     try:
         result = _relative_endpoint(normalized, effective_key, years)
     except HTTPException as e:
-        raise _friendly_error(ValueError(str(e.detail)), normalized,
-                              bool(_real_key(fmp_api_key))) from e
+        raise _friendly_error(ValueError(str(e.detail)), normalized, key_source) from e
     except Exception as e:
-        raise _friendly_error(e, normalized, bool(_real_key(fmp_api_key))) from e
+        raise _friendly_error(e, normalized, key_source) from e
 
     _track("mcp_relative", ip, {
         "market": _market(normalized), "ticker": normalized.upper(),
@@ -790,15 +837,15 @@ def get_score(ticker: str, fmp_api_key: str = ""):
         raise ValueError(err)
     normalized = _normalize_ticker(ticker)
     effective_key, trial_note = _resolve_key_and_quota(normalized, fmp_api_key)
+    _, key_source = _caller_key(fmp_api_key)
     ip = _request_meta.get().get("ip", "")
 
     try:
         scores = _scores_endpoint(normalized, effective_key)
     except HTTPException as e:
-        raise _friendly_error(ValueError(str(e.detail)), normalized,
-                              bool(_real_key(fmp_api_key))) from e
+        raise _friendly_error(ValueError(str(e.detail)), normalized, key_source) from e
     except Exception as e:
-        raise _friendly_error(e, normalized, bool(_real_key(fmp_api_key))) from e
+        raise _friendly_error(e, normalized, key_source) from e
 
     _track("mcp_score", ip, {
         "market": _market(normalized), "ticker": normalized.upper(),
