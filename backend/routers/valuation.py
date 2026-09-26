@@ -162,6 +162,19 @@ def get_wacc(
 
 
 @router.post("/dcf")
+def _growth_margin_payload(sens_table):
+    """The growth × margin sensitivity as JSON: table[i][j] is the value at
+    growth_rates[i] (Years 2-5 revenue growth) and margins[j] (EBIT margin),
+    matching how sensitivity_analysis builds the DataFrame."""
+    if not hasattr(sens_table, 'values'):
+        return {"table": sens_table, "growth_rates": [], "margins": []}
+    return {
+        "table": sens_table.values.tolist(),
+        "growth_rates": list(sens_table.index),
+        "margins": list(sens_table.columns),
+    }
+
+
 def run_dcf(params: DCFParams):
     """Run DCF valuation with given parameters.
 
@@ -348,11 +361,7 @@ def run_dcf(params: DCFParams):
             "outstanding_shares": results.get("outstanding_shares", 0),
         },
         "sensitivity": {
-            "growth_margin": {
-                "table": sens_table.values.tolist() if hasattr(sens_table, 'values') else sens_table,
-                "growth_rates": list(sens_table.columns) if hasattr(sens_table, 'columns') else [],
-                "margins": list(sens_table.index) if hasattr(sens_table, 'index') else [],
-            },
+            "growth_margin": _growth_margin_payload(sens_table),
             "wacc": {
                 "results": wacc_results,
                 "base": wacc_base,
@@ -1720,8 +1729,9 @@ def _build_dcf_excel(buf, base_year_data, financial_data, valuation_params,
     r2 += 2
 
     if hasattr(sens_table, 'values'):
-        margins = list(sens_table.index) if hasattr(sens_table, 'index') else []
-        growths = list(sens_table.columns) if hasattr(sens_table, 'columns') else []
+        # Rows = Years 2-5 growth, columns = EBIT margin (see sensitivity_analysis)
+        growths = list(sens_table.index) if hasattr(sens_table, 'index') else []
+        margins = list(sens_table.columns) if hasattr(sens_table, 'columns') else []
         ws2.cell(row=r2, column=1, value="Growth \\ Margin").font = Font(bold=True, size=10)
         for j, m in enumerate(margins):
             c = ws2.cell(row=r2, column=2 + j,
@@ -1735,7 +1745,7 @@ def _build_dcf_excel(buf, base_year_data, financial_data, valuation_params,
             c.number_format = pct_fmt
             c.font = Font(bold=True, size=10)
             for mi in range(len(margins)):
-                val = sens_table.values[mi][gi] if hasattr(sens_table, 'values') else 0
+                val = sens_table.values[gi][mi] if hasattr(sens_table, 'values') else 0
                 ws2.cell(row=row, column=2 + mi, value=val).number_format = amt_fmt
         r2 += len(growths) + 3
 

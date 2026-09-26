@@ -1738,8 +1738,8 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
 
                   {/* Growth vs Margin heatmap */}
                   {result.sensitivity.growth_margin?.table?.length > 0 && (() => {
-                    const baseRi = Math.floor(result.sensitivity.growth_margin.margins.length / 2);
-                    const baseCi = Math.floor(result.sensitivity.growth_margin.growth_rates.length / 2);
+                    const baseRi = Math.floor(result.sensitivity.growth_margin.growth_rates.length / 2);
+                    const baseCi = Math.floor(result.sensitivity.growth_margin.margins.length / 2);
                     return (
                       <div>
                         <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">{t.sensitivityGrowthMargin}</h4>
@@ -1748,13 +1748,13 @@ function DCFTab({ ticker, waccData, financials, profile, prefetchedDefaults }: {
                             <thead>
                               <tr>
                                 <th className="py-2 px-3 text-right text-gray-400 text-[10px]">Growth \ Margin</th>
-                                {result.sensitivity.growth_margin.growth_rates.map((m, ci) => (
+                                {result.sensitivity.growth_margin.margins.map((m, ci) => (
                                   <th key={m} className={`py-2 px-3 text-right font-medium whitespace-nowrap ${ci === baseCi ? "text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20" : "text-gray-500"}`}>{m.toFixed(0)}%</th>
                                 ))}
                               </tr>
                             </thead>
                             <tbody>
-                              {result.sensitivity.growth_margin.margins.map((g, ri) => {
+                              {result.sensitivity.growth_margin.growth_rates.map((g, ri) => {
                                 const isBaseRow = ri === baseRi;
                                 return (
                                   <tr key={g} className={isBaseRow ? "bg-blue-50/40 dark:bg-blue-950/15" : ""}>
