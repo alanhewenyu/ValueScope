@@ -6,6 +6,7 @@ the first fetch to complete, then all share the cached result.
 """
 
 import copy
+import hashlib
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -91,6 +92,21 @@ def _get_lock(key: str) -> threading.Lock:
         return _locks[key]
 
 
+def _neg_cache_key(cache_key, ticker, apikey):
+    """Where a failed fetch is remembered.
+
+    A-share and HK data needs no key, so a failure there is about the
+    ticker. US/JP data comes from FMP, where a failure is often about the
+    key (none, invalid, over quota); remembering it per ticker would serve
+    a caller with a working key the failure of an earlier keyless one.
+    """
+    from modeling.data import is_a_share, is_hk_stock
+    if is_a_share(ticker) or is_hk_stock(ticker):
+        return cache_key
+    digest = hashlib.sha256((apikey or "").encode()).hexdigest()[:12]
+    return f"{cache_key}:k{digest}"
+
+
 def get_historical_financials(ticker, period, apikey, historical_periods):
     """Fetch financials with per-ticker locking + caching + freshness check.
 
@@ -108,8 +124,13 @@ def get_historical_financials(ticker, period, apikey, historical_periods):
             return (None,) if age < _NEG_TTL else None
         return (copy.deepcopy(entry[1]),) if age < _TTL else None
 
+    neg_key = _neg_cache_key(cache_key, ticker, apikey)
+
+    def _hit():
+        return _memory_hit(_cache.get(cache_key)) or _memory_hit(_cache.get(neg_key))
+
     # Fast path: cache hit (no lock needed)
-    hit = _memory_hit(_cache.get(cache_key))
+    hit = _hit()
     if hit:
         return hit[0]
 
@@ -117,7 +138,7 @@ def get_historical_financials(ticker, period, apikey, historical_periods):
     lock = _get_lock(cache_key)
     with lock:
         # Double-check after acquiring lock (another thread may have populated cache)
-        hit = _memory_hit(_cache.get(cache_key))
+        hit = _hit()
         if hit:
             return hit[0]
 
@@ -129,8 +150,8 @@ def get_historical_financials(ticker, period, apikey, historical_periods):
             return disk
 
         # Negative disk cache: recent failed fetch — don't hammer the source
-        if persistent_cache.get(f"finneg:{cache_key}") is not None:
-            _cache[cache_key] = (time.monotonic(), _NO_DATA)
+        if persistent_cache.get(f"finneg:{neg_key}") is not None:
+            _cache[neg_key] = (time.monotonic(), _NO_DATA)
             _evict_if_needed()
             return None
 
@@ -156,9 +177,9 @@ def get_historical_financials(ticker, period, apikey, historical_periods):
         else:
             # Remember the failure so the other endpoints serving this page
             # visit (and the crawler's next sweep) don't repeat the fetch.
-            _cache[cache_key] = (time.monotonic(), _NO_DATA)
+            _cache[neg_key] = (time.monotonic(), _NO_DATA)
             _evict_if_needed()
-            persistent_cache.put(f"finneg:{cache_key}", True, _DISK_NEG_TTL)
+            persistent_cache.put(f"finneg:{neg_key}", True, _DISK_NEG_TTL)
 
         return data
 
