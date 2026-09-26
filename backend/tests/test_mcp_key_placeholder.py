@@ -8,7 +8,7 @@ Run: .venv/bin/python -m pytest backend/tests/ -q
 """
 import pytest
 
-from backend.mcp_server import _real_key
+from backend.mcp_server import _header_key, _real_key
 
 
 @pytest.mark.parametrize("value", [
@@ -32,3 +32,20 @@ def test_placeholder_reads_as_absent(value):
 ])
 def test_real_keys_survive(value, expected):
     assert _real_key(value) == expected
+
+
+@pytest.mark.parametrize("headers, expected", [
+    ({"x-fmp-key": "abc"}, "abc"),
+    ({"authorization": "Bearer abc"}, "abc"),
+    ({"authorization": "bearer   abc  "}, "abc"),
+    # X-FMP-Key wins so existing setups are unaffected.
+    ({"x-fmp-key": "abc", "authorization": "Bearer xyz"}, "abc"),
+    # A blank or placeholder X-FMP-Key falls through to the bearer.
+    ({"x-fmp-key": "${FMP_KEY}", "authorization": "Bearer xyz"}, "xyz"),
+    ({"authorization": "Bearer ${FMP_KEY}"}, ""),
+    ({"authorization": "Basic abc"}, ""),
+    ({"authorization": "Bearer"}, ""),
+    ({}, ""),
+])
+def test_header_key(headers, expected):
+    assert _header_key(headers) == expected

@@ -78,6 +78,8 @@ claude mcp remove valuescope
 claude mcp add valuescope --transport http https://mcp.valuescope.app/mcp --header "X-FMP-Key: 你的KEY"
 ```
 
+**claude.ai 自定义连接器(网页 / 手机 App)** —— claude.ai 那里不接受 `X-FMP-Key` 这个请求头名。改为添加名为 `Authorization` 的请求头,值填 `Bearer 你的KEY`。
+
 **按对话临时给** —— 在对话里直接说"我的 FMP key 是 …",模型会在每次调用时带上(仅当前对话有效)。
 
 ### 自建 MCP 服务
