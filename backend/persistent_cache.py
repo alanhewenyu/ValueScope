@@ -93,6 +93,32 @@ def get(key: str):
         return None
 
 
+def get_with_age(key: str):
+    """Return (value, age_in_seconds), or None if missing/expired/unavailable.
+
+    Lets a caller serve a still-valid but aging entry immediately and refresh
+    it in the background, instead of blocking a request on a cold upstream
+    fetch the moment the entry crosses a freshness line.
+    """
+    if not _ensure_init():
+        return None
+    try:
+        with _connect() as conn:
+            row = conn.execute(
+                "SELECT value, expires_at, created_at FROM api_cache WHERE key=?", (key,)
+            ).fetchone()
+        if row is None:
+            return None
+        value_blob, expires_at, created_at = row
+        now = time.time()
+        if now > expires_at:
+            return None
+        return pickle.loads(value_blob), max(0.0, now - created_at)
+    except Exception as e:
+        logger.debug("Persistent cache get_with_age failed for %s: %s", key, e)
+        return None
+
+
 def delete(key: str) -> None:
     """Drop a cache entry. Silently no-ops on any failure."""
     if not _ensure_init():

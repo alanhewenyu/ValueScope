@@ -86,17 +86,27 @@ def _needs_fmp_key(normalized: str) -> bool:
     return not (is_a_share(normalized) or is_hk_stock(normalized))
 
 
-# Concurrency gate for cold upstream fetches (akshare/yfinance can take
-# 40-110s when sources are flaky). Without it, a crawler sweep of the 10k-URL
-# sitemap fills the 40-thread pool with slow fetches and the whole API hangs.
-# Cache hits bypass the gate; over-limit cold requests fail fast with 503 so
-# crawlers back off and retry instead of strangling the service.
-_COLD_FETCH_SEM = threading.BoundedSemaphore(int(os.environ.get("VS_MAX_COLD_FETCH", "6")))
+# Concurrency gate for cold upstream fetches. Without it, a crawler sweep of
+# the 10k-URL sitemap fills the thread pool with slow fetches and the whole API
+# hangs. Cache hits bypass the gate; over-limit cold requests fail fast with 503
+# so crawlers back off and retry instead of strangling the service.
+#
+# The limit assumes fetches actually finish. Until backend/http_timeout.py gave
+# requests a default timeout they could hang indefinitely, and six hangs took
+# every profile/financials request down for hours (100% 503, zero completions)
+# even though healthy fetches finish in 0.4-4.2s. With bounded fetches the gate
+# can be wider — real latency, not hangs, is what it now has to absorb.
+_COLD_FETCH_SEM = threading.BoundedSemaphore(int(os.environ.get("VS_MAX_COLD_FETCH", "12")))
+
+# Waiting long here is counterproductive: the waiter holds a pool thread the
+# whole time, and a crawler would rather have an immediate 503 + Retry-After
+# than a 10s stall. Real users get the data from the client-side call anyway.
+_COLD_FETCH_WAIT = float(os.environ.get("VS_COLD_FETCH_WAIT", "1"))
 
 
 class _cold_fetch_slot:
     def __enter__(self):
-        if not _COLD_FETCH_SEM.acquire(timeout=10):
+        if not _COLD_FETCH_SEM.acquire(timeout=_COLD_FETCH_WAIT):
             raise HTTPException(status_code=503, detail="Busy fetching data, retry shortly",
                                 headers={"Retry-After": "20"})
         return self

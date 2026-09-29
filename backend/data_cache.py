@@ -7,11 +7,14 @@ the first fetch to complete, then all share the cached result.
 
 import copy
 import hashlib
+import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
 from backend import persistent_cache
+
+logger = logging.getLogger("valuescope.data_cache")
 
 _cache: dict[str, tuple[float, dict]] = {}
 _locks: dict[str, threading.Lock] = {}
@@ -28,7 +31,14 @@ _MAX_CACHE_ENTRIES = 24
 # Persistent (SQLite) TTLs — the warm layer that survives restarts.
 # Financial statements change quarterly; a day-old copy beats a 5-20s cold fetch.
 _DISK_FIN_TTL = 86400        # 24 hours
-_DISK_PROFILE_TTL = 3600     # 1 hour (price drifts, but router already caches 30 min)
+_DISK_PROFILE_TTL = 86400    # Retention, not freshness — see _DISK_PROFILE_FRESH.
+_DISK_PROFILE_FRESH = 3600   # 1 hour. Past this the entry is served immediately
+                             # and refreshed in the background: the price stays
+                             # about as current as the old hard 1h expiry gave us,
+                             # but an aging profile can never force a crawler hit
+                             # into a cold fetch — which is what left stock pages
+                             # rendering as empty shells and got 983 of them
+                             # classified as Soft 404.
 _DISK_BETA_TTL = 7 * 86400   # 7 days
 
 # Negative cache: a failed financials fetch (delisted ticker, no data at the
@@ -216,7 +226,42 @@ def get_beta(ticker):
         return beta
 
 
-def get_company_profile(ticker, apikey=''):
+_refreshing: set[str] = set()
+_refreshing_lock = threading.Lock()
+# A crawler sweeping thousands of aging tickers must not translate into
+# thousands of threads. Skipped refreshes are harmless: the entry stays served
+# and the next visitor schedules it again.
+_MAX_CONCURRENT_REFRESH = 4
+
+
+def _schedule_profile_refresh(ticker, apikey=''):
+    """Refresh an aging profile off the request path, one worker per ticker.
+
+    The caller has already been served the stale copy, so this only has to
+    replace it before the next visitor — never block anyone.
+    """
+    with _refreshing_lock:
+        if ticker in _refreshing or len(_refreshing) >= _MAX_CONCURRENT_REFRESH:
+            return
+        _refreshing.add(ticker)
+
+    def _run():
+        try:
+            get_company_profile(ticker, apikey, _force=True)
+        except Exception as e:
+            # The stale entry stays valid until _DISK_PROFILE_TTL, so a failed
+            # refresh costs freshness, not availability.
+            logger.debug("Background profile refresh failed for %s: %s: %s",
+                         ticker, type(e).__name__, e)
+        finally:
+            with _refreshing_lock:
+                _refreshing.discard(ticker)
+
+    threading.Thread(target=_run, daemon=True,
+                     name=f"profile-refresh-{ticker}").start()
+
+
+def get_company_profile(ticker, apikey='', _force=False):
     """Cached wrapper for fetch_company_profile + beta + enrichment.
 
     Multiple endpoints (wacc, buffett, scores, dcf) all need the same profile.
@@ -224,19 +269,13 @@ def get_company_profile(ticker, apikey=''):
 
     For A-shares, profile fetch and beta calculation run in parallel
     (~3s each → ~3s total instead of ~6s serial).
+
+    `_force` skips every cache tier and refetches; it is how the background
+    refresh replaces an aging entry, and is not part of the public contract.
     """
     cache_key = f"profile:{ticker}"
 
-    cached = _cache.get(cache_key)
-    if cached and (time.monotonic() - cached[0]) < _PROFILE_TTL:
-        return copy.deepcopy(cached[1])
-
-    neg = _neg_profiles.get(cache_key)
-    if neg and (time.monotonic() - neg[0]) < _NEG_PROFILE_TTL:
-        return copy.deepcopy(neg[1])
-
-    lock = _get_lock(cache_key)
-    with lock:
+    if not _force:
         cached = _cache.get(cache_key)
         if cached and (time.monotonic() - cached[0]) < _PROFILE_TTL:
             return copy.deepcopy(cached[1])
@@ -245,11 +284,25 @@ def get_company_profile(ticker, apikey=''):
         if neg and (time.monotonic() - neg[0]) < _NEG_PROFILE_TTL:
             return copy.deepcopy(neg[1])
 
-        disk = persistent_cache.get(cache_key)
-        if disk is not None:
+    lock = _get_lock(cache_key)
+    with lock:
+        if not _force:
+            cached = _cache.get(cache_key)
+            if cached and (time.monotonic() - cached[0]) < _PROFILE_TTL:
+                return copy.deepcopy(cached[1])
+
+            neg = _neg_profiles.get(cache_key)
+            if neg and (time.monotonic() - neg[0]) < _NEG_PROFILE_TTL:
+                return copy.deepcopy(neg[1])
+
+        aged = None if _force else persistent_cache.get_with_age(cache_key)
+        if aged is not None:
+            disk, age = aged
             if _has_valid_price(disk):
                 _cache[cache_key] = (time.monotonic(), copy.deepcopy(disk))
                 _evict_if_needed()
+                if age >= _DISK_PROFILE_FRESH:
+                    _schedule_profile_refresh(ticker, apikey)
                 return disk
             # Poisoned entry (price=0 from a failed quote fetch) — drop it and
             # fall through to a fresh fetch instead of serving it until TTL.

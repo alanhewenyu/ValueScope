@@ -15,6 +15,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("valuescope")
 
+# Must run before akshare/yfinance are imported or used: without it their
+# timeout-less requests calls can hang forever and permanently occupy the
+# cold-fetch gate in routers/stock.py. See backend/http_timeout.py.
+from backend.http_timeout import install as _install_http_timeout
+_install_http_timeout()
+
 # Load .env file so SERPER_API_KEY, DEEPSEEK_API_KEY etc. are available
 try:
     from dotenv import load_dotenv
