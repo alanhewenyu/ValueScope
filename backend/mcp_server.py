@@ -106,6 +106,19 @@ class MCPRequestMetaMiddleware:
                 scope = dict(scope, path="/mcp/")
                 if scope.get("raw_path") == b"/mcp":
                     scope["raw_path"] = b"/mcp/"
+            # The server is stateless, so a GET's server-to-client SSE stream
+            # can never carry a message — yet the SDK holds it open with pings
+            # until the client gives up. Health checkers (Glama) that open it
+            # after tools/list then time out and mark the connector unhealthy.
+            # The spec's answer for "no SSE stream here" is 405.
+            if scope.get("method") == "GET" and scope["path"] == "/mcp/":
+                await send({
+                    "type": "http.response.start",
+                    "status": 405,
+                    "headers": [(b"allow", b"POST"), (b"content-length", b"0")],
+                })
+                await send({"type": "http.response.body", "body": b""})
+                return
             fwd = headers.get("x-forwarded-for", "")
             client = scope.get("client") or ("", 0)
             ip = (fwd.split(",")[0].strip() if fwd else "") or client[0] or "unknown"
